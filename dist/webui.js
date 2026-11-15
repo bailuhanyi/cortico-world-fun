@@ -278,6 +278,7 @@ function mountPlaces(ctx) {
         el('span', { text: p.crowdLabel }),
         el('span', { text: `${p.areaCount} 处可逛` }),
         p.food ? el('span', { class: 'fun-chip fun-chip-ate', text: p.food.verb === '喝' ? '能喝' : '能吃' }) : null,
+        p.visitCount > 0 ? el('span', { class: 'fun-chip', text: `去过 ${p.visitCount} 次` }) : null,
         p.recent ? el('span', { class: 'fun-chip', text: '刚去过' }) : null));
       return node;
     };

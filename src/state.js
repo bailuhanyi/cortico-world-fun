@@ -145,13 +145,25 @@ function normalizeSession(raw) {
 
 /**
  * 把磁盘上的旧状态补齐成当前形状（不信任文件内容）。
- * `day` 和今天不一致 = 跨天了：整份重来（上一趟没逛完就是没逛完）。
+ * `day` 和今天不一致 = 跨天了：只清 session，纪念册（trips）留着。
+ */
+/**
+ * 把磁盘上的旧状态补齐成当前形状（不信任文件内容）。
+ *
+ * `day` 和今天不一致 = 跨天了：**只清掉没逛完的那一趟（session）**，
+ * 纪念册（trips）必须留着。
+ *
+ * 这一条是 0.1.6 修的：0.1.x 一直整份重来，于是 `trips` 活不过一天——
+ * 「去过的痕迹」做出来才发现纪念册每天清零，记了等于没记。
+ * 跨天该清的是「今天正在逛什么」，不是「她去过哪儿」。
  */
 export function normalizeState(raw, day) {
-  if (!raw || typeof raw !== 'object' || raw.day !== day) return newState(day);
+  if (!raw || typeof raw !== 'object') return newState(day);
+  const sameDay = raw.day === day;
   return {
     day,
-    session: normalizeSession(raw.session),
+    // 跨天一律丢 session：昨天没逛完的那一趟就是不逛完了，不该接着逛。
+    session: sameDay ? normalizeSession(raw.session) : null,
     trips: (Array.isArray(raw.trips) ? raw.trips : []).map(normalizeTrip).filter(Boolean).slice(0, MAX_TRIPS),
   };
 }

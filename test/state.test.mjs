@@ -35,6 +35,21 @@ test('normalizeState：跨天整份重来，坏数据不炸', () => {
   assert.equal(s.trips.length, 1, '坏 trip 要丢掉');
 });
 
+test('normalizeState：跨天只清 session，纪念册必须留着', () => {
+  // 0.1.x 一直是「跨天整份重来」，于是 trips 活不过一天——做「去过的痕迹」时才发现
+  // 纪念册每天清零，记了等于没记。这条钉住修好后的行为。
+  const raw = {
+    day: '2026-11-14',
+    session: { placeId: 'con', placeName: '漫展', enteredAt: 1 },
+    trips: [{ placeId: 'con', placeName: '漫展', enteredAt: 1, leftAt: 2, visited: [{ area: '同人展台' }] }],
+  };
+  const next = normalizeState(raw, '2026-11-15');
+  assert.equal(next.day, '2026-11-15');
+  assert.equal(next.session, null, '跨天不该接着逛昨天那趟');
+  assert.equal(next.trips.length, 1, '纪念册要跨天留着');
+  assert.equal(next.trips[0].placeName, '漫展');
+});
+
 test('enterVenue：进门建 session；已经在逛就不覆盖', () => {
   const day = '2026-11-15';
   const st = newState(day);

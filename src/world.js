@@ -31,6 +31,9 @@ import {
   areasNow, descNow, eventsNow, phaseLabelAt,
 } from './phases.js';
 import {
+  cameEarlierToday, dayPhrase, filterRepeatedEvents, historyFor, memoryLine, untriedAreas,
+} from './memories.js';
+import {
   buySouvenir, closeSession, dayIn, enterVenue, hmIn, isStale, minutesIn,
   newState, normalizeState, photoSpotsFor, recentPlaceIds, recordConsume,
   souvenirsFor, takePhoto, tripSummary, venueById, visitedText, wanderOnce,
@@ -367,6 +370,20 @@ export class FunWorld {
       const others = venue.phases.map((p) => p.label).join(' / ');
       lines.push(`（这里不同时段不一样：${others}。换个时间来是另一副样子。）`);
     }
+
+    // 去过的痕迹：只讲记得住的、只讲这一处的。没来过就一个字都不提。
+    const history = historyFor(this.#state.trips, venue.id, day);
+    if (history) {
+      const memory = memoryLine(history, day);
+      const untried = history.visitCount >= 2 ? untriedAreas(history, areasNow(venue, nowMin)) : [];
+      const bits = [];
+      if (cameEarlierToday(history, day)) bits.push('今天你已经来过一次了。');
+      if (memory) bits.push(memory);
+      if (bits.length) lines.push(`（${bits.join('')}）`);
+      // 来过几次却总有没逛到的：直接点出来，比复述去过哪儿有用。
+      if (untried.length) lines.push(`还没去过：${untried.join('、')}。`);
+    }
+
     lines.push('一处一处来：fun_wander 逛一处（不填 area 就自动挑一个没逛过的），看到纪念品/拍照点会用得了。');
     return { text: lines.join('\n') };
   }
@@ -394,7 +411,10 @@ export class FunWorld {
     const nowMin = minutesIn(this.timezone, now);
     const phaseName = phaseLabelAt(venue, nowMin);
     const liveAreas = areasNow(venue, nowMin);
-    const liveEvents = eventsNow(venue, nowMin);
+    // 小事件里要滤掉「她以前真做过」那些，否则去过几次就成了复读机
+    // （上次买了吧唧，这次又抽到「吧唧挑了半天」——那件事这次没发生）。
+    const pastHistory = historyFor(this.#state.trips, venue.id, day);
+    const liveEvents = filterRepeatedEvents(eventsNow(venue, nowMin), pastHistory);
 
     // 指定了没逛过的项目就用它，否则自动挑。
     const wanted = typeof args?.area === 'string' ? args.area.trim() : '';
@@ -412,7 +432,7 @@ export class FunWorld {
       if (ev) session.events.push(ev);
       picked = { area, event: ev };
     } else {
-      picked = wanderOnce(this.#state, venue, now, this.#random, liveAreas);
+      picked = wanderOnce(this.#state, venue, now, this.#random, liveAreas, liveEvents);
       if (!picked) {
         return { text: `${venue.name}这几处你都逛过了。${this.#homeHint()}` };
       }
@@ -453,6 +473,16 @@ export class FunWorld {
 
     const lines = [`${venue.name}${phaseName ? `（${phaseName}）` : ''} · ${picked.area}`, this.#areaLine(venue, picked.area, nowMin)];
     if (picked.event) lines.push(`——${picked.event}`);
+    // 这一处以前逛过几次：逛的时候提一句，比进门时那句更具体。
+    // 只在这一趟里第一次逛到某处时提，免得每次 fun_wander 都重复。
+    {
+      const hist = historyFor(this.#state.trips, venue.id, day);
+      const before = hist?.areas.find((a) => a.area === picked.area);
+      const alreadyThisTrip = session.visited.filter((v) => v.area === picked.area).length > 1;
+      if (before && !alreadyThisTrip) {
+        lines.push(`（这处你之前来过 ${before.times} 次${hist.lastDayPhrase ? `，上次是${hist.lastDayPhrase}` : ''}。）`);
+      }
+    }
     const last = session.visited[session.visited.length - 1];
     if (last?.note) lines.push(`（你记的：${last.note}）`);
 
@@ -783,6 +813,8 @@ export class FunWorld {
         souvenirs: v.souvenirs,
         photoSpots: v.photoSpots,
         recent: recent.includes(v.id),
+        // 去过几次：面板上标「去过 3 次」比什么都不说有用。
+        visitCount: historyFor(st.trips, v.id, dayIn(tz, now))?.visitCount ?? 0,
         // 时段：现在处于哪一段、这一处共有哪几段（面板上做「换时间来是另一副样子」的提示）
         phase: phaseLabelAt(v, nowMin) || null,
         phases: Array.isArray(v.phases) ? v.phases.map((x) => ({ key: x.key, label: x.label, from: x.from, to: x.to })) : [],

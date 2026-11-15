@@ -414,6 +414,105 @@ test('时段气氛：逛的回执标题带上时段名', async () => {
   assert.match(w.text.split('\n')[0], /江边（清早） · /);
 });
 
+test('去过的痕迹：第一次去一个字都不提', async () => {
+  const b = await boot();
+  const r = await b.tool('fun_go')({ place: '漫展' });
+  assert.doesNotMatch(r.text, /来过/, '第一次去不该有「上次」的口气');
+  assert.doesNotMatch(r.text, /还没去过/);
+});
+
+test('去过的痕迹：第二次去能说出上次逛了什么、买了什么', async () => {
+  const b = await boot();
+  await b.tool('fun_go')({ place: '漫展' });
+  await b.tool('fun_wander')({ area: '同人展台', buy: '吧唧' });
+  await b.tool('fun_home')({});
+
+  // 隔天再去
+  b.setNow(at('2026-11-16T15:00:00+08:00'));
+  const r = await b.tool('fun_go')({ place: '漫展' });
+  assert.match(r.text, /你之前来过这里 1 次/);
+  assert.match(r.text, /上一次是昨天/);
+  assert.match(r.text, /逛过同人展台/);
+  assert.match(r.text, /买过吧唧/);
+});
+
+test('去过的痕迹：跨天之后纪念册还在（0.1.x 的 bug）', async () => {
+  const b = await boot();
+  await b.tool('fun_go')({ place: '海洋馆' });
+  await b.tool('fun_wander')({ area: '鲸豚湾' });
+  await b.tool('fun_home')({});
+
+  // 换一天重新进世界（模拟跨天后启动）
+  b.setNow(at('2026-11-18T10:00:00+08:00'));
+  const r = await b.tool('fun_go')({ place: '海洋馆' });
+  assert.match(r.text, /你之前来过这里 1 次/, '跨天不该把纪念册清空');
+});
+
+test('去过的痕迹：来过两次以上会点出「还没去过」的那几处', async () => {
+  const b = await boot();
+  for (const day of ['2026-11-13', '2026-11-14']) {
+    b.setNow(at(`${day}T14:00:00+08:00`));
+    await b.tool('fun_go')({ place: '漫展' });
+    await b.tool('fun_wander')({ area: '同人展台' });
+    await b.tool('fun_home')({});
+  }
+  b.setNow(at('2026-11-15T15:00:00+08:00'));
+  const r = await b.tool('fun_go')({ place: '漫展' });
+  assert.match(r.text, /还没去过：/);
+  assert.match(r.text, /企业馆|舞台区|海报墙/, '要点出没逛过的地方');
+  assert.doesNotMatch(r.text.split('还没去过：')[1].split('\n')[0], /同人展台/, '逛过的不能再列进「还没去过」');
+});
+
+test('去过的痕迹：只提这一处，别的场所的痕迹不算', async () => {
+  const b = await boot();
+  await b.tool('fun_go')({ place: '海洋馆' });
+  await b.tool('fun_wander')({ area: '鲸豚湾' });
+  await b.tool('fun_home')({});
+
+  const r = await b.tool('fun_go')({ place: '漫展' });
+  assert.doesNotMatch(r.text, /来过/, '漫展是第一次去，不该提海洋馆的历史');
+});
+
+test('去过的痕迹：同一天再来一次，说的是「今天已经来过」而不是「上一次是今天」', async () => {
+  const b = await boot();
+  await b.tool('fun_go')({ place: '海洋馆' });
+  await b.tool('fun_wander')({ area: '鲸豚湾' });
+  await b.tool('fun_home')({});
+
+  b.setNow(at('2026-11-15T18:00:00+08:00'));
+  const r = await b.tool('fun_go')({ place: '海洋馆' });
+  assert.match(r.text, /今天你已经来过一次了/);
+  assert.doesNotMatch(r.text, /上一次是今天/, '别复读');
+});
+
+test('去过的痕迹：逛到某处会说这处之前来过几次', async () => {
+  const b = await boot();
+  await b.tool('fun_go')({ place: '海洋馆' });
+  await b.tool('fun_wander')({ area: '鲸豚湾' });
+  await b.tool('fun_home')({});
+
+  b.setNow(at('2026-11-16T15:00:00+08:00'));
+  await b.tool('fun_go')({ place: '海洋馆' });
+  const w = await b.tool('fun_wander')({ area: '鲸豚湾' });
+  assert.match(w.text, /这处你之前来过 1 次/);
+});
+
+test('去过的痕迹：以前买过的东西，不会再抽到同一件小事件', async () => {
+  const b = await boot();
+  await b.tool('fun_go')({ place: '漫展' });
+  await b.tool('fun_wander')({ area: '同人展台', buy: '吧唧' });
+  await b.tool('fun_home')({});
+
+  b.setNow(at('2026-11-16T15:00:00+08:00'));
+  await b.tool('fun_go')({ place: '漫展' });
+  // 连逛几次，一次都不该再出现「吧唧挑了半天」那条
+  for (let i = 0; i < 6; i += 1) {
+    b.setNow(at(`2026-11-16T15:1${i}:00+08:00`));
+    const w = await b.tool('fun_wander')({});
+    assert.doesNotMatch(w.text, /吧唧挑了半天/, `第 ${i + 1} 次仍抽到了买过的那件事`);
+  }
+});
+
 test('挂太久会提醒收摊，但不替她收', async () => {
   const b = await boot();
   await b.tool('fun_go')({ place: '漫展' });

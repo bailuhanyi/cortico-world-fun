@@ -502,6 +502,22 @@ test('places 面板：详情里的描写是「此刻那段」，不是通用那�
   assert.ok(/航灯|路灯|黑/.test(nightText), `夜里应当是另一副样子，实际：${nightText.slice(0, 60)}`);
 });
 
+test('places 面板：去过的场所标出「去过 N 次」', async () => {
+  const { mount, tool } = await mountPanels();
+  // 先去一趟并收摊
+  await tool('fun_go')({ place: '漫展' });
+  await tool('fun_wander')({ area: '同人展台', buy: '吧唧' });
+  await tool('fun_home')({});
+
+  const root = await mount('places');
+  await waitFor(() => root.querySelectorAll('.fun-card').length === VENUES.length, '画出全部');
+  const find = (name) => root.querySelectorAll('.fun-card')
+    .find((c) => c.querySelector('.fun-card-name').textContent === name);
+
+  assert.ok(find('漫展').textContent.includes('去过 1 次'), '去过的要标次数');
+  assert.ok(!find('江边').textContent.includes('去过'), '没去过的不能标');
+});
+
 test('book 面板：空册子给一句话；逛完一趟之后能查回来', async () => {
   const { mount, tool } = await mountPanels();
   let root = await mount('book');
