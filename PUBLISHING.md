@@ -103,12 +103,20 @@ npm publish --otp 123456
 发完立刻验：
 
 ```powershell
-npm view cortico-world-fun version          # 应回 0.1.0
-npm view cortico-world-fun cortico --json   # 能看到 kind/api/displayName/icon/describe/locales
-npm view cortico-world-fun dist-tags        # latest 应是 0.1.0
+npm view cortico-world-fun version          # 应回当前版本
+npm view cortico-world-fun cortico --json   # 能看到 kind/api/displayName/icon/describe/webUiClient/locales
+npm view cortico-world-fun dist-tags        # latest 应是当前版本
+
+# 更强的一条：把发出去的包下载下来解包，从安装形态真加载一遍
+node tools/verify-published.mjs
 ```
 
 `npm view` 走 CDN，刚发出去可能滞后几十秒到几分钟，回 `E404` 先等一下。
+
+**`verify-published.mjs` 比 `npm view` 强在哪**：元数据只能证明「声明了 `webUiClient`」，
+证明不了「`dist/webui.js` 真在包里」。少了那个文件，装到 Coo 里点面板就是**一片空白**，
+而且不会有任何报错。这个脚本会下载线上 tarball、解包、加载、跑一趟出游、再拿线上的
+两份东西（服务端声明 + 客户端 bundle）对账面板 id。
 
 ---
 

@@ -23,6 +23,7 @@
     "verify": "node tools/fix-ps1-bom.mjs install.ps1 && node tools/check-prompt.mjs && node tools/smoke.mjs && node tools/make-describe.mjs --check",
     "describe": "node tools/make-describe.mjs",
     "check:publish": "node tools/publish-check.mjs --online",
+    "verify:published": "node tools/verify-published.mjs",
     "prepublishOnly": "node test/venues.test.mjs && node test/state.test.mjs && node test/world.test.mjs && node test/panels.test.mjs && node tools/check-prompt.mjs && node tools/smoke.mjs && node tools/make-describe.mjs --check && node tools/publish-check.mjs --online"
   },
   "cortico": {
