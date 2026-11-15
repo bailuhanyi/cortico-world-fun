@@ -356,6 +356,64 @@ test('吃喝：面板数据带上 food，但不带味道', async () => {
   assert.equal(aquarium.food, null, '海洋馆没有 food');
 });
 
+test('时段气氛：同一处地方，不同时刻进门读到的是不同的描写', async () => {
+  // 江边开 17.5 小时，是最能体现时段差异的一处。
+  const dawn = await boot({ now: at('2026-11-15T06:30:00+08:00') });
+  const goDawn = await dawn.tool('fun_go')({ place: '江边' });
+  assert.match(goDawn.text, /进了江边（清早）/);
+  assert.match(goDawn.text, /雾/);
+
+  const night = await boot({ now: at('2026-11-15T22:00:00+08:00') });
+  const goNight = await night.tool('fun_go')({ place: '江边' });
+  assert.match(goNight.text, /进了江边（夜里）/);
+  assert.match(goNight.text, /航灯|路灯/);
+
+  assert.notEqual(goDawn.text, goNight.text, '清早和夜里不能是同一段话');
+});
+
+test('时段气氛：进门会告诉她这处换时间再来是另一副样子', async () => {
+  const b = await boot({ now: at('2026-11-15T06:30:00+08:00') });
+  const r = await b.tool('fun_go')({ place: '江边' });
+  assert.match(r.text, /不同时段不一样/);
+  assert.match(r.text, /清早/);
+  assert.match(r.text, /夜里/);
+});
+
+test('时段气氛：没配阶段的场所照旧，一个字都不多', async () => {
+  const b = await boot();
+  const r = await b.tool('fun_go')({ place: '海洋馆' });
+  assert.match(r.text, /进了海洋馆。/);
+  assert.doesNotMatch(r.text, /不同时段不一样/);
+  assert.ok(r.text.includes(VENUES.find((v) => v.id === 'aquarium').desc));
+});
+
+test('时段气氛：跨夜场所的深夜段能命中（夜市 00:30 = 快收了）', async () => {
+  const b = await boot({ now: at('2026-11-15T00:30:00+08:00') });
+  const r = await b.tool('fun_go')({ place: '夜市' });
+  assert.match(r.text, /进了夜市（快收了）/);
+  assert.match(r.text, /卷帘门|最后/);
+});
+
+test('时段气氛：可逛的项目随时段收窄（夜市快收时摊子变少）', async () => {
+  const late = await boot({ now: at('2026-11-15T00:30:00+08:00') });
+  const goLate = await late.tool('fun_go')({ place: '夜市' });
+  const lateAreas = goLate.text.split('能逛的：')[1].split('\n')[0].replace('。', '').split('、');
+  assert.ok(lateAreas.length < 6, `快收时的摊子应当变少，实际 ${lateAreas.length} 处`);
+  assert.ok(lateAreas.includes('烧烤摊'));
+
+  const peak = await boot({ now: at('2026-11-15T21:00:00+08:00') });
+  const goPeak = await peak.tool('fun_go')({ place: '夜市' });
+  const peakAreas = goPeak.text.split('能逛的：')[1].split('\n')[0].replace('。', '').split('、');
+  assert.ok(peakAreas.length > lateAreas.length, '最热闹时候的摊子应当比快收时多');
+});
+
+test('时段气氛：逛的回执标题带上时段名', async () => {
+  const b = await boot({ now: at('2026-11-15T06:30:00+08:00') });
+  await b.tool('fun_go')({ place: '江边' });
+  const w = await b.tool('fun_wander')({});
+  assert.match(w.text.split('\n')[0], /江边（清早） · /);
+});
+
 test('挂太久会提醒收摊，但不替她收', async () => {
   const b = await boot();
   await b.tool('fun_go')({ place: '漫展' });

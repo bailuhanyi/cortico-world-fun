@@ -42,6 +42,9 @@ const CSS = `
 .fun-chip{font-size:12px;padding:2px 8px;border-radius:999px;border:1px solid var(--f-line);background:var(--f-soft);color:var(--f-dim)}
 .fun-chip-on{color:var(--f-ink);border-color:var(--f-accent);background:color-mix(in srgb,var(--f-accent) 14%,transparent)}
 .fun-chip-ate{color:var(--f-ink);border-color:var(--f-warm);background:color-mix(in srgb,var(--f-warm) 14%,transparent)}
+.fun-chip-phase{color:var(--f-ink);border-color:var(--f-accent);background:color-mix(in srgb,var(--f-accent) 10%,transparent);font-size:11px}
+.fun-phases{display:flex;gap:6px;flex-wrap:wrap;margin-top:2px}
+.fun-detail-desc{font-size:12.5px;line-height:1.65;margin:0 0 7px}
 .fun-note{font-size:11.5px;color:var(--f-dim);margin-top:5px;line-height:1.5}
 .fun-stale{color:var(--f-warm)}
 
@@ -266,6 +269,7 @@ function mountPlaces(ctx) {
       },
       el('div', { class: 'fun-card-head' },
         el('span', { class: 'fun-card-name', text: p.name }),
+        p.phase ? el('span', { class: 'fun-chip fun-chip-phase', text: p.phase }) : null,
         el('span', { class: `fun-card-state ${stateCls}`, text: p.stateLabel }),
         el('span', { class: 'fun-card-arrow', text: expanded === p.id ? '⌃' : '⌄' })),
       el('div', { class: 'fun-card-desc', text: p.desc }),
@@ -317,6 +321,18 @@ function mountPlaces(ctx) {
             },
           }, '收起')),
         el('p', { class: 'fun-dim', text: `${p.kindLabel} · ${p.crowdLabel} · ${p.hours.open}–${p.hours.close} · ${p.stateLabel}` }),
+        // 此刻的那段描写：有阶段的场所显示的是「这会儿的样子」，不是通用那段。
+        el('p', { class: 'fun-detail-desc', text: p.desc }),
+        // 时段一览：让她和主人都看得出「换个时间来是另一副样子」。
+        (p.phases && p.phases.length > 1)
+          ? el('div', {},
+            el('div', { class: 'fun-sec', text: '不同时段' }),
+            el('div', { class: 'fun-phases' }, p.phases.map((ph) => el('span', {
+              class: ph.label === p.phase ? 'fun-chip fun-chip-phase fun-chip-on' : 'fun-chip',
+              title: `${ph.from}–${ph.to}`,
+              text: `${ph.label} ${ph.from}–${ph.to}`,
+            }))))
+          : null,
         // 三块并成一排：能逛的 / 纪念品 / 拍照点，省纵向高度（原来三个小节摞起来很高）。
         el('div', { class: 'fun-detail-cols' },
           el('div', { class: 'fun-detail-col' },

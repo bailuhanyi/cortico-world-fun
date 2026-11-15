@@ -187,19 +187,24 @@ export function enterVenue(state, venue, nowMs, random = Math.random) {
 /**
  * 逛一处：挑一个还没去过的项目，顺手记一条随机小事件。
  *
+ * `areas` / `events` 可以由调用方传（时段气氛：夜市快收的时候只剩几家摊子，
+ * 池子该由 phases 决定，不该在 state 层再算一遍时间）。不传就用场所的全部。
+ *
  * 项目按「剩下的优先」取——逛了三次不会连着去同一个过山车。
  * 项目全逛完了就返回 null，让调用方提醒她收摊（而不是硬编一个）。
  */
-export function wanderOnce(state, venue, nowMs, random = Math.random) {
+export function wanderOnce(state, venue, nowMs, random = Math.random, areas = null, events = null) {
   const s = state.session;
   if (!s) return null;
+  const areaPool = Array.isArray(areas) && areas.length ? areas : (venue.areas || []);
   const done = new Set(s.visited.map((v) => v.area));
-  const left = (venue.areas || []).filter((a) => !done.has(a));
-  const pool = left.length ? left : (venue.areas || []);
+  const left = areaPool.filter((a) => !done.has(a));
+  const pool = left.length ? left : areaPool;
   if (!pool.length) return null;
   const i = Math.floor(random() * pool.length) % pool.length;
   const area = pool[i];
-  const evPool = (venue.randomEvents || []).filter((e) => !s.events.includes(e));
+  const evSource = Array.isArray(events) && events.length ? events : (venue.randomEvents || []);
+  const evPool = evSource.filter((e) => !s.events.includes(e));
   const ev = evPool.length
     ? evPool[Math.floor(random() * evPool.length) % evPool.length]
     : null;

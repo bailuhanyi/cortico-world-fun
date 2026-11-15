@@ -450,6 +450,58 @@ test('places 面板：失败时出错误卡，不是白屏', async () => {
   assert.ok(root.querySelector('.fun-err').textContent.includes('boom'));
 });
 
+test('places 面板：有时段的场所标出此刻属于哪一段，并列出全部时段', async () => {
+  const { mount } = await mountPanels({ nowMs: Date.parse('2026-11-15T06:30:00+08:00') });
+  const root = await mount('places');
+  await waitFor(() => root.querySelectorAll('.fun-card').length === VENUES.length, '画出全部场所');
+
+  const find = (name) => root.querySelectorAll('.fun-card')
+    .find((c) => c.querySelector('.fun-card-name').textContent === name);
+
+  // 卡片上直接标了时段
+  const river = find('江边');
+  assert.ok(river.textContent.includes('清早'), `卡片上应当标着「清早」，实际：${river.textContent.slice(0, 80)}`);
+
+  // 没用时段的场所不标
+  const aquarium = find('海洋馆');
+  assert.ok(!aquarium.textContent.includes('清早'), '没有时段的场所不该冒时段标签');
+
+  // 展开详情能看到全部时段
+  river.fire('click');
+  await waitFor(() => root.querySelector('.fun-detail'), '展开江边');
+  const detail = root.querySelector('.fun-detail');
+  assert.ok(detail.textContent.includes('不同时段'), '详情里要有「不同时段」一节');
+  for (const label of ['清早', '白天', '傍晚', '夜里']) {
+    assert.ok(detail.textContent.includes(label), `详情里应当列出 ${label}`);
+  }
+  // 此刻那段要高亮
+  const chips = detail.querySelectorAll('.fun-chip-phase');
+  const active = chips.filter((c) => c.classList.contains('fun-chip-on'));
+  assert.equal(active.length, 1, `应当只有一段是当前，实际 ${active.length}`);
+  assert.ok(active[0].textContent.includes('清早'));
+});
+
+test('places 面板：详情里的描写是「此刻那段」，不是通用那段', async () => {
+  const dawn = await mountPanels({ nowMs: Date.parse('2026-11-15T06:30:00+08:00') });
+  const rootDawn = await dawn.mount('places');
+  await waitFor(() => rootDawn.querySelectorAll('.fun-card').length === VENUES.length, '画出全部');
+  rootDawn.querySelectorAll('.fun-card').find(
+    (c) => c.querySelector('.fun-card-name').textContent === '江边').fire('click');
+  await waitFor(() => rootDawn.querySelector('.fun-detail-desc'), '展开');
+  const dawnText = rootDawn.querySelector('.fun-detail-desc').textContent;
+  assert.ok(/雾/.test(dawnText), `清早应当有雾，实际：${dawnText.slice(0, 60)}`);
+
+  const night = await mountPanels({ nowMs: Date.parse('2026-11-15T22:00:00+08:00') });
+  const rootNight = await night.mount('places');
+  await waitFor(() => rootNight.querySelectorAll('.fun-card').length === VENUES.length, '画出全部');
+  rootNight.querySelectorAll('.fun-card').find(
+    (c) => c.querySelector('.fun-card-name').textContent === '江边').fire('click');
+  await waitFor(() => rootNight.querySelector('.fun-detail-desc'), '展开');
+  const nightText = rootNight.querySelector('.fun-detail-desc').textContent;
+  assert.notEqual(dawnText, nightText, '清早和夜里不能显示同一段描写');
+  assert.ok(/航灯|路灯|黑/.test(nightText), `夜里应当是另一副样子，实际：${nightText.slice(0, 60)}`);
+});
+
 test('book 面板：空册子给一句话；逛完一趟之后能查回来', async () => {
   const { mount, tool } = await mountPanels();
   let root = await mount('book');

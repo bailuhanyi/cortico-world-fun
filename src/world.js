@@ -28,6 +28,9 @@ import {
   CROWD_LABEL, KIND_LABEL, VENUES, allPlaces, findVenue, hasFood, hasScene, hoursState, suggestPlaces,
 } from './venues.js';
 import {
+  areasNow, descNow, eventsNow, phaseLabelAt,
+} from './phases.js';
+import {
   buySouvenir, closeSession, dayIn, enterVenue, hmIn, isStale, minutesIn,
   newState, normalizeState, photoSpotsFor, recentPlaceIds, recordConsume,
   souvenirsFor, takePhoto, tripSummary, venueById, visitedText, wanderOnce,
@@ -346,13 +349,23 @@ export class FunWorld {
     }
     await this.#save();
 
-    const lines = [`进了${venue.name}。`, venue.desc];
+    // 时段气氛：江边清早和夜里不是一回事，所以描写和可逛的项目都按此刻取。
+    const nowMin = minutesIn(this.timezone, now);
+    const label = phaseLabelAt(venue, nowMin);
+
+    const lines = [`进了${venue.name}${label ? `（${label}）` : ''}。`, descNow(venue, nowMin)];
     if (args?.company) lines.push(`跟${String(args.company).slice(0, 40)}一起。`);
     if (state === 'closingSoon') lines.push(`（快到打烊时间了，${venue.hours.close} 就关，别排太长的队。）`);
     if (state === 'closed') lines.push(`（其实这会儿已经过了开放时段（${venue.hours.open}–${venue.hours.close}），当它开着逛也行，只是别写外头太亮。）`);
-    lines.push(`能逛的：${venue.areas.join('、')}。`);
+    lines.push(`能逛的：${areasNow(venue, nowMin).join('、')}。`);
     if (hasFood(venue)) {
       lines.push(`这儿还能${venue.food.verb}：${venue.food.items.join('、')}。`);
+    }
+    // 有分时段的场所，提醒一句「换个时间来是另一副样子」——这是这个世界最耐玩的地方。
+    const phaseCount = Array.isArray(venue.phases) ? venue.phases.length : 0;
+    if (phaseCount > 1) {
+      const others = venue.phases.map((p) => p.label).join(' / ');
+      lines.push(`（这里不同时段不一样：${others}。换个时间来是另一副样子。）`);
     }
     lines.push('一处一处来：fun_wander 逛一处（不填 area 就自动挑一个没逛过的），看到纪念品/拍照点会用得了。');
     return { text: lines.join('\n') };
@@ -365,7 +378,8 @@ export class FunWorld {
     const session = this.#state.session;
     if (!session) {
       return { text: `你还没进门呢。先 fun_go 挑一处地方（${VENUES.slice(0, 4).map((v) => v.name).join(' / ')}…一共 ${VENUES.length} 处，fun_places 能看全），再一处一处逛。` };
-    }    const venue = venueById(session.placeId) ?? findVenue(VENUES, session.placeName);
+    }
+    const venue = venueById(session.placeId) ?? findVenue(VENUES, session.placeName);
     if (!venue) {
       return { text: `找不到「${session.placeName}」这处了（场所库改过？）。fun_home 收个摊吧。` };
     }
@@ -375,14 +389,21 @@ export class FunWorld {
     const idleSince = session.lastAt;
     const staleBefore = isStale(session, now, this.#ttlMin());
 
+    // 时段气氛：此刻能逛的项目和会碰到的小事件都跟着时段走。
+    // 夜市刚开摊时只有几家摆好，快收的时候只剩最后几家——这些差异在这里生效。
+    const nowMin = minutesIn(this.timezone, now);
+    const phaseName = phaseLabelAt(venue, nowMin);
+    const liveAreas = areasNow(venue, nowMin);
+    const liveEvents = eventsNow(venue, nowMin);
+
     // 指定了没逛过的项目就用它，否则自动挑。
     const wanted = typeof args?.area === 'string' ? args.area.trim() : '';
     let area = wanted;
     let picked = null;
     if (wanted) {
-      const hit = venue.areas.includes(wanted) ? wanted : venue.areas.find((a) => a.includes(wanted));
+      const hit = liveAreas.includes(wanted) ? wanted : liveAreas.find((a) => a.includes(wanted));
       area = hit ?? wanted;
-      const evPool = venue.randomEvents.filter((e) => !session.events.includes(e));
+      const evPool = liveEvents.filter((e) => !session.events.includes(e));
       const ev = evPool.length ? evPool[Math.floor(this.#random() * evPool.length) % evPool.length] : null;
       if (!session.visited.some((v) => v.area === area)) {
         session.visited.push({ area, note: String(args?.note ?? '').slice(0, 120), at: now });
@@ -391,7 +412,7 @@ export class FunWorld {
       if (ev) session.events.push(ev);
       picked = { area, event: ev };
     } else {
-      picked = wanderOnce(this.#state, venue, now, this.#random);
+      picked = wanderOnce(this.#state, venue, now, this.#random, liveAreas);
       if (!picked) {
         return { text: `${venue.name}这几处你都逛过了。${this.#homeHint()}` };
       }
@@ -430,7 +451,7 @@ export class FunWorld {
     }
     await this.#save();
 
-    const lines = [`${venue.name} · ${picked.area}`, this.#areaLine(venue, picked.area)];
+    const lines = [`${venue.name}${phaseName ? `（${phaseName}）` : ''} · ${picked.area}`, this.#areaLine(venue, picked.area, nowMin)];
     if (picked.event) lines.push(`——${picked.event}`);
     const last = session.visited[session.visited.length - 1];
     if (last?.note) lines.push(`（你记的：${last.note}）`);
@@ -546,13 +567,14 @@ export class FunWorld {
    * 这一处的细节描写。
    *
    * 不重复整段 `desc`（`fun_go` 已经给过一遍了），只取desc里**跟空间有关**的那一截，
-   * 再补一句「这是第几处」的位置感。第一次就整段给过的地方，这里给短版本。
+   * 再补一句「这是第几处」的位置感。`nowMin` 决定取哪个时段的描写——
+   * 江边夜里不能拿清早那段来用。
    */
-  #areaLine(venue, area) {
+  #areaLine(venue, area, nowMin) {
     const idx = (venue.areas || []).indexOf(area);
     const n = idx >= 0 ? idx + 1 : null;
     // desc 的第一段（到第一个分号）通常就是空间本身，够用且不啰嗦。
-    const scenery = venue.desc.split('；')[0].replace(/^[^：]*：/, '');
+    const scenery = descNow(venue, nowMin).split('；')[0].replace(/^[^：]*：/, '');
     const where = n ? `（第 ${n} 处，共 ${venue.areas.length} 处）` : '';
     return `${scenery}。${where}`;
   }
@@ -726,7 +748,7 @@ export class FunWorld {
   }
 
   /**
-   * 「去哪儿」面板：十二处场所 + 此刻的开放状态 + 正在逛的这一趟。
+   * 「去哪儿」面板：全部场所 + 此刻的开放状态 + 正在逛的这一趟。
    *
    * 只读：不动状态、不写盘。`now` 由服务端给，别让面板自己算——
    * 客户端的钟可能和她的时区不一致。
@@ -744,7 +766,9 @@ export class FunWorld {
         name: v.name,
         aliases: v.aliases,
         tags: v.tags,
-        desc: v.desc,
+        // 给此刻的那段：有阶段的场所，面板上显示的该是「此刻的样子」，不是通用那段。
+        desc: descNow(v, nowMin),
+        descAll: v.desc,
         scene: v.scene,
         hasScene: hasScene(v),
         outfit: v.recommendedOutfit,
@@ -754,11 +778,14 @@ export class FunWorld {
         hours: v.hours,
         state,
         stateLabel: STATE_LABEL[state],
-        areas: v.areas,
+        areas: areasNow(v, nowMin),
         areaCount: v.areas.length,
         souvenirs: v.souvenirs,
         photoSpots: v.photoSpots,
         recent: recent.includes(v.id),
+        // 时段：现在处于哪一段、这一处共有哪几段（面板上做「换时间来是另一副样子」的提示）
+        phase: phaseLabelAt(v, nowMin) || null,
+        phases: Array.isArray(v.phases) ? v.phases.map((x) => ({ key: x.key, label: x.label, from: x.from, to: x.to })) : [],
         // 有吃有喝的地方：只给品类名和动词，**不给味道**（味道在鱼的每一天里）。
         food: hasFood(v) ? { label: v.food.label, items: v.food.items, verb: v.food.verb } : null,
       };
