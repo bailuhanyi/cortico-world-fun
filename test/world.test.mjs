@@ -106,14 +106,14 @@ test('fun_places：按开放时段排，正文带开没开和人多少', async (
   assert.match(r.text, /人很多|人不少|人不多/);
   assert.doesNotMatch(r.text, /失败/);
   // 默认只排前几个，并提示能看全
-  assert.match(r.text, /一共 12 处/);
+  assert.match(r.text, new RegExp(`一共 ${VENUES.length} 处`));
 });
 
-test('fun_places all=true 列全十二处，kind 能只看一类', async () => {
+test('fun_places all=true 列全所有场所，kind 能只看一类', async () => {
   const b = await boot();
   const all = await b.tool('fun_places')({ all: true });
   for (const v of VENUES) assert.ok(all.text.includes(v.name), `全列里应当有 ${v.name}`);
-  assert.doesNotMatch(all.text, /一共 12 处/, 'all 视图不该再提示「想看全的」');
+  assert.doesNotMatch(all.text, /一共 \d+ 处/, 'all 视图不该再提示「想看全的」');
 
   const indoor = await b.tool('fun_places')({ kind: '室内' });
   assert.match(indoor.text, /电影院|海洋馆|漫展/);
@@ -263,6 +263,72 @@ test('串味的纪念品/拍照点会被拦下：海洋馆里买不到漫展的�
   assert.match(ok.text, /买了：鲸鱼挂件/);
   assert.match(ok.text, /拍了张照：海底隧道正中间/);
   assert.doesNotMatch(ok.text, /不是海洋馆/);
+});
+
+test('吃喝：进门就说这儿有什么，逛的时候把味道交回给鱼的每一天', async () => {
+  const b = await boot();
+  const go = await b.tool('fun_go')({ place: '奶茶店' });
+  assert.match(go.text, /这儿还能喝：珍珠奶茶/);
+
+  const w = await b.tool('fun_wander')({ area: '点单的档口', consume: '珍珠奶茶' });
+  assert.match(w.text, /喝了：珍珠奶茶/);
+  // 关键：把「去 feast 点一道」递到嘴边，而不是自己编味道
+  assert.match(w.text, /feast_menu/);
+  assert.match(w.text, /feast_eat/);
+  assert.match(w.text, /九维口感/);
+  // 并且明确说了没装时怎么办
+  assert.match(w.text, /没装就只说/);
+  // 绝不自称知道味道
+  assert.doesNotMatch(w.text, /香浓|回甘|弹牙|顺滑/);
+});
+
+test('吃喝：这一处没有的那样会被拦下，不记', async () => {
+  const b = await boot();
+  await b.tool('fun_go')({ place: '咖啡店' });
+  const bad = await b.tool('fun_wander')({ area: '吧台', consume: '珍珠奶茶' });
+  assert.match(bad.text, /「珍珠奶茶」不是咖啡店有的，没记/);
+  assert.doesNotMatch(bad.text, /喝了：/);
+
+  const ok = await b.tool('fun_wander')({ area: '靠窗的位子', consume: '拿铁' });
+  assert.match(ok.text, /喝了：拿铁/);
+});
+
+test('吃喝：没有吃喝的地方填 consume 会被拦下', async () => {
+  const b = await boot();
+  await b.tool('fun_go')({ place: '海洋馆' });
+  const r = await b.tool('fun_wander')({ area: '鲸豚湾', consume: '拿铁' });
+  assert.match(r.text, /海洋馆没有能吃能喝的，没记/);
+});
+
+test('吃喝：收摊那句话里会写喝了什么，但不写味道', async () => {
+  const b = await boot();
+  await b.tool('fun_go')({ place: '餐厅' });
+  await b.tool('fun_wander')({ area: '窗边的位子', consume: '一桌热菜' });
+  const home = await b.tool('fun_home')({});
+  assert.match(home.text, /一桌热菜/);
+  assert.doesNotMatch(home.text, /香浓|回甘|弹牙|鲜嫩爽口/);
+});
+
+test('吃喝：同一样记一次，重复会标出来', async () => {
+  const b = await boot();
+  await b.tool('fun_go')({ place: '咖啡店' });
+  await b.tool('fun_wander')({ area: '吧台', consume: '美式' });
+  const again = await b.tool('fun_wander')({ area: '书架角', consume: '美式' });
+  assert.match(again.text, /美式 你这一趟已经.*过了/);
+});
+
+test('吃喝：面板数据带上 food，但不带味道', async () => {
+  const b = await boot();
+  const data = await b.world.webUi('zh').invoke('places', 'list', []);
+  const cafe = data.places.find((p) => p.id === 'cafe');
+  assert.ok(cafe.food, '咖啡店要带 food');
+  assert.equal(cafe.food.verb, '喝');
+  assert.ok(cafe.food.items.includes('拿铁'));
+  // payload 里不能有味道字段：味道在鱼的每一天里
+  assert.equal(cafe.food.taste, undefined);
+  assert.equal(cafe.food.aroma, undefined);
+  const aquarium = data.places.find((p) => p.id === 'aquarium');
+  assert.equal(aquarium.food, null, '海洋馆没有 food');
 });
 
 test('挂太久会提醒收摊，但不替她收', async () => {

@@ -41,6 +41,8 @@ const CSS = `
 .fun-chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
 .fun-chip{font-size:12px;padding:2px 8px;border-radius:999px;border:1px solid var(--f-line);background:var(--f-soft);color:var(--f-dim)}
 .fun-chip-on{color:var(--f-ink);border-color:var(--f-accent);background:color-mix(in srgb,var(--f-accent) 14%,transparent)}
+.fun-chip-ate{color:var(--f-ink);border-color:var(--f-warm);background:color-mix(in srgb,var(--f-warm) 14%,transparent)}
+.fun-note{font-size:11.5px;color:var(--f-dim);margin-top:5px;line-height:1.5}
 .fun-stale{color:var(--f-warm)}
 
 /* 场所卡 */
@@ -170,6 +172,9 @@ function mountPlaces(ctx) {
         el('div', { class: 'fun-meta', text: `逛过：${s.visited.length ? s.visited.map((v) => v.area).join('、') : '还没逛到哪儿'}` }),
         s.souvenirs.length ? el('div', { class: 'fun-chips' }, s.souvenirs.map((x) => el('span', { class: 'fun-chip fun-chip-on', text: `买了 ${x}` }))) : null,
         s.photos.length ? el('div', { class: 'fun-chips' }, s.photos.map((x) => el('span', { class: 'fun-chip', text: `📷 ${x}` }))) : null,
+        (s.ate && s.ate.length)
+          ? el('div', { class: 'fun-chips' }, s.ate.map((x) => el('span', { class: 'fun-chip fun-chip-ate', text: `${x.verb}了 ${x.item}` })))
+          : null,
         s.events.length ? el('ul', { class: 'fun-list' }, s.events.slice(-3).map((e) => el('li', { text: e }))) : null,
         venue ? el('div', { class: 'fun-meta', text: leftText }) : null,
       ));
@@ -268,6 +273,7 @@ function mountPlaces(ctx) {
         el('span', { text: `${p.hours.open}–${p.hours.close}` }),
         el('span', { text: p.crowdLabel }),
         el('span', { text: `${p.areaCount} 处可逛` }),
+        p.food ? el('span', { class: 'fun-chip fun-chip-ate', text: p.food.verb === '喝' ? '能喝' : '能吃' }) : null,
         p.recent ? el('span', { class: 'fun-chip', text: '刚去过' }) : null));
       return node;
     };
@@ -320,7 +326,13 @@ function mountPlaces(ctx) {
             el('div', { class: 'fun-sec', text: '纪念品' }),
             el('div', { class: 'fun-chips' }, p.souvenirs.map((s) => el('span', { class: 'fun-chip', text: s }))),
             el('div', { class: 'fun-sec', text: '拍照点' }),
-            el('div', { class: 'fun-chips' }, p.photoSpots.map((s) => el('span', { class: 'fun-chip', text: s }))))),
+            el('div', { class: 'fun-chips' }, p.photoSpots.map((s) => el('span', { class: 'fun-chip', text: s }))),
+            p.food
+              ? el('div', {},
+                el('div', { class: 'fun-sec', text: `能${p.food.verb}的` }),
+                el('div', { class: 'fun-chips' }, p.food.items.map((s) => el('span', { class: 'fun-chip', text: s }))),
+                el('div', { class: 'fun-note', text: `味道不在这儿——装了「鱼的每一天」才有九维口感，没装就只知道${p.food.verb}了什么。` }))
+              : null)),
         el('div', { class: 'fun-scene' },
           p.hasScene
             ? el('span', {}, '生图时 ', el('b', { text: `scene 填「${p.scene}」` }), `，outfits 建议「${p.outfit}」`)

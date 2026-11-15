@@ -19,6 +19,7 @@ import { join } from 'node:path';
 
 import { DEFAULTS } from '../src/config.js';
 import { FunWorld } from '../src/world.js';
+import { VENUES } from '../src/venues.js';
 
 // ---------------------------------------------------------------------------
 // 极简 DOM
@@ -251,17 +252,17 @@ test('服务端面板声明带 getMethods，且声明的方法真的能调', asy
   }
 });
 
-test('places 面板真挂：画出了十二处、标了开没开、有一趟正在逛', async () => {
+test('places 面板真挂：画出了全部场所、标了开没开、有一趟正在逛', async () => {
   const { mount, world, tool } = await mountPanels();
   await tool('fun_go')({ place: '漫展' });
   await tool('fun_wander')({ area: '同人展台', buy: '吧唧' });
 
   const root = await mount('places');
-  await waitFor(() => root.querySelectorAll('.fun-card').length === 12, '画出十二处场所');
+  await waitFor(() => root.querySelectorAll('.fun-card').length === VENUES.length, '画出全部场所');
 
   const cards = root.querySelectorAll('.fun-card');
   const names = cards.map((c) => c.querySelector('.fun-card-name').textContent);
-  for (const n of ['游乐场', '海洋馆', '庙会', '漫展', '电影院', '动物园', '公园', '电玩城', 'KTV', '博物馆', '猫咖', '爬山']) {
+  for (const n of ['游乐场', '海洋馆', '庙会', '漫展', '电影院', '动物园', '公园', '电玩城', 'KTV', '博物馆', '猫咖', '爬山', '咖啡店', '奶茶店', '餐厅']) {
     assert.ok(names.includes(n), `缺 ${n}`);
   }
 
@@ -291,7 +292,7 @@ test('places 面板：没在逛时给的是「这会儿没在逛」而不是空'
 test('places 面板：点卡片能展开详情，再点收起', async () => {
   const { mount } = await mountPanels();
   const root = await mount('places');
-  await waitFor(() => root.querySelectorAll('.fun-card').length === 12, '画出十二处');
+  await waitFor(() => root.querySelectorAll('.fun-card').length === VENUES.length, '画出全部场所');
 
   const find = (name) => root.querySelectorAll('.fun-card')
     .find((c) => c.querySelector('.fun-card-name').textContent === name);
@@ -321,7 +322,7 @@ test('places 面板：详情贴在它自己那张卡下面，不是跑到列表�
   //   ② 包住它们的格子跨满整行
   const { mount } = await mountPanels();
   const root = await mount('places');
-  await waitFor(() => root.querySelectorAll('.fun-card').length === 12, '画出十二处');
+  await waitFor(() => root.querySelectorAll('.fun-card').length === VENUES.length, '画出全部场所');
 
   const firstCard = root.querySelectorAll('.fun-card')[0];
   const firstName = firstCard.querySelector('.fun-card-name').textContent;
@@ -354,7 +355,7 @@ test('places 面板：详情贴在它自己那张卡下面，不是跑到列表�
 test('places 面板：键盘也能开合（Enter / 空格）', async () => {
   const { mount } = await mountPanels();
   const root = await mount('places');
-  await waitFor(() => root.querySelectorAll('.fun-card').length === 12, '画出十二处');
+  await waitFor(() => root.querySelectorAll('.fun-card').length === VENUES.length, '画出全部场所');
 
   const card = root.querySelectorAll('.fun-card').find(
     (c) => c.querySelector('.fun-card-name').textContent === '博物馆');
@@ -374,7 +375,7 @@ test('places 面板：键盘也能开合（Enter / 空格）', async () => {
 test('places 面板：收起按钮点的不是卡片，不会把刚收起的又展开', async () => {
   const { mount } = await mountPanels();
   const root = await mount('places');
-  await waitFor(() => root.querySelectorAll('.fun-card').length === 12, '画出十二处');
+  await waitFor(() => root.querySelectorAll('.fun-card').length === VENUES.length, '画出全部场所');
 
   root.querySelectorAll('.fun-card').find(
     (c) => c.querySelector('.fun-card-name').textContent === '公园').fire('click');
@@ -394,7 +395,7 @@ test('places 面板：展开后滚的是整格（卡 + 详情），不是只滚�
   // 打在点击前的旧节点上，新节点没有这个方法，永远调不到（这条测试第一版就这么假绿过）。
   const { mount } = await mountPanels();
   const root = await mount('places');
-  await waitFor(() => root.querySelectorAll('.fun-card').length === 12, '画出十二处');
+  await waitFor(() => root.querySelectorAll('.fun-card').length === VENUES.length, '画出全部场所');
 
   const scrolled = [];
   // 全局兜底：任何节点被调 scrollIntoView 都记下来（重建出来的新节点也一样）。
@@ -422,7 +423,7 @@ test('places 面板：展开后滚的是整格（卡 + 详情），不是只滚�
 test('places 面板：搜索能按名字/别名/标签筛', async () => {
   const { mount } = await mountPanels();
   const root = await mount('places');
-  await waitFor(() => root.querySelectorAll('.fun-card').length === 12, '画出十二处');
+  await waitFor(() => root.querySelectorAll('.fun-card').length === VENUES.length, '画出全部场所');
 
   const input = root.querySelector('.fun-search');
   assert.ok(input, '缺搜索框');

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  CROWD_LABEL, KIND_LABEL, VENUES, allPlaces, findVenue, hasScene, hmToMin, hoursState, pickSome, suggestPlaces,
+  CROWD_LABEL, KIND_LABEL, VENUES, allPlaces, findVenue, hasFood, hasScene, hmToMin, hoursState, pickSome, suggestPlaces,
 } from '../src/venues.js';
 
 const AQUARIUM = VENUES.find((v) => v.id === 'aquarium');
@@ -10,8 +10,9 @@ const FAIR = VENUES.find((v) => v.id === 'templefair');
 const CON = VENUES.find((v) => v.id === 'con');
 const CINEMA = VENUES.find((v) => v.id === 'cinema');
 
-test('十二处场所齐全，每条的玩法/纪念品/拍照点都填了', () => {
-  assert.equal(VENUES.length, 12);
+test('全部场所齐全，每条的玩法/纪念品/拍照点都填了', () => {
+  // 数量绑到实际库：加场所时这条不该红，红的是「新条目字段没填全」那些。
+  assert.ok(VENUES.length >= 15, `场所太少：${VENUES.length}`);
   for (const v of VENUES) {
     assert.ok(v.name, `${v.id} 缺正名`);
     assert.ok(v.areas.length >= 5, `${v.id} 能逛的太少`);
@@ -24,21 +25,39 @@ test('十二处场所齐全，每条的玩法/纪念品/拍照点都填了', () 
     assert.doesNotMatch(v.desc, /微笑|笑着|回头看镜头|摆姿势/, `${v.id} 的 desc 写了姿势表情`);
   }
   // id 与正名都不重复（别名可以重，正名不行）
-  assert.equal(new Set(VENUES.map((v) => v.id)).size, 12, 'id 有重复');
-  assert.equal(new Set(VENUES.map((v) => v.name)).size, 12, '正名有重复');
+  assert.equal(new Set(VENUES.map((v) => v.id)).size, VENUES.length, 'id 有重复');
+  assert.equal(new Set(VENUES.map((v) => v.name)).size, VENUES.length, '正名有重复');
 });
 
-test('前四处跟素材库对得上，后八处 scene 是空串（不去编库里没有的名字）', () => {
+test('有 scene 的场所必须真的是素材库里有的那几处（不去编库里没有的名字）', () => {
   assert.equal(VENUES.find((v) => v.id === 'amusement').scene, '游乐场');
   assert.equal(VENUES.find((v) => v.id === 'con').scene, '漫展');
   // 海洋馆用「水族馆」正名、庙会用「神社」正名——素材库里本来就有，只补别名。
   assert.equal(AQUARIUM.scene, '水族馆');
   assert.equal(FAIR.scene, '神社');
+  // 咖啡店在素材库里也确实有（scenes/咖啡店/），实读确认过。
+  assert.equal(VENUES.find((v) => v.id === 'cafe').scene, '咖啡店');
 
   const withScene = VENUES.filter(hasScene).map((v) => v.id).sort();
-  assert.deepEqual(withScene, ['amusement', 'aquarium', 'con', 'templefair'], '只有这四处该有 scene');
+  assert.deepEqual(withScene, ['amusement', 'aquarium', 'cafe', 'con', 'templefair'],
+    '有 scene 的应当是这五处；多一处就意味着替她编了一个库里可能没有的名字');
   for (const v of VENUES.filter((x) => !hasScene(x))) {
     assert.equal(v.scene, '', `${v.name} 的 scene 应当是空串`);
+  }
+});
+
+test('能吃能喝的场所：food 只写品类名，绝不写味道', () => {
+  const foodVenues = VENUES.filter(hasFood);
+  assert.deepEqual(foodVenues.map((v) => v.name).sort(), ['咖啡店', '奶茶店', '餐厅'].sort());
+  for (const v of foodVenues) {
+    assert.ok(v.food.label && v.food.verb, `${v.name} 缺 label/verb`);
+    assert.ok(v.food.items.length >= 4, `${v.name} 能吃能喝的太少`);
+    assert.ok(['吃', '喝'].includes(v.food.verb), `${v.name} 的 verb 只能是吃/喝`);
+    // 味道归「鱼的每一天」：这里出现任何口感词都说明数据放错了地方。
+    for (const item of v.food.items) {
+      assert.doesNotMatch(item, /香|甜度|顺滑|回甘|浓郁|弹牙|醇厚/,
+        `「${item}」写了味道——味道不该出现在这个插件的数据里`);
+    }
   }
 });
 
@@ -91,9 +110,9 @@ test('suggestPlaces 的 count 会被夹在 1–8，坏值回落 4；allPlaces �
   assert.equal(suggestPlaces(600, 99, []).length, 8, '上限是 8');
   assert.equal(suggestPlaces(600, 'abc', []).length, 4);
   assert.equal(suggestPlaces(600, 12, []).length, 8);
-  // 全列走 allPlaces：十二处全在，且开的排在前面。
+  // 全列走 allPlaces：全部都在，且开的排在前面。
   const all = allPlaces(hmToMin('12:00'), []);
-  assert.equal(all.length, 12);
+  assert.equal(all.length, VENUES.length);
   assert.equal(all[0].state, 'open');
   assert.ok(all.every((p, i) => i === 0 || all[i - 1].state !== 'closed' || p.state === 'closed'), '关着的必须都排在后面');
 });

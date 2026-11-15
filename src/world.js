@@ -25,12 +25,12 @@ import { fileURLToPath } from 'node:url';
 
 import { DEFAULTS, ID, configGroup, panelText, text } from './config.js';
 import {
-  CROWD_LABEL, KIND_LABEL, VENUES, allPlaces, findVenue, hasScene, hoursState, suggestPlaces,
+  CROWD_LABEL, KIND_LABEL, VENUES, allPlaces, findVenue, hasFood, hasScene, hoursState, suggestPlaces,
 } from './venues.js';
 import {
   buySouvenir, closeSession, dayIn, enterVenue, hmIn, isStale, minutesIn,
-  newState, normalizeState, photoSpotsFor, recentPlaceIds, souvenirsFor,
-  takePhoto, tripSummary, venueById, visitedText, wanderOnce,
+  newState, normalizeState, photoSpotsFor, recentPlaceIds, recordConsume,
+  souvenirsFor, takePhoto, tripSummary, venueById, visitedText, wanderOnce,
 } from './state.js';
 
 const ENV_PROMPT = fileURLToPath(new URL('./ENV_PROMPT.md', import.meta.url));
@@ -92,6 +92,11 @@ export const FUN_TOOL_DECLS = [
         note: { type: 'string', description: '逛到那儿你干了什么，一句话，可选。' },
         buy: { type: 'string', description: '顺手买了什么纪念品，可选。填 souvenir 的名字。' },
         photo: { type: 'string', description: '在哪儿拍了张照，可选。填 photoSpot 的名字。' },
+        consume: {
+          type: 'string',
+          description: '在咖啡店/奶茶店/餐厅吃了或喝了什么，可选。只能填这处地方真有的那几样。'
+            + '**只记名字不记味道**：味道要用 feast_menu / feast_eat 去「鱼的每一天」里点，那里才有九维口感。',
+        },
       },
       additionalProperties: false,
     },
@@ -333,6 +338,9 @@ export class FunWorld {
     if (state === 'closingSoon') lines.push(`（快到打烊时间了，${venue.hours.close} 就关，别排太长的队。）`);
     if (state === 'closed') lines.push(`（其实这会儿已经过了开放时段（${venue.hours.open}–${venue.hours.close}），当它开着逛也行，只是别写外头太亮。）`);
     lines.push(`能逛的：${venue.areas.join('、')}。`);
+    if (hasFood(venue)) {
+      lines.push(`这儿还能${venue.food.verb}：${venue.food.items.join('、')}。`);
+    }
     lines.push('一处一处来：fun_wander 逛一处（不填 area 就自动挑一个没逛过的），看到纪念品/拍照点会用得了。');
     return { text: lines.join('\n') };
   }
@@ -344,8 +352,7 @@ export class FunWorld {
     const session = this.#state.session;
     if (!session) {
       return { text: `你还没进门呢。先 fun_go 挑一处地方（${VENUES.slice(0, 4).map((v) => v.name).join(' / ')}…一共 ${VENUES.length} 处，fun_places 能看全），再一处一处逛。` };
-    }
-    const venue = venueById(session.placeId) ?? findVenue(VENUES, session.placeName);
+    }    const venue = venueById(session.placeId) ?? findVenue(VENUES, session.placeName);
     if (!venue) {
       return { text: `找不到「${session.placeName}」这处了（场所库改过？）。fun_home 收个摊吧。` };
     }
@@ -383,11 +390,11 @@ export class FunWorld {
 
     // 顺手买东西 / 拍照（同一个工具里两个小口子，少一个工具少一次往返）。
     //
-    // 先校验是不是这处地方真有的，**通过了才记**：在海洋馆买「吧唧」、拍「海报墙前」，
-    // 那是别处的东西，混进纪念册就成了一趟串味的记忆。
-    // 注意顺序：先判再记，否则回执会先「买了：吧唧」又说「没记」。
+    // 顺手买 / 拍照 / 吃点什么。三者都先判「这儿真有没有」再记，
+    // 不然回执会先「买了：吧唧」又说「没记」。
     const buyName = typeof args?.buy === 'string' ? args.buy.trim() : '';
     const photoName = typeof args?.photo === 'string' ? args.photo.trim() : '';
+    const eatName = typeof args?.consume === 'string' ? args.consume.trim() : '';
     const belongs = (list, name) => (list || []).some((x) => x.includes(name) || name.includes(x));
 
     const misfit = [];
@@ -401,6 +408,13 @@ export class FunWorld {
       if (belongs(venue.photoSpots, photoName)) shot = takePhoto(this.#state, photoName, now);
       else misfit.push(`「${photoName}」不是${venue.name}的拍照点，没记`);
     }
+    // 吃了/喝了什么：只记「这处地方供得出来」的品类，且**只记名字不记味道**。
+    let ate = null;
+    if (eatName) {
+      if (!hasFood(venue)) misfit.push(`${venue.name}没有能吃能喝的，没记`);
+      else if (!belongs(venue.food.items, eatName)) misfit.push(`「${eatName}」不是${venue.name}有的，没记`);
+      else ate = recordConsume(this.#state, venue, eatName, now);
+    }
     await this.#save();
 
     const lines = [`${venue.name} · ${picked.area}`, this.#areaLine(venue, picked.area)];
@@ -412,10 +426,18 @@ export class FunWorld {
     const goods = souvenirsFor(session, venue);
     if (bought) lines.push(bought.duplicate ? `（${bought.item} 你之前已经买过了。）` : `买了：${bought.item}。`);
     if (shot) lines.push(shot.duplicate ? `（${shot.spot} 已经拍过了。）` : `拍了张照：${shot.spot}。`);
+    if (ate) lines.push(ate.duplicate ? `（${ate.item} 你这一趟已经${ate.verb}过了。）` : `${ate.verb}了：${ate.item}。`);
     for (const m of misfit) lines.push(`（${m}。）`);
     // 候选放在「已经做了什么」之后：先说她干的事，再给下一步的选项。
     if (spots.length) lines.push(`还能拍的：${spots.slice(0, 3).join('、')}。`);
     if (goods.length) lines.push(`还能买的：${goods.slice(0, 4).join('、')}。`);
+
+    // ---- 吃 / 喝：本插件只说「这儿有得吃」，味道交给鱼的每一天 ----
+    if (hasFood(venue)) {
+      const f = venue.food;
+      lines.push(`这儿能${f.verb}：${f.items.join('、')}。`);
+      lines.push(this.#foodHint(venue));
+    }
 
     const total = venue.areas.length;
     const got = session.visited.length;
@@ -524,6 +546,35 @@ export class FunWorld {
 
   #homeHint() {
     return '想收就用 fun_home，回执会把这一趟收成一句话。';
+  }
+
+  /**
+   * 吃 / 喝那句：把味道这件事**交回给鱼的每一天**。
+   *
+   * 为什么不是本插件自己写味道：菜品库（824 道菜、九维口感、实吃描写）在
+   * `cortico-world-feast` 里。World 契约不允许一个 World 读另一个 World 的库，
+   * 认证会查「一个 World 依赖另一个扩展」。所以这里只做两件事：
+   *
+   *   1. 告诉她「这儿能吃到什么」（品类名，本插件自己的数据）
+   *   2. 告诉她「去 feast 点一道真的」——具体点哪道、什么味道，由她自己在
+   *      同一回合调 `feast_menu` / `feast_eat`，那是她的工具，不是我们的
+   *
+   * **没装 feast 怎么办**：她的 `feast_eat` 调不出来（工具不存在），于是她只知道
+   * 「我在这儿喝了杯奶茶」——没有九维、没有香气余韵。这不是 bug，是有意的降级：
+   * 与其编一个假的味道档案，不如只说她真知道的那件事。
+   *
+   * 本插件永远不会知道 feast 装没装（不该去探测别人的扩展），所以这段话
+   * **同时给出两条路**，让她按自己手头有什么走。
+   */
+  #foodHint(venue) {
+    const f = venue.food;
+    const sample = f.items.slice(0, 3).join(' / ');
+    return [
+      `想${f.verb}点什么就自己挑（${sample}…）。`,
+      // 措辞按「喝 / 吃」分开写，别拼出「喝了什么」这种别扭话。
+      `但味道别自己编：装了「鱼的每一天」就用 feast_menu 挑一道同类的、feast_eat 真${f.verb}一口，`
+      + `你才能说得出九维口感、香气和余韵；没装就只说在这儿${f.verb}了什么，一句人话，别形容味道。`,
+    ].join('');
   }
 
   // -------------------------------------------------------------------------
@@ -695,6 +746,8 @@ export class FunWorld {
         souvenirs: v.souvenirs,
         photoSpots: v.photoSpots,
         recent: recent.includes(v.id),
+        // 有吃有喝的地方：只给品类名和动词，**不给味道**（味道在鱼的每一天里）。
+        food: hasFood(v) ? { label: v.food.label, items: v.food.items, verb: v.food.verb } : null,
       };
     });
     // 开着的排前面；面板不截断，十二处都给它，前端自己分组。
@@ -722,6 +775,7 @@ export class FunWorld {
         visited: st.session.visited.map((v) => ({ area: v.area, note: v.note, hm: hmIn(tz, v.at) })),
         souvenirs: st.session.souvenirs,
         photos: st.session.photos,
+        ate: (st.session.ate ?? []).map((x) => ({ item: x.item, verb: x.verb, hm: hmIn(tz, x.at) })),
         events: st.session.events,
         venueAreaCount: venueById(st.session.placeId)?.areas.length ?? null,
       } : null,
@@ -750,6 +804,7 @@ export class FunWorld {
       visited: t.visited.map((v) => v.area),
       souvenirs: t.souvenirs,
       photos: t.photos,
+      ate: (t.ate ?? []).map((x) => ({ item: x.item, verb: x.verb })),
       events: t.events,
       summary: tripSummary(t),
     }));

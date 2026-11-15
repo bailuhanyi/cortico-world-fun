@@ -97,6 +97,23 @@ function normalizeVisited(v) {
   return out;
 }
 
+function normalizeAte(v) {
+  const arr = Array.isArray(v) ? v : [];
+  const out = [];
+  for (const it of arr) {
+    if (!it || typeof it !== 'object') continue;
+    const item = text(it.item, 30);
+    if (!item) continue;
+    out.push({
+      item,
+      verb: text(it.verb, 4) || '吃',
+      at: Number.isFinite(Number(it.at)) ? Number(it.at) : 0,
+    });
+    if (out.length >= 20) break;
+  }
+  return out;
+}
+
 function normalizeTrip(raw) {
   if (!raw || typeof raw !== 'object') return null;
   const placeId = text(raw.placeId, 40);
@@ -111,6 +128,7 @@ function normalizeTrip(raw) {
     visited: normalizeVisited(raw.visited),
     souvenirs: textList(raw.souvenirs, 12, 40),
     photos: textList(raw.photos, 12, 60),
+    ate: normalizeAte(raw.ate),
     events: textList(raw.events, 16, 120),
   };
 }
@@ -159,6 +177,7 @@ export function enterVenue(state, venue, nowMs, random = Math.random) {
     visited: [],
     souvenirs: [],
     photos: [],
+    ate: [],
     events: [],
   };
   state.session = session;
@@ -213,6 +232,28 @@ export function takePhoto(state, spot, nowMs) {
   return { spot: name, duplicate };
 }
 
+/**
+ * 记一样吃了/喝了的东西。
+ *
+ * **只记名字，不记味道。** 味道（九维、香气、口感、余韵）在「鱼的每一天」的菜品库里，
+ * 本插件不读它——所以这里存的是 `{ item, verb }` 这种「喝了杯奶茶」级别的事实。
+ * 没装 feast 时，这一条就是她对这趟唯一的饮食记忆，不能编。
+ *
+ * 返回 { item, verb, duplicate }。
+ */
+export function recordConsume(state, venue, item, nowMs) {
+  const s = state.session;
+  if (!s) return null;
+  const name = text(item, 30);
+  if (!name) return null;
+  if (!Array.isArray(s.ate)) s.ate = [];
+  const verb = text(venue?.food?.verb, 4) || '吃';
+  const duplicate = s.ate.some((x) => x.item === name);
+  if (!duplicate) s.ate.push({ item: name, verb, at: nowMs });
+  s.lastAt = nowMs;
+  return { item: name, verb, duplicate };
+}
+
 /** 买一件纪念品。返回 { item, duplicate }。 */
 export function buySouvenir(state, item, nowMs) {
   const s = state.session;
@@ -244,6 +285,7 @@ export function closeSession(state, nowMs, note = '') {
     visited: s.visited.map((v) => ({ ...v })),
     souvenirs: [...s.souvenirs],
     photos: [...s.photos],
+    ate: (s.ate ?? []).map((x) => ({ ...x })),
     events: [...s.events],
   };
   state.session = null;
@@ -273,6 +315,8 @@ export function tripSummary(trip) {
   if (trip.visited?.length) parts.push(`逛了${trip.visited.map((v) => v.area).join('、')}`);
   if (trip.souvenirs?.length) parts.push(`买了${trip.souvenirs.join('、')}`);
   if (trip.photos?.length) parts.push(`在${trip.photos.join('、')}拍了照`);
+  // 吃了/喝了什么：只说「喝了杯奶茶」，不说味道——味道不在这个插件里。
+  if (trip.ate?.length) parts.push(`${trip.ate.map((x) => `${x.verb}了${x.item}`).join('、')}`);
   return parts.join('，');
 }
 

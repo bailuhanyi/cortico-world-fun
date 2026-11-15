@@ -27,8 +27,8 @@ node tools/publish-check.mjs --online   # 市场收录口径 + npm 包名占用
 
 `prepublishOnly` 已经把上面这一串（除 `--online` 外）都串起来了，`npm publish` 之前自动跑一遍，任何一处失败就发不出去。
 
-当前状态（0.1.1）：**25 项通过、0 失败、1 警告**（没截 `screenshots`）；**59 个单测全绿**
-（venues 10 · state 13 · world 24 · panels 12）；打包 **14 个文件**，解包 190KB。
+当前状态（0.1.3）：**25 项通过、0 失败、1 警告**（没截 `screenshots`）；**70 个单测全绿**
+（venues 12 · state 13 · world 30 · panels 16，另有隔离审计 `check-isolation`）；打包 **14 个文件**。
 
 ---
 
