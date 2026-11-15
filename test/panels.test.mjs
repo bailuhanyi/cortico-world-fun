@@ -106,11 +106,17 @@ class Node {
 
   focus() { document.activeElement = this; }
 
-  /** 触发一个事件。 */
-  fire(type = 'click') {
-    for (const fn of this._listeners[type] ?? []) fn({ type, target: this });
+  /**
+   * 触发一个事件。
+   *
+   * 第二个参数可以带额外字段（例如键盘的 `key`）：真 DOM 的事件对象上有它，
+   * 桩里不传的话面板里 `ev.key === 'Enter'` 永远不成立，测出来是假绿。
+   */
+  fire(type = 'click', extra = null) {
+    const ev = { type, target: this, ...(extra ?? {}) };
+    for (const fn of this._listeners[type] ?? []) fn(ev);
     const prop = this[`on${type}`];
-    if (typeof prop === 'function') prop({ type, target: this });
+    if (typeof prop === 'function') prop(ev);
   }
 
   *walk() {
@@ -306,6 +312,111 @@ test('places 面板：点卡片能展开详情，再点收起', async () => {
 
   find('漫展').fire('click');
   await waitFor(() => !root.querySelector('.fun-detail'), '再点一次收起');
+});
+
+test('places 面板：详情贴在它自己那张卡下面，不是跑到列表末尾', async () => {
+  // 这条钉的是 0.1.1 的真实体验问题：详情被 append 到整个列表最后，
+  // 点第一张卡要滑过十二张才看得见。改成「就地展开」之后，必须保证：
+  //   ① 详情是紧跟在卡片后面的那个兄弟节点
+  //   ② 包住它们的格子跨满整行
+  const { mount } = await mountPanels();
+  const root = await mount('places');
+  await waitFor(() => root.querySelectorAll('.fun-card').length === 12, '画出十二处');
+
+  const firstCard = root.querySelectorAll('.fun-card')[0];
+  const firstName = firstCard.querySelector('.fun-card-name').textContent;
+  firstCard.fire('click');
+  await waitFor(() => root.querySelector('.fun-detail'), '展开详情');
+
+  const card = root.querySelector('.fun-card-active');
+  assert.ok(card, '展开的那张卡要带 active 标记');
+  assert.equal(card.querySelector('.fun-card-name').textContent, firstName, '展开的应当就是点的那张');
+
+  // ① 详情紧跟在卡后面（父节点是同一个 cell，且是它的下一个兄弟）
+  const cell = card.parentNode;
+  assert.ok(cell.classList.contains('fun-cell'), '卡片应当被包在 fun-cell 里');
+  assert.ok(cell.classList.contains('fun-cell-open'), '展开的 cell 要跨满整行');
+  const detailNode = cell.querySelector('.fun-detail');
+  assert.ok(detailNode, '详情要在这个 cell 里，而不是别的格子');
+  const kids = cell.childNodes;
+  const cardIdx = kids.indexOf(card);
+  assert.equal(kids.indexOf(detailNode), cardIdx + 1, '详情必须是卡片的下一个兄弟节点');
+
+  // ③ 详情不在列表最末尾（这是 0.1.1 的病）
+  const listBox = cell.parentNode;           // .fun-grid
+  const allCells = listBox.querySelectorAll('.fun-cell');
+  const lastCell = allCells[allCells.length - 1];
+  if (allCells.length > 1) {
+    assert.notEqual(cell, lastCell, '展开的格子不该被挪到最后一个');
+  }
+});
+
+test('places 面板：键盘也能开合（Enter / 空格）', async () => {
+  const { mount } = await mountPanels();
+  const root = await mount('places');
+  await waitFor(() => root.querySelectorAll('.fun-card').length === 12, '画出十二处');
+
+  const card = root.querySelectorAll('.fun-card').find(
+    (c) => c.querySelector('.fun-card-name').textContent === '博物馆');
+  assert.equal(card.getAttribute('role'), 'button', '卡片要能被当成按钮');
+  assert.equal(card.getAttribute('aria-expanded'), 'false');
+
+  card.fire('keydown', { key: 'Enter' });
+  await waitFor(() => root.querySelector('.fun-detail'), '回车展开');
+  assert.ok(root.querySelector('.fun-detail').textContent.includes('博物馆'));
+
+  const opened = root.querySelector('.fun-card-active');
+  assert.equal(opened.getAttribute('aria-expanded'), 'true');
+  opened.fire('keydown', { key: ' ' });
+  await waitFor(() => !root.querySelector('.fun-detail'), '空格收起');
+});
+
+test('places 面板：收起按钮点的不是卡片，不会把刚收起的又展开', async () => {
+  const { mount } = await mountPanels();
+  const root = await mount('places');
+  await waitFor(() => root.querySelectorAll('.fun-card').length === 12, '画出十二处');
+
+  root.querySelectorAll('.fun-card').find(
+    (c) => c.querySelector('.fun-card-name').textContent === '公园').fire('click');
+  await waitFor(() => root.querySelector('.fun-detail'), '展开');
+
+  const closeBtn = root.querySelectorAll('.fun-detail-close')[0];
+  assert.ok(closeBtn, '缺「收起」按钮');
+  closeBtn.fire('click');
+  await waitFor(() => !root.querySelector('.fun-detail'), '点「收起」应当收起');
+});
+
+test('places 面板：展开后滚的是整格（卡 + 详情），不是只滚卡片', async () => {
+  // 卡片恰好贴在视口底部时，只保证卡片可见 = 详情还在屏幕外，等于没解决。
+  // 桩里给 scrollIntoView 打桩，记下到底滚的是谁。
+  //
+  // 注意：面板每次开合都会 renderList() 重建节点，所以桩必须打在**重建之后**的节点上——
+  // 打在点击前的旧节点上，新节点没有这个方法，永远调不到（这条测试第一版就这么假绿过）。
+  const { mount } = await mountPanels();
+  const root = await mount('places');
+  await waitFor(() => root.querySelectorAll('.fun-card').length === 12, '画出十二处');
+
+  const scrolled = [];
+  // 全局兜底：任何节点被调 scrollIntoView 都记下来（重建出来的新节点也一样）。
+  const proto = Object.getPrototypeOf(root.querySelector('.fun-card'));
+  const original = proto.scrollIntoView;
+  proto.scrollIntoView = function patched(opts) {
+    scrolled.push({ cls: this.className, opts });
+  };
+
+  try {
+    root.querySelectorAll('.fun-card').find(
+      (c) => c.querySelector('.fun-card-name').textContent === '电玩城').fire('click');
+    await waitFor(() => root.querySelector('.fun-detail'), '展开');
+    await waitFor(() => scrolled.length > 0, '调了 scrollIntoView');
+  } finally {
+    proto.scrollIntoView = original;
+  }
+
+  const first = scrolled[0];
+  assert.ok(first.cls.includes('fun-cell'), `应当滚整格，实际滚的是：${first.cls}`);
+  assert.ok(first.cls.includes('fun-cell-open'), '滚的应当是那个已展开的格子');
+  assert.equal(first.opts?.block, 'nearest', '要用 nearest，已经在视野里就别跳');
 });
 
 test('places 面板：搜索能按名字/别名/标签筛', async () => {

@@ -44,24 +44,39 @@ const CSS = `
 .fun-stale{color:var(--f-warm)}
 
 /* 场所卡 */
-.fun-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(232px,1fr));gap:9px}
-.fun-card{border:1px solid var(--f-line);border-radius:var(--radius-sm,6px);padding:9px 11px;background:var(--f-card);cursor:pointer;transition:border-color .12s}
+.fun-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(232px,1fr));gap:9px;align-items:start}
+.fun-cell{display:flex;flex-direction:column;gap:0;min-width:0}
+/* 展开的那一格跨满整行：详情太窄会被挤成一条，读起来比原来更难受。 */
+.fun-cell-open{grid-column:1/-1}
+.fun-card{border:1px solid var(--f-line);border-radius:var(--radius-sm,6px);padding:9px 11px;background:var(--f-card);cursor:pointer;transition:border-color .12s,background .12s}
 .fun-card:hover{border-color:var(--f-accent)}
+.fun-card:focus-visible{outline:2px solid var(--f-accent);outline-offset:2px}
 .fun-card-closed{opacity:.62}
 .fun-card-open{border-left:3px solid var(--f-mint)}
 .fun-card-soon{border-left:3px solid var(--f-warm)}
+.fun-card-active{border-color:var(--f-accent);border-left-color:var(--f-accent);background:color-mix(in srgb,var(--f-accent) 7%,var(--f-card));border-bottom-left-radius:0;border-bottom-right-radius:0}
+.fun-card-active .fun-card-desc{-webkit-line-clamp:2}
 .fun-card-head{display:flex;justify-content:space-between;gap:8px;align-items:baseline}
 .fun-card-name{font-weight:600;font-size:13.5px}
-.fun-card-state{font-size:11.5px;color:var(--f-dim);white-space:nowrap}
+.fun-card-state{font-size:11.5px;color:var(--f-dim);white-space:nowrap;margin-left:auto}
 .fun-card-state-open{color:var(--f-mint)}
 .fun-card-state-soon{color:var(--f-warm)}
+.fun-card-arrow{font-size:11px;color:var(--f-dim);width:11px;text-align:center;flex:none}
+.fun-card-active .fun-card-arrow{color:var(--f-accent)}
 .fun-card-desc{font-size:12px;color:var(--f-dim);margin-top:4px;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
 .fun-card-foot{display:flex;gap:6px;flex-wrap:wrap;margin-top:7px;font-size:11.5px;color:var(--f-dim)}
 
-/* 详情展开 */
-.fun-detail{border:1px solid var(--f-accent);border-radius:var(--radius-sm,6px);padding:11px 13px;margin-top:9px;background:var(--f-card)}
-.fun-detail h4{margin:0 0 6px;font-size:14px}
-.fun-detail p{margin:0 0 7px;font-size:12.5px}
+/* 详情：紧贴它那张卡、占满整行（不再跑到列表末尾） */
+.fun-detail{border:1px solid var(--f-accent);border-top:none;border-radius:0 0 var(--radius-sm,6px) var(--radius-sm,6px);padding:10px 13px 11px;background:var(--f-card)}
+.fun-detail-top{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:5px}
+.fun-detail h4{margin:0;font-size:14px}
+.fun-detail-close{font-size:11.5px;padding:2px 8px;cursor:pointer;background:transparent;border:1px solid var(--f-line);border-radius:999px;color:var(--f-dim)}
+.fun-detail-close:hover{border-color:var(--f-accent);color:var(--f-ink)}
+.fun-detail p{margin:0 0 6px;font-size:12.5px}
+.fun-detail-cols{display:grid;grid-template-columns:minmax(150px,1fr) minmax(150px,1.2fr);gap:14px;align-items:start}
+.fun-detail-col{min-width:0}
+.fun-detail-cols .fun-sec{margin-top:0}
+@media (max-width:560px){.fun-detail-cols{grid-template-columns:1fr;gap:6px}}
 .fun-list{margin:5px 0 0;padding-left:17px;font-size:12.5px}
 .fun-list li{margin:2px 0}
 .fun-scene{font-size:12px;padding:5px 9px;border-radius:var(--radius-sm,6px);background:var(--f-soft);border:1px solid var(--f-line);margin-top:8px}
@@ -183,6 +198,12 @@ function mountPlaces(ctx) {
     const listBox = el('div');
     body.appendChild(listBox);
 
+    /**
+     * 重画列表。
+     *
+     * 展开的详情**就地插在它那张卡下面**，占满一整行（grid-column: 1/-1），
+     * 而不是像 0.1.1 那样统统追加到列表末尾——那样点第一张卡要滑过十二张才看得见。
+     */
     function renderList() {
       listBox.replaceChildren();
       const kw = keyword.trim().toLowerCase();
@@ -195,21 +216,24 @@ function mountPlaces(ctx) {
       const open = matched.filter((p) => p.state !== 'closed');
       const closed = matched.filter((p) => p.state === 'closed');
 
+      /** 一格里画卡；展开时它后面紧跟一条详情，并且这一格跨满整行。 */
+      const cell = (p) => {
+        const isOpen = expanded === p.id;
+        const wrap = el('div', { class: isOpen ? 'fun-cell fun-cell-open' : 'fun-cell' });
+        wrap.appendChild(card(p));
+        if (isOpen) wrap.appendChild(detail(p));
+        return wrap;
+      };
+
       const section = (title, items) => {
         if (!items.length) return;
         listBox.appendChild(el('div', { class: 'fun-sec', text: title }));
-        listBox.appendChild(el('div', { class: 'fun-grid' }, items.map(card)));
+        listBox.appendChild(el('div', { class: 'fun-grid' }, items.map(cell)));
       };
       section(kw ? `匹配到 ${matched.length} 处` : `开着的（${open.length}）`, open);
       section('已经关了', closed);
       if (!matched.length) {
         listBox.appendChild(el('div', { class: 'fun-empty', text: `没有匹配「${keyword}」的地方。` }));
-      }
-
-      // 展开的详情画在列表后面
-      if (expanded) {
-        const p = data.places.find((x) => x.id === expanded);
-        if (p) listBox.appendChild(detail(p));
       }
     }
 
@@ -218,15 +242,27 @@ function mountPlaces(ctx) {
       if (p.state === 'closed') cls.push('fun-card-closed');
       else if (p.state === 'closingSoon') cls.push('fun-card-soon');
       else cls.push('fun-card-open');
+      if (expanded === p.id) cls.push('fun-card-active');
       const stateCls = p.state === 'open' ? 'fun-card-state-open'
         : (p.state === 'closingSoon' ? 'fun-card-state-soon' : '');
       const node = el('div', {
         class: cls.join(' '),
-        onclick: () => { expanded = expanded === p.id ? null : p.id; renderList(); },
+        role: 'button',
+        tabindex: '0',
+        'aria-expanded': expanded === p.id ? 'true' : 'false',
+        onclick: () => toggle(p.id),
+        onkeydown: (ev) => {
+          // 键盘也能开合：卡片是 role=button，不能只认鼠标。
+          if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') {
+            ev.preventDefault?.();
+            toggle(p.id);
+          }
+        },
       },
       el('div', { class: 'fun-card-head' },
         el('span', { class: 'fun-card-name', text: p.name }),
-        el('span', { class: `fun-card-state ${stateCls}`, text: p.stateLabel })),
+        el('span', { class: `fun-card-state ${stateCls}`, text: p.stateLabel }),
+        el('span', { class: 'fun-card-arrow', text: expanded === p.id ? '⌃' : '⌄' })),
       el('div', { class: 'fun-card-desc', text: p.desc }),
       el('div', { class: 'fun-card-foot' },
         el('span', { text: `${p.hours.open}–${p.hours.close}` }),
@@ -236,22 +272,60 @@ function mountPlaces(ctx) {
       return node;
     };
 
+    /**
+     * 开合一张卡。
+     *
+     * 重画之后把刚展开的那一块滚进视野——否则点上面第一张、展开的内容在下面一屏以外，
+     * 用户会以为自己点错了。`block: 'nearest'` 保证「已经看得见就不动」，
+     * 不会因为点一张本来就在屏幕里的卡而把页面跳一下。
+     */
+    function toggle(id) {
+      const wasOpen = expanded === id;
+      expanded = wasOpen ? null : id;
+      renderList();
+      if (!wasOpen) {
+        // 滚的是**整格**（卡 + 详情），不是只滚卡片：
+        // 卡片恰好贴在视口底部时，只保证卡片可见等于详情还在屏幕外。
+        const active = listBox.querySelector('.fun-card-active');
+        const target = active?.parentNode ?? active;
+        // 真 DOM 有 scrollIntoView；测试桩没有，判一下再用。
+        if (target && typeof target.scrollIntoView === 'function') {
+          target.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        }
+      }
+    }
+
     const detail = (p) => {
       const d = el('div', { class: 'fun-detail' },
-        el('h4', { text: p.name }),
+        el('div', { class: 'fun-detail-top' },
+          el('h4', { text: p.name }),
+          el('button', {
+            class: 'fun-detail-close',
+            type: 'button',
+            title: '收起',
+            onclick: (ev) => {
+              // 卡片自己也绑了 onclick：不拦住的话会先收起再被卡片重新展开。
+              ev?.stopPropagation?.();
+              expanded = null;
+              renderList();
+            },
+          }, '收起')),
         el('p', { class: 'fun-dim', text: `${p.kindLabel} · ${p.crowdLabel} · ${p.hours.open}–${p.hours.close} · ${p.stateLabel}` }),
-        el('div', { class: 'fun-sec', text: '能逛的' }),
-        el('ul', { class: 'fun-list' }, p.areas.map((a) => el('li', { text: a }))),
-        el('div', { class: 'fun-sec', text: '纪念品' }),
-        el('div', { class: 'fun-chips' }, p.souvenirs.map((s) => el('span', { class: 'fun-chip', text: s }))),
-        el('div', { class: 'fun-sec', text: '拍照点' }),
-        el('div', { class: 'fun-chips' }, p.photoSpots.map((s) => el('span', { class: 'fun-chip', text: s }))),
+        // 三块并成一排：能逛的 / 纪念品 / 拍照点，省纵向高度（原来三个小节摞起来很高）。
+        el('div', { class: 'fun-detail-cols' },
+          el('div', { class: 'fun-detail-col' },
+            el('div', { class: 'fun-sec', text: '能逛的' }),
+            el('ul', { class: 'fun-list' }, p.areas.map((a) => el('li', { text: a })))),
+          el('div', { class: 'fun-detail-col' },
+            el('div', { class: 'fun-sec', text: '纪念品' }),
+            el('div', { class: 'fun-chips' }, p.souvenirs.map((s) => el('span', { class: 'fun-chip', text: s }))),
+            el('div', { class: 'fun-sec', text: '拍照点' }),
+            el('div', { class: 'fun-chips' }, p.photoSpots.map((s) => el('span', { class: 'fun-chip', text: s }))))),
         el('div', { class: 'fun-scene' },
           p.hasScene
             ? el('span', {}, '生图时 ', el('b', { text: `scene 填「${p.scene}」` }), `，outfits 建议「${p.outfit}」`)
             : el('span', {}, '素材库里没有这处的场景，生图时 ', el('b', { text: 'scene 不用填' }), '，把地方写进 prompt 就行')));
 
-      // ---- 本地小工具：拆掉它自己的 onclick 监听没意义，直接按 id 查 ----
       return d;
     };
 
