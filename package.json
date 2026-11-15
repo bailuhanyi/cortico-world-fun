@@ -1,0 +1,46 @@
+{
+  "name": "cortico-world-fun",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "娱乐时间 —— 给 Coopanion 桌宠十二处真能去逛的地方：游乐场、海洋馆、庙会、漫展、电影院、动物园、公园、电玩城、KTV、博物馆、猫咖、爬山。进门、逛摊位、买纪念品、拍张照、收摊记一笔。",
+  "license": "MIT",
+  "author": "青",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bailuhanyi/cortico-world-fun.git"
+  },
+  "homepage": "https://github.com/bailuhanyi/cortico-world-fun#readme",
+  "bugs": {
+    "url": "https://github.com/bailuhanyi/cortico-world-fun/issues"
+  },
+  "keywords": ["cortico-world", "cortico", "coopanion", "fun", "outing", "amusement", "companion"],
+  "engines": { "node": ">=22" },
+  "main": "./src/index.js",
+  "exports": { ".": "./src/index.js" },
+  "files": ["src", "assets", "describe.json", "CHANGELOG.md", "README.md", "PUBLISHING.md"],
+  "scripts": {
+    "test": "node test/venues.test.mjs && node test/state.test.mjs && node test/world.test.mjs",
+    "verify": "node tools/fix-ps1-bom.mjs install.ps1 && node tools/check-prompt.mjs && node tools/smoke.mjs && node tools/make-describe.mjs --check",
+    "describe": "node tools/make-describe.mjs",
+    "check:publish": "node tools/publish-check.mjs --online",
+    "prepublishOnly": "node test/venues.test.mjs && node test/state.test.mjs && node test/world.test.mjs && node tools/check-prompt.mjs && node tools/smoke.mjs && node tools/make-describe.mjs --check && node tools/publish-check.mjs --online"
+  },
+  "cortico": {
+    "kind": "world",
+    "api": 6,
+    "displayName": "娱乐时间",
+    "icon": "assets/icon.png",
+    "describe": "describe.json",
+    "tags": ["companion"],
+    "locales": {
+      "zh": {
+        "displayName": "娱乐时间",
+        "description": "给 Coo 十二处能真去逛的地方：游乐场、海洋馆、庙会、漫展、电影院、动物园、公园、电玩城、KTV、博物馆、猫咖、爬山。她说一声进门，一处一处地逛项目、抽个签、买点纪念品、拍张照，收摊时回执把这一趟收成一句话，接着去记进自己的日程。不装、不配、库挪走了也照样能逛。"
+      },
+      "en": {
+        "displayName": "Fun time",
+        "description": "Twelve places she can actually go: an amusement park, an aquarium, a temple fair, a fan convention, a cinema, a zoo, a park, an arcade, a karaoke box, a museum, a cat cafe, a hike. She walks in, wanders one spot at a time, buys a souvenir, takes a photo, and the closing receipt sums the trip up in one line she can log into her own day. No other extension required; it still works if the image library is gone."
+      }
+    }
+  }
+}

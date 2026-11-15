@@ -1,0 +1,456 @@
+/**
+ * 内置场所库：十二处地方，开箱即用，不依赖任何别的 World。
+ *
+ * 关键设计（`FUN-联动方案.md` §三，2026-11-15 修订）：
+ *
+ *   - `scene` **是可选的**。有值 = 素材库里确实有这个场景正名，收摊回执可以
+ *     叫她「scene 填「X」」；空串 = 素材库没有，那我们就不提，只让她按当时的
+ *     样子写——**绝不硬编一个库里没有的名字**（那会提示「库里没找到」，等于白填）。
+ *   - 但它只是一个字符串。这个模块**不读素材库、不做解析**，最多少说一句话。
+ *   - `desc` 只写**空间与陈设**，不写她在干什么、什么表情——写了她会跟
+ *     imggen 的 `pose` / `expression` 打架（扩充方案 §7 实测）。
+ *   - `recommendedOutfit` 是文案建议，**不替她填参数**。
+ *   - 别名不重复场景库里已有的名字，免得 feast 的 wardrobeText 列出来两行一样。
+ *
+ * 前四处（游乐场/海洋馆/庙会/漫展）跟生图素材库对得上；后面八处是纯玩的地方，
+ * 素材库里没有对应场景，也就不提 scene——这是有意的，不是漏了。
+ */
+
+/**
+ * @typedef {object} Venue
+ * @property {string} id       稳定 id（`fun_go` 的 `place` 也认它）
+ * @property {string} kind     大类
+ * @property {string} name     正名
+ * @property {string[]} aliases 别名
+ * @property {string[]} tags
+ * @property {string} desc     空间 + 陈设 + 配色，一段话
+ * @property {string} scene    对应 imggen-library/scenes 的正名；**空串 = 库里没有**
+ * @property {string} recommendedOutfit 推荐穿搭（只是建议）
+ * @property {string} crowd    拥挤度：quiet / normal / packed
+ * @property {{open:string, close:string}} hours 开放时段（24 小时制，close < open 表示跨夜）
+ * @property {string[]} areas  能逛的项目/区域
+ * @property {string[]} souvenirs 纪念品
+ * @property {string[]} photoSpots 拍照点
+ * @property {string[]} randomEvents 随机小事件
+ */
+
+/** @type {Venue[]} */
+export const VENUES = [
+  // ---- 跟生图素材库对得上的四处 ----
+  {
+    id: 'amusement',
+    kind: 'amusement',
+    name: '游乐场',
+    aliases: ['游乐园', '主题乐园', '过山车'],
+    tags: ['户外', '白天', '热闹', '走路多'],
+    desc: '游乐场：彩色铁架和彩旗在头顶交错，水泥地上画着褪色的排队线，远处过山车爬坡时链条咯咯响；摩天轮一圈一圈慢慢转，旋转木马的音乐一直重复同一段；傍晚彩灯会全亮起来，铁架上的灯泡沿着曲线一路铺到门口。整体颜色是那种塑料感的鲜亮——红黄蓝，加一点晚霞的橘。',
+    scene: '游乐场',
+    recommendedOutfit: '外出外套',
+    crowd: 'packed',
+    hours: { open: '09:00', close: '21:00' },
+    areas: ['过山车', '旋转木马', '摩天轮', '鬼屋', '碰碰车', '套圈摊位', '气球摊', '小吃车'],
+    souvenirs: ['气球', '棉花糖', '旋转木马票根', '一枚纪念币'],
+    photoSpots: ['摩天轮轿厢里', '旋转木马前', '彩灯亮起来的铁架下'],
+    randomEvents: [
+      '排队排了四十分钟，轮到的时候广播说设备临时检修',
+      '过山车冲下去那一下喊得嗓子发干，下来喝了半瓶水',
+      '在套圈摊套中了一个歪歪的小熊',
+      '摩天轮停在了最高点，风把轿厢吹得轻轻晃',
+      '小孩的气球飞了，一路看着它飘过摩天轮',
+    ],
+  },
+  {
+    id: 'aquarium',
+    kind: 'aquarium',
+    name: '海洋馆',
+    aliases: ['水族馆', '看鱼', '海底世界'],
+    tags: ['室内', '凉快', '安静', '蓝光'],
+    desc: '海洋馆：蓝色玻璃隧道从头顶拱过去，鲸鲨的影子在头顶慢慢滑过，两侧水缸泛着幽蓝的光；地面是深灰的反光地砖，脚步声在那里格外清楚；水母缸一开一合，泛着很柔的粉色光点；空气里有一点潮湿的咸味。整体是深蓝 + 幽蓝 + 一点暖橙的应急灯。',
+    scene: '水族馆',
+    recommendedOutfit: '海鲸',
+    crowd: 'normal',
+    hours: { open: '09:30', close: '18:00' },
+    areas: ['鲸豚湾', '海底隧道', '水母缸', '企鹅馆', '触摸池', '纪念品店'],
+    souvenirs: ['鲸鱼挂件', '一枚贝壳', '水母小夜灯', '企鹅贴纸'],
+    photoSpots: ['海底隧道正中间', '水母缸前', '鲸豚湾的玻璃幕墙前'],
+    randomEvents: [
+      '一条大鲸从头顶慢慢游过去，影子把整条隧道盖了一下',
+      '看到有人在水母缸前面站了十分钟一动不动',
+      '触摸池里摸到一下海星，凉凉的',
+      '企鹅馆正好赶上喂食，一群企鹅扑通扑通全下了水',
+      '在纪念品店犹豫了很久，最后挑了那个鲸鱼挂件',
+    ],
+  },
+  {
+    id: 'templefair',
+    kind: 'templefair',
+    name: '庙会',
+    aliases: ['夏日祭', '夏夜祭', '逛庙会', '夜市'],
+    tags: ['傍晚', '热闹', '灯笼', '小吃'],
+    desc: '庙会：朱红鸟居立在石阶下，两侧石灯笼和榉树，石阶上落着几片叶子；拜殿前挂着注连绳与签架，远处有山影；沿街一路是纸灯笼，暖橙的光把地面照成一格一格，摊位上面飘着热气，空气里是糖炒栗子和烤鱿鱼混在一起的味道。整体朱红 + 石灰 + 深绿，加上灯笼的暖橙。',
+    scene: '神社',
+    recommendedOutfit: '和风浴衣',
+    crowd: 'packed',
+    hours: { open: '17:00', close: '22:00' },
+    areas: ['参道摊位', '捞金鱼', '套圈', '抽签处', '小吃摊', '太鼓台'],
+    souvenirs: ['一支签', '御守', '捞到的金鱼', '苹果糖'],
+    photoSpots: ['鸟居正下方', '灯笼廊下', '太鼓台侧面'],
+    randomEvents: [
+      '抽了一支签，是「小吉」',
+      '捞金鱼捞上来两条，纸破了第三条跑了',
+      '苹果糖咬第一口把嘴唇粘住了',
+      '太鼓敲起来的时候整条街的声音都变了一层',
+      '碰到认识的人，站在灯笼底下聊了一会儿',
+    ],
+  },
+  {
+    id: 'con',
+    kind: 'con',
+    name: '漫展',
+    aliases: ['同人展', '展子', '逛展', 'comic con'],
+    tags: ['室内', '人多', '排队', '海报'],
+    desc: '漫展：巨大的展馆里一排排白色隔板搭成摊位，顶部是冷白的工业照明，地面是灰色地胶；墙上到处贴满海报和色纸，通道里排着队，队伍弯了好几道弯；空气里混着新印刷品的油墨味和一点汗味，广播隔几分钟报一次某个舞台的时间。整体是白 + 大片高饱和的海报色。',
+    scene: '漫展',
+    recommendedOutfit: '宅卫衣',
+    crowd: 'packed',
+    hours: { open: '10:00', close: '18:00' },
+    areas: ['同人展台', '企业馆', '舞台区', '排队的通道', '海报墙', '餐饮区'],
+    souvenirs: ['同人本', '吧唧', '色纸', '文件夹', '立牌'],
+    photoSpots: ['海报墙前', '立牌旁边', '展馆门口的横幅下'],
+    randomEvents: [
+      '排本子排了一个多小时，队伍弯了三道弯',
+      '在一个小摊上翻到一本意外合口味的',
+      '吧唧挑了半天，最后把一整组都买了',
+      '舞台区正好在搞活动，凑过去看了一会儿',
+      '在展台前遇到同好，聊了很久',
+    ],
+  },
+
+  // ---- 纯玩的地方：素材库里没有这些场景，scene 留空 ----
+  {
+    id: 'cinema',
+    kind: 'cinema',
+    name: '电影院',
+    aliases: ['看电影', '影院', '看片'],
+    tags: ['室内', '夜', '安静', '坐着'],
+    desc: '电影院：放映厅里座椅是深红绒布，两侧墙上是吸音的深色软包，银幕亮起来以后整个厅只剩那一片光；散场通道铺着地毯，大厅的爆米花机一直在响，空气里有黄油味。整体是深红 + 暗金 + 银幕的白光。',
+    scene: '',
+    recommendedOutfit: '外出外套',
+    crowd: 'normal',
+    hours: { open: '10:00', close: '23:00' },
+    areas: ['取票厅', '影厅', '爆米花柜台', '走廊的海报墙', '最后一排', '散场通道'],
+    souvenirs: ['电影票根', '爆米花桶', '海报', '联名饮料杯'],
+    photoSpots: ['大厅的立牌前', '空影厅里', '海报墙下面'],
+    randomEvents: [
+      '前排两个人在压低声音讨论剧情',
+      '买到最后一桶焦糖爆米花',
+      '电影放到一半有小孩哭了',
+      '片尾字幕放完灯才亮，全厅没几个人走',
+      '散场出来发现外面下雨了',
+    ],
+  },
+  {
+    id: 'zoo',
+    kind: 'zoo',
+    name: '动物园',
+    aliases: ['看动物', '动物园里'],
+    tags: ['户外', '白天', '走路多', '小孩多'],
+    desc: '动物园：林荫道两侧是刷成浅绿的铁栏杆，熊猫馆的玻璃上有淡淡的水渍，猴山的石头被磨得发亮；长颈鹿区的草坡上有一排木栏，儿童乐园的旋转飞机一直在转；空气里有一点草料和湿土的味道。整体是浅绿 + 土黄 + 水泥灰。',
+    scene: '',
+    recommendedOutfit: '外出外套',
+    crowd: 'packed',
+    hours: { open: '08:30', close: '17:30' },
+    areas: ['熊猫馆', '长颈鹿区', '猴山', '爬行动物馆', '园内小火车', '儿童乐园'],
+    souvenirs: ['熊猫玩偶', '动物贴纸', '一张门票', '糖画'],
+    photoSpots: ['长颈鹿区的木栏前', '猴山旁的长椅上', '园区大门口'],
+    randomEvents: [
+      '熊猫一直背对着人啃竹子',
+      '猴子抢了游客的帽子',
+      '长颈鹿低下头凑到栏杆边',
+      '走到一半下起小雨，躲进爬行动物馆',
+      '小火车排队排了半小时',
+    ],
+  },
+  {
+    id: 'park',
+    kind: 'park',
+    name: '公园',
+    aliases: ['湖边', '逛公园'],
+    tags: ['户外', '白天', '松弛', '免费'],
+    desc: '公园：湖边的柳树垂到水面上，长椅是刷成深绿的老木头，大草坪中间有一圈被踩秃的草；小桥是水泥栏杆，桥下有鸭子在浮；树下有人摆开棋盘，旁边围着两三个人。整体是深绿 + 灰白 + 水面的一点反光。',
+    scene: '',
+    recommendedOutfit: '盛夏',
+    crowd: 'normal',
+    hours: { open: '06:00', close: '21:00' },
+    areas: ['湖边长椅', '大草坪', '花坛', '小桥上', '儿童游乐区', '老树下的棋盘'],
+    souvenirs: ['一包鱼食', '棉花糖', '一小束野花'],
+    photoSpots: ['小桥上', '大草坪的树下', '湖边栏杆前'],
+    randomEvents: [
+      '有老人在下棋，站在旁边看了一会儿',
+      '湖里的鸭子一路跟着走',
+      '一阵风把帽子吹跑了',
+      '草坪上有人在放风筝',
+      '长椅旁边有人在喂猫',
+    ],
+  },
+  {
+    id: 'arcade',
+    kind: 'arcade',
+    name: '电玩城',
+    aliases: ['街机厅', '游戏厅', '电玩'],
+    tags: ['室内', '霓虹', '热闹', '夜'],
+    desc: '电玩城：进门就是一整面跑马灯的招牌，地面铺着深色地毯，机台的屏幕光在墙上晃；抓娃娃机一排排立着，玻璃里堆着毛绒玩偶，投篮机的球砸在铁框上一直响；兑换柜台后面的奖品墙从上到下全是小挂件。整体是霓虹紫 + 荧光粉 + 机台的冷光。',
+    scene: '',
+    recommendedOutfit: '宅卫衣',
+    crowd: 'packed',
+    hours: { open: '10:00', close: '23:00' },
+    areas: ['抓娃娃机', '赛车机', '打地鼠', '音游机台', '投篮机', '兑换柜台'],
+    souvenirs: ['抓到的娃娃', '一串兑换券', '一张贴纸', '小挂件'],
+    photoSpots: ['音游机台前', '抓娃娃机的玻璃前', '霓虹走廊里'],
+    randomEvents: [
+      '抓娃娃抓了七次才中',
+      '音游机台旁边有人打出一首全连',
+      '兑换柜台排了二十分钟',
+      '赛车机上被一个小孩赢了',
+      '投篮机一直差最后一球',
+    ],
+  },
+  {
+    id: 'ktv',
+    kind: 'ktv',
+    name: 'KTV',
+    aliases: ['唱歌', 'K歌', '卡拉OK'],
+    tags: ['室内', '夜', '吵', '唱'],
+    desc: 'KTV：包厢是深色软包墙，天花板上嵌着一圈彩色灯带，点歌屏斜挂在墙角，屏幕一直亮着；沙发是暗红皮面，茶几上摆着果盘和几个杯子；走廊两侧全是包厢门，隔音不好，走过去能听到几段不同的歌。整体是暗紫 + 暗红 + 灯带的彩色。',
+    scene: '',
+    recommendedOutfit: '外出外套',
+    crowd: 'normal',
+    hours: { open: '18:00', close: '02:00' },
+    areas: ['包厢沙发', '点歌屏', '果盘推车', '走廊的镜子', '自助饮料台', '吧台'],
+    souvenirs: ['一张点歌单', '一杯特调', '一支荧光棒'],
+    photoSpots: ['包厢的沙发上', '走廊的镜子前', '点歌屏前'],
+    randomEvents: [
+      '唱到高音的地方破音了',
+      '隔壁包厢的声音比这边还大',
+      '点了一首只会副歌的歌',
+      '有一首唱完，包厢里安静了两秒才有人鼓掌',
+      '自助饮料台的柠檬水没了',
+    ],
+  },
+  {
+    id: 'museum',
+    kind: 'museum',
+    name: '博物馆',
+    aliases: ['看展', '美术馆', '逛博物馆'],
+    tags: ['室内', '白天', '安静', '走路少'],
+    desc: '博物馆：展厅是高挑的白墙和水泥地，展柜里打着细窄的射灯，玻璃上能照见自己的影子；中庭有天窗，光从上面落下来，长椅上坐着几个人；文创店在出口旁边，货架上摆着一排帆布袋和冰箱贴。整体是白 + 浅灰 + 展柜的暖黄。',
+    scene: '',
+    recommendedOutfit: '通勤衬衫',
+    crowd: 'normal',
+    hours: { open: '09:00', close: '17:00' },
+    areas: ['青铜器展厅', '陶瓷展厅', '临展', '中庭长椅', '文创店'],
+    souvenirs: ['一枚冰箱贴', '文创帆布袋', '展览手册', '一张明信片'],
+    photoSpots: ['中庭的天光下', '青铜器展柜前', '门口的台阶上'],
+    randomEvents: [
+      '在一件展品前站了很久',
+      '讲解员带着一队小孩经过',
+      '文创店买到最后一个帆布袋',
+      '临展的灯坏了一盏，那一片有点暗',
+      '在展厅里遇到一个也在发呆的人',
+    ],
+  },
+  {
+    id: 'catcafe',
+    kind: 'cafe',
+    name: '猫咖',
+    aliases: ['猫咖啡馆', '撸猫', '猫咖店'],
+    tags: ['室内', '安静', '猫', '坐着'],
+    desc: '猫咖：进门要换拖鞋，地面铺着浅色木地板，靠窗是一排软坐垫，猫爬架顶到天花板；吧台后面一直在磨豆子，墙上挂着几张猫咪的照片；空气里有咖啡味和一点猫砂的味道。整体是原木 + 米白 + 暖黄的灯。',
+    scene: '',
+    recommendedOutfit: '居家针织服',
+    crowd: 'quiet',
+    hours: { open: '11:00', close: '21:00' },
+    areas: ['靠窗的坐垫', '猫爬架', '吧台', '书架角', '猫咪休息区'],
+    souvenirs: ['一包猫条', '猫咪明信片', '店里的杯垫'],
+    photoSpots: ['猫爬架旁边', '靠窗的坐垫上', '吧台前的暖灯下'],
+    randomEvents: [
+      '有只橘猫趴在腿上不肯走',
+      '猫把桌上的吸管拨到了地上',
+      '店员抱来一只刚睡醒的小猫',
+      '猫粮一响，五只猫全围过来',
+      '在书架角翻到一本旧漫画',
+    ],
+  },
+  {
+    id: 'hiking',
+    kind: 'nature',
+    name: '爬山',
+    aliases: ['登山', '上山', '爬山去'],
+    tags: ['户外', '早起', '累', '风景'],
+    desc: '爬山：山脚下是水泥台阶，两侧长满蕨类和矮竹，石阶边缘有青苔；半山腰有一座木凉亭，柱子被摸得发亮；再往上是窄土路，树根露在地面上；山顶是一块大石头，风从四面过来。整体是深绿 + 石灰 + 天光。',
+    scene: '',
+    recommendedOutfit: '晨跑',
+    crowd: 'quiet',
+    hours: { open: '05:30', close: '17:00' },
+    areas: ['山脚入口', '石阶', '半山腰的凉亭', '观景台', '山顶的大石头', '下山的小路'],
+    souvenirs: ['一张拍立得', '山顶买的一瓶水', '一根登山杖'],
+    photoSpots: ['半山腰的凉亭里', '观景台的栏杆前', '山顶的大石头上'],
+    randomEvents: [
+      '石阶上遇到一只不怕人的猫',
+      '半山腰起雾了，前后都看不见',
+      '山顶风大到站不稳',
+      '下山时膝盖开始发酸',
+      '在凉亭里歇了十分钟才继续',
+    ],
+  },
+];
+
+/** 大类的中文标签。 */
+export const KIND_LABEL = {
+  amusement: '游乐场',
+  aquarium: '海洋馆',
+  templefair: '庙会',
+  con: '漫展',
+  cinema: '电影院',
+  zoo: '动物园',
+  park: '公园',
+  arcade: '电玩城',
+  ktv: 'KTV',
+  museum: '博物馆',
+  cafe: '猫咖',
+  nature: '户外',
+};
+
+/** 拥挤度的中文说法。 */
+export const CROWD_LABEL = {
+  quiet: '人不多',
+  normal: '人不算多',
+  packed: '人很多',
+};
+
+/**
+ * 这处地方在生图素材库里有没有对应的场景。
+ *
+ * 有 → 收摊回执可以叫她「scene 填「X」」；
+ * 没有 → 一个字都不提，免得她填了个库里没有的名字（那会提示「库里没找到」）。
+ */
+export function hasScene(venue) {
+  return typeof venue?.scene === 'string' && venue.scene.trim() !== '';
+}
+
+const norm = (v, max) => (typeof v === 'string' ? v.replace(/\s+/g, ' ').trim().slice(0, max) : '');
+
+/**
+ * 在场所库里找一个地方：正名 > 别名 > id > 唯一包含。
+ * 找不到返回 null（不抛错——她随口说个地方，不该炸）。
+ */
+export function findVenue(places, name) {
+  const n = norm(name, 60);
+  if (!n) return null;
+  const list = Array.isArray(places) ? places : VENUES;
+  let hit = list.find((p) => p.name === n);
+  if (hit) return hit;
+  hit = list.find((p) => p.id === n);
+  if (hit) return hit;
+  hit = list.find((p) => p.aliases.includes(n));
+  if (hit) return hit;
+  // 包含匹配：只在不歧义时取。
+  const lower = n.toLowerCase();
+  const contains = list.filter((p) => p.name.includes(n)
+    || p.aliases.some((a) => a.includes(n))
+    || n.includes(p.name)
+    || p.id.toLowerCase() === lower);
+  return contains.length === 1 ? contains[0] : null;
+}
+
+/** 把 HH:MM 变成分钟数；坏值返回 null。 */
+export function hmToMin(hm) {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(String(hm ?? '').trim());
+  if (!m) return null;
+  const h = Number(m[1]);
+  const mi = Number(m[2]);
+  if (h > 23 || mi > 59) return null;
+  return h * 60 + mi;
+}
+
+/**
+ * 这个点去这儿合不合适：`open` / `closingSoon` / `closed`。
+ *
+ * `close <= open` 视为跨夜（KTV 18:00–02:00、以后可能还有通宵的场）。
+ */
+export function hoursState(venue, nowMin) {
+  const open = hmToMin(venue?.hours?.open);
+  const close = hmToMin(venue?.hours?.close);
+  if (open === null || close === null) return 'open';
+  const m = Number(nowMin);
+  if (!Number.isFinite(m)) return 'open';
+  const overnight = close <= open;
+  const inside = overnight ? (m >= open || m < close) : (m >= open && m < close);
+  if (!inside) return 'closed';
+  // 打烊前一小时算「快关了」：还能去，但别排到一个多小时的项目。
+  const left = overnight
+    ? (m >= open ? 1440 - m + close : close - m)
+    : close - m;
+  return left <= 60 ? 'closingSoon' : 'open';
+}
+
+/**
+ * 挑今天能去的几个：先按「此刻开着」筛，再按拥挤度、是否多走一天排。
+ *
+ * 返回 `[{ venue, state }]`，state 是 hoursState 的结果。
+ * `avoid` 里放过最近去过的 id，排在后面而不是删掉——她想去还是能去。
+ * `count` 夹在 1–8；要列全部就传 `limit` 或者用 `allPlaces()`。
+ */
+export function suggestPlaces(nowMin, count = 4, avoid = []) {
+  const ranked = rankPlaces(nowMin, avoid);
+  // count 的夹取写明白：坏值（NaN / 对象 / 空）才回落 4，0 是真的 0（夹到 1）。
+  const raw = Number(count);
+  const n = Number.isFinite(raw) ? Math.max(1, Math.min(8, Math.round(raw))) : 4;
+  return ranked.slice(0, n);
+}
+
+/** 全部场所按「开着 > 快关了 > 关着」排好，不截断（`fun_places all=true` 用）。 */
+export function allPlaces(nowMin, avoid = []) {
+  return rankPlaces(nowMin, avoid);
+}
+
+function rankPlaces(nowMin, avoid = []) {
+  const avoidSet = new Set(Array.isArray(avoid) ? avoid : []);
+  const scored = VENUES.map((venue, idx) => {
+    const state = hoursState(venue, nowMin);
+    // 开着的最先；快关了的其次；关着的排最后（但还在列表里，她自己判断）。
+    const stateRank = state === 'open' ? 0 : (state === 'closingSoon' ? 1 : 2);
+    const avoidRank = avoidSet.has(venue.id) ? 1 : 0;
+    const crowdRank = venue.crowd === 'packed' ? 2 : (venue.crowd === 'normal' ? 1 : 0);
+    return { venue, state, rank: [avoidRank, stateRank, crowdRank, idx] };
+  });
+  scored.sort((a, b) => {
+    for (let i = 0; i < a.rank.length; i += 1) {
+      if (a.rank[i] !== b.rank[i]) return a.rank[i] - b.rank[i];
+    }
+    return 0;
+  });
+  return scored.map(({ venue, state }) => ({ venue, state }));
+}
+
+/** 从数组里按随机函数取一个；空数组返回 null。 */
+export function pickOne(list, random = Math.random) {
+  if (!Array.isArray(list) || !list.length) return null;
+  const i = Math.floor(random() * list.length) % list.length;
+  return list[i];
+}
+
+/**
+ * 取 n 个不重复的（顺序随机）。用于「这一趟逛了哪几处」「买了什么」。
+ * 比 pickOne 多次更靠谱：不会一处连着去三遍。
+ */
+export function pickSome(list, n, random = Math.random) {
+  const pool = Array.isArray(list) ? [...list] : [];
+  const want = Math.max(0, Math.min(pool.length, Math.round(Number(n) || 0)));
+  const out = [];
+  while (out.length < want && pool.length) {
+    const i = Math.floor(random() * pool.length) % pool.length;
+    out.push(pool.splice(i, 1)[0]);
+  }
+  return out;
+}
