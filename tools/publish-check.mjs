@@ -129,6 +129,14 @@ for (const need of ['src', 'assets', 'describe.json', 'CHANGELOG.md', 'README.md
   if (files.includes(need)) pass(`files 含 ${need}`);
   else fail(`files 含 ${need}`, '没白名单的话包里没有它');
 }
+// 面板 bundle：声明了 webUiClient 就必须真的进包，否则装到 Coo 里点进去是空白。
+if (cortico.webUiClient) {
+  if (files.includes('dist')) pass('files 含 dist', '面板 bundle 要跟着发出去');
+  else fail('files 含 dist', `声明了 webUiClient=${cortico.webUiClient} 却没把 dist 打进包`);
+  const clientPath = join(ROOT, cortico.webUiClient);
+  if (existsSync(clientPath)) pass('webUiClient 文件存在', cortico.webUiClient);
+  else fail('webUiClient 文件存在', `${cortico.webUiClient} 不在仓库里`);
+}
 // 不该进包的：测试、工具脚本、装机脚本（这些是我们的工具，不是用户要的）
 for (const unwanted of ['test', 'tools', 'install.ps1']) {
   if (files.includes(unwanted)) warn(`files 含 ${unwanted}`, '这是开发用的，通常不该发出去');

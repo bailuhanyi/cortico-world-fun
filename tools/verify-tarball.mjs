@@ -86,6 +86,13 @@ try {
   const mustExist = [pkg.main, pkg.exports?.['.'], pkg.cortico?.icon, pkg.cortico?.describe]
     .filter((x) => typeof x === 'string');
   for (const rel of mustExist) ok(existsSync(join(pkgDir, rel)), `${rel} 在包里`);
+  // 面板 bundle：声明了就必须进包，否则装到 Coo 里点进去是空白。
+  if (pkg.cortico?.webUiClient) {
+    const clientRel = pkg.cortico.webUiClient;
+    ok(existsSync(join(pkgDir, clientRel)), `${clientRel} 在包里（面板能挂上）`);
+    const clientSrc = await readFile(join(pkgDir, clientRel), 'utf8');
+    ok(clientSrc.includes('panels:'), 'bundle 导出了 panels');
+  }
 
   console.log('4) 从安装形态真加载');
   const mod = await import(pathToFileURL(join(pkgDir, pkg.main)).href);

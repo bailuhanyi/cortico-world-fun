@@ -27,8 +27,8 @@ node tools/publish-check.mjs --online   # 市场收录口径 + npm 包名占用
 
 `prepublishOnly` 已经把上面这一串（除 `--online` 外）都串起来了，`npm publish` 之前自动跑一遍，任何一处失败就发不出去。
 
-当前状态（0.1.0）：**23 项通过、0 失败、1 警告**（没截 `screenshots`）；**47 个单测全绿**
-（venues 10 · state 13 · world 24）；打包 **12 个文件**，解包 160KB / 压缩 99KB。
+当前状态（0.1.1）：**25 项通过、0 失败、1 警告**（没截 `screenshots`）；**59 个单测全绿**
+（venues 10 · state 13 · world 24 · panels 12）；打包 **14 个文件**，解包 190KB。
 
 ---
 
@@ -77,15 +77,17 @@ npm config get registry   # 应是 https://registry.npmjs.org/
 npm pack --dry-run
 ```
 
-0.1.0 应该是 **12 个文件**、解包约 160KB：
+0.1.1 应该是 **14 个文件**、解包约 190KB：
 
 ```
 package.json  README.md  CHANGELOG.md  PUBLISHING.md  describe.json
 assets/icon.png
+dist/webui.js          # 面板（去哪儿 / 纪念册）
 src/index.js  src/definition.js  src/config.js  src/venues.js  src/state.js  src/world.js  src/ENV_PROMPT.md
 ```
 
 `test/`、`tools/`、`install.ps1` 都在 `files` 之外，不会发出去——测试、图标生成器、装机脚本是我们的工具，不是用户要的东西。
+`dist/` 必须在 `files` 里：`cortico.webUiClient` 声明了它，漏了的话装到 Coo 里点面板是一片空白（`publish-check` 会拦）。
 
 ---
 
@@ -133,8 +135,8 @@ Action 平时每 30 分钟扫一次，GitHub 定时任务常推迟。想立刻�
 4. `package.json` 的 `cortico` 块里加 `"screenshots": ["assets/screenshot-1.png"]`
 5. 截图改了就必须**发新版本**——市场按版本扫包
 
-> 注意：本插件目前**没有 WebUI 面板页**（`webUi()` 只给灯和配置，没有 `dist/webui.js`）。
-> 所以能截的是 Coo 世界列表里的卡片、配置页；「面板截图」这一步暂时无内容可截。
+> 0.1.1 起**有面板页了**（`dist/webui.js`，两张：去哪儿 / 纪念册），所以现在能截：
+> Coo 世界页的「娱乐时间」卡片、**「去哪儿」面板**（十二处 + 正在逛那条）、**「纪念册」面板**、配置页。
 
 ---
 

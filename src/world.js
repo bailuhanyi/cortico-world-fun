@@ -23,7 +23,7 @@ import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { DEFAULTS, ID, configGroup, text } from './config.js';
+import { DEFAULTS, ID, configGroup, panelText, text } from './config.js';
 import {
   CROWD_LABEL, KIND_LABEL, VENUES, allPlaces, findVenue, hasScene, hoursState, suggestPlaces,
 } from './venues.js';
@@ -567,6 +567,7 @@ export class FunWorld {
   webUi(language = 'zh') {
     this.language = language === 'en' ? 'en' : 'zh';
     const t = text(this.language);
+    const p = panelText(this.language);
     const now = this.#now();
     const state = this.#state ?? newState(dayIn(this.timezone, now));
     const nowMin = minutesIn(this.timezone, now);
@@ -597,6 +598,11 @@ export class FunWorld {
           : t.stopped,
       }],
       badges,
+      panels: [
+        { id: 'places', title: p.places.title, description: p.places.description, getMethods: ['list'] },
+        { id: 'book', title: p.book.title, description: p.book.description, getMethods: ['list'] },
+      ],
+      invoke: (panel, method, args) => this.#invoke(panel, method, args ?? []),
       config: [configGroup(this.language)],
       promptDocs: [{
         key: `worlds.${ID}.env`,
@@ -605,7 +611,175 @@ export class FunWorld {
         path: ENV_PROMPT,
         role: 'envPrompt',
       }],
+      storage: [{
+        key: 'fun-state',
+        label: t.storage.label,
+        kind: 'disk',
+        location: this.stateFile(),
+        danger: true,
+        note: t.storage.note,
+        stat: () => {
+          const st = this.#state;
+          if (!st) return '还没启动';
+          const trips = st.trips?.length ?? 0;
+          return `${trips} 趟纪念册${st.session ? ` · 正在${st.session.placeName}逛` : ''}`;
+        },
+        clear: () => this.#clearState(),
+      }],
     };
+  }
+
+  // -------------------------------------------------------------------------
+  // 面板数据面（客户端 bundle 只走这里，不读私有状态）
+  // -------------------------------------------------------------------------
+
+  /**
+   * 面板调用的唯一入口。
+   *
+   * 契约：**只读方法必须幂等、不写盘**；写方法（go/wander/home）走的是和工具同一个
+   * 实现，所以在面板上点一下和她自己调工具是一回事——不会有第二套逻辑。
+   * 任何异常都兜成 `{ ok: false, error }`，不让面板挂掉。
+   */
+  async #invoke(panel, method, args) {
+    try {
+      this.#ensureStarted();
+      if (panel === 'places') {
+        switch (method) {
+          case 'list': return this.#placesData();
+          default: throw new Error(`places 没有 ${method} 这个方法`);
+        }
+      }
+      if (panel === 'book') {
+        switch (method) {
+          case 'list': return this.#bookData();
+          default: throw new Error(`book 没有 ${method} 这个方法`);
+        }
+      }
+      throw new Error(`不认识的面板：${panel}`);
+    } catch (err) {
+      return { ok: false, error: msg(err) };
+    }
+  }
+
+  /**
+   * 「去哪儿」面板：十二处场所 + 此刻的开放状态 + 正在逛的这一趟。
+   *
+   * 只读：不动状态、不写盘。`now` 由服务端给，别让面板自己算——
+   * 客户端的钟可能和她的时区不一致。
+   */
+  #placesData() {
+    const now = this.#now();
+    const nowMin = minutesIn(this.timezone, now);
+    const tz = this.timezone;
+    const st = this.#state ?? newState(dayIn(tz, now));
+    const recent = recentPlaceIds(st, 3);
+    const places = VENUES.map((v) => {
+      const state = hoursState(v, nowMin);
+      return {
+        id: v.id,
+        name: v.name,
+        aliases: v.aliases,
+        tags: v.tags,
+        desc: v.desc,
+        scene: v.scene,
+        hasScene: hasScene(v),
+        outfit: v.recommendedOutfit,
+        crowd: v.crowd,
+        crowdLabel: CROWD_LABEL[v.crowd] ?? '',
+        kindLabel: KIND_LABEL[v.kind] ?? '',
+        hours: v.hours,
+        state,
+        stateLabel: STATE_LABEL[state],
+        areas: v.areas,
+        areaCount: v.areas.length,
+        souvenirs: v.souvenirs,
+        photoSpots: v.photoSpots,
+        recent: recent.includes(v.id),
+      };
+    });
+    // 开着的排前面；面板不截断，十二处都给它，前端自己分组。
+    places.sort((a, b) => rankOf(a.state) - rankOf(b.state));
+
+    return {
+      ok: true,
+      nowHm: hmIn(tz, now),
+      day: dayIn(tz, now),
+      ttlMin: this.#ttlMin(),
+      askReport: this.#askReport(),
+      on: this.#on(),
+      openCount: places.filter((x) => x.state !== 'closed').length,
+      total: places.length,
+      places,
+      session: st.session ? {
+        placeId: st.session.placeId,
+        placeName: st.session.placeName,
+        scene: st.session.scene,
+        outfit: st.session.outfit,
+        enteredHm: hmIn(tz, st.session.enteredAt),
+        lastHm: hmIn(tz, st.session.lastAt),
+        stayedMin: Math.max(0, Math.round((now - st.session.enteredAt) / 60000)),
+        stale: isStale(st.session, now, this.#ttlMin()),
+        visited: st.session.visited.map((v) => ({ area: v.area, note: v.note, hm: hmIn(tz, v.at) })),
+        souvenirs: st.session.souvenirs,
+        photos: st.session.photos,
+        events: st.session.events,
+        venueAreaCount: venueById(st.session.placeId)?.areas.length ?? null,
+      } : null,
+    };
+  }
+
+  /**
+   * 「纪念册」面板：去过的每一趟 + 汇总。
+   *
+   * 只读。`trips` 已经在 state 里裁到 MAX_TRIPS 条，这里不再二次截断，
+   * 否则面板上看到的总趟数和实际记得的对不上。
+   */
+  #bookData() {
+    const tz = this.timezone;
+    const now = this.#now();
+    const st = this.#state ?? newState(dayIn(tz, now));
+    const trips = (st.trips ?? []).map((t) => ({
+      placeId: t.placeId,
+      placeName: t.placeName,
+      scene: t.scene,
+      outfit: t.outfit,
+      day: t.leftAt ? dayIn(tz, t.leftAt) : '',
+      enteredHm: t.enteredAt ? hmIn(tz, t.enteredAt) : '',
+      leftHm: t.leftAt ? hmIn(tz, t.leftAt) : '',
+      stayedMin: t.leftAt && t.enteredAt ? Math.max(0, Math.round((t.leftAt - t.enteredAt) / 60000)) : 0,
+      visited: t.visited.map((v) => v.area),
+      souvenirs: t.souvenirs,
+      photos: t.photos,
+      events: t.events,
+      summary: tripSummary(t),
+    }));
+    // 按地方汇总：哪几处去得最多（面板上的「常去」）。
+    const byPlace = new Map();
+    for (const t of trips) {
+      const cur = byPlace.get(t.placeName) ?? { name: t.placeName, times: 0, lastDay: '' };
+      cur.times += 1;
+      if (!cur.lastDay || t.day > cur.lastDay) cur.lastDay = t.day;
+      byPlace.set(t.placeName, cur);
+    }
+    const mostVisited = [...byPlace.values()].sort((a, b) => b.times - a.times || (a.lastDay < b.lastDay ? 1 : -1));
+    return {
+      ok: true,
+      total: trips.length,
+      souvenirCount: trips.reduce((n, t) => n + t.souvenirs.length, 0),
+      photoCount: trips.reduce((n, t) => n + t.photos.length, 0),
+      visitedAreaCount: trips.reduce((n, t) => n + t.visited.length, 0),
+      mostVisited,
+      trips,
+      session: st.session ? { placeName: st.session.placeName, summary: tripSummary(st.session) } : null,
+    };
+  }
+
+  /** 清空她的出游记录（存储页「清掉」）。只清 state 这一份，不碰别的 World。 */
+  async #clearState() {
+    this.#state = newState(dayIn(this.timezone, this.#now()));
+    await this.#save();
+    this.#host?.log?.info?.('娱乐时间：出游记录已清空');
+    return { ok: true };
   }
 
   // -------------------------------------------------------------------------

@@ -43,6 +43,10 @@ const ZH = {
     funAskReport: '收摊说一声',
     funAskReportDesc: '开启时，收摊回执会提醒她把「今天逛了什么」用 feast_life_play 记进自己的日程，再跟主人说一句。关掉就只给这段文字，不提记账。',
   },
+  storage: {
+    label: '出游记录',
+    note: '清掉之后，正在进行的那一趟和纪念册里的所有趟都会没（逛过哪些地方、买了什么、在哪儿拍过照）。场所库是内置的，不受影响；别的东西一概不动。',
+  },
 };
 
 const EN = {
@@ -61,10 +65,45 @@ const EN = {
     funAskReport: 'Say something at the end',
     funAskReportDesc: 'When on, the closing receipt reminds her to log the trip with feast_life_play and tell the owner one sentence.',
   },
+  storage: {
+    label: 'Outing records',
+    note: 'Clearing this erases the trip in progress and every trip in the book (where she went, what she bought, where she took photos). The venue list is built in and unaffected; nothing else is touched.',
+  },
 };
 
 export function text(language = 'zh') {
   return language === 'en' ? EN : ZH;
+}
+
+/**
+ * 面板自己的文案。
+ *
+ * 客户端产物（`dist/webui.js`）不 import 服务端模块，所以面板标题和说明
+ * 这里给一份、bundle 里另存一份——改文案时两处一起改（feast 也是这么做的）。
+ */
+export function panelText(language = 'zh') {
+  if (language === 'en') {
+    return {
+      places: {
+        title: 'Where to go',
+        description: 'The twelve places, whether each is open right now, and the trip she is on.',
+      },
+      book: {
+        title: 'Trip book',
+        description: 'Every trip she has taken: where she went, what she wandered and bought.',
+      },
+    };
+  }
+  return {
+    places: {
+      title: '去哪儿',
+      description: '十二处地方这会儿开没开、人多不多，以及她正在逛的那一趟。',
+    },
+    book: {
+      title: '纪念册',
+      description: '她去过的每一趟：逛了什么、买了什么、在哪儿拍了照。',
+    },
+  };
 }
 
 /** WebUI 的配置组；路径必须落在 `worlds.fun.` 段内。 */

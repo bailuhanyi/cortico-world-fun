@@ -1,0 +1,405 @@
+/**
+ * 面板的冒烟测试。
+ *
+ * `dist/webui.js` 只在 Coo 里跑，测试里跑不到——**最容易藏错误的地方**：
+ * 服务端声明了面板但客户端没导出，宿主里点进去就是一片空白，不会报错。
+ *
+ * 这里用一个够用的极简 DOM 桩，把两个面板都真挂一遍，喂真实的 `invoke()`，
+ * 断言：往 ctx.root 里写了东西、内容来自服务端数据、搜索能筛、详情能展开、
+ * 失败时有错误卡、面板 id 与服务端声明一一对上。
+ *
+ * 照 `feed-world/test/panels.test.mjs` 的做法（那里已经顶着 47 项面板测试跑过很多版本）。
+ * 不用 `node --test`：受限沙箱里它要 spawn 子进程会被 EPERM 挡住。
+ */
+import { test, report } from './harness.mjs';
+import assert from 'node:assert/strict';
+import { mkdtemp } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+import { DEFAULTS } from '../src/config.js';
+import { FunWorld } from '../src/world.js';
+
+// ---------------------------------------------------------------------------
+// 极简 DOM
+// ---------------------------------------------------------------------------
+
+class Node {
+  constructor(tag) {
+    this.tagName = String(tag).toUpperCase();
+    this.childNodes = [];
+    this.className = '';
+    this._text = '';
+    this.style = {};
+    this.attributes = {};
+    this._listeners = {};
+    // 真 DOM 的 <input>/<select> 一律有 value（默认 ''）。桩里不给的话，
+    // 面板里 `input.value.trim()` 会炸，而那是面板的正常写法。
+    this.value = '';
+    this.placeholder = '';
+    this.disabled = false;
+    this.parentNode = null;
+  }
+
+  get textContent() {
+    if (this.childNodes.length) return this.childNodes.map((c) => c.textContent).join('');
+    return this._text;
+  }
+
+  set textContent(v) {
+    this.childNodes = [];
+    this._text = v === null || v === undefined ? '' : String(v);
+  }
+
+  appendChild(node) {
+    this.childNodes.push(node);
+    node.parentNode = this;
+    this._text = '';
+    return node;
+  }
+
+  append(...nodes) {
+    for (const n of nodes) this.appendChild(n);
+  }
+
+  replaceChildren(...nodes) {
+    this.childNodes = [];
+    this._text = '';
+    for (const n of nodes) this.appendChild(n);
+  }
+
+  remove() {
+    if (!this.parentNode) return;
+    const i = this.parentNode.childNodes.indexOf(this);
+    if (i >= 0) this.parentNode.childNodes.splice(i, 1);
+    this.parentNode = null;
+  }
+
+  get classList() {
+    const self = this;
+    return {
+      add: (...names) => {
+        const set = new Set(self.className.split(' ').filter(Boolean));
+        for (const n of names) set.add(n);
+        self.className = [...set].join(' ');
+      },
+      remove: (...names) => {
+        const drop = new Set(names);
+        self.className = self.className.split(' ').filter((n) => n && !drop.has(n)).join(' ');
+      },
+      contains: (n) => self.className.split(' ').includes(n),
+    };
+  }
+
+  setAttribute(k, v) {
+    this.attributes[k] = v;
+    if (k === 'class') this.className = v;
+    if (k === 'value') this.value = v;
+    if (k === 'placeholder') this.placeholder = v;
+  }
+
+  getAttribute(k) { return this.attributes[k]; }
+
+  addEventListener(type, fn) {
+    (this._listeners[type] ??= []).push(fn);
+  }
+
+  focus() { document.activeElement = this; }
+
+  /** 触发一个事件。 */
+  fire(type = 'click') {
+    for (const fn of this._listeners[type] ?? []) fn({ type, target: this });
+    const prop = this[`on${type}`];
+    if (typeof prop === 'function') prop({ type, target: this });
+  }
+
+  *walk() {
+    yield this;
+    for (const c of this.childNodes) yield* c.walk();
+  }
+
+  querySelector(sel) {
+    return this.querySelectorAll(sel)[0] ?? null;
+  }
+
+  querySelectorAll(sel) {
+    const isTag = !sel.startsWith('.') && !sel.startsWith('style');
+    const cls = (sel.startsWith('.') || sel.startsWith('style.')) ? sel.replace(/^style/, '').split('.').filter(Boolean) : [];
+    return [...this.walk()].filter((n) => {
+      if (n === this) return false;
+      if (isTag) return n.tagName === sel.toUpperCase();
+      return cls.every((c) => c && n.classList.contains(c));
+    });
+  }
+
+  findAll(pred) { return [...this.walk()].filter(pred); }
+
+  findByText(text) {
+    return [...this.walk()].find((n) => n.tagName === 'BUTTON' && n.textContent === text) ?? null;
+  }
+}
+
+globalThis.document = {
+  createElement: (tag) => new Node(tag),
+  createTextNode: (t) => Object.assign(new Node('#text'), { _text: String(t) }),
+  activeElement: null,
+};
+
+/** 等条件成立，而不是「等 0 毫秒若干次」——固定次数是竞态。 */
+async function waitFor(check, what = '条件', timeoutMs = 2000) {
+  const start = performance.now();
+  for (;;) {
+    const value = check();
+    if (value) return value;
+    if (performance.now() - start > timeoutMs) throw new Error(`等 ${what} 超时（${timeoutMs}ms）`);
+    await new Promise((r) => setTimeout(r, 2));
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 夹具
+// ---------------------------------------------------------------------------
+
+const intervalBox = { list: [] };
+let seq = 0;
+const run = `${process.pid}-${Date.now().toString(36)}`;
+
+async function mountPanels({ language = 'zh', failList = false, cfg = {}, nowMs } = {}) {
+  // 每个用例一个独立目录：共用的话，上一趟的 session 会漏到下一个用例里。
+  const dataDir = await mkdtemp(join(tmpdir(), `fun-panels-${run}-${seq += 1}-`));
+  const now = nowMs ?? Date.parse('2026-11-15T14:00:00+08:00');
+  const world = new FunWorld({
+    cfg: { ...DEFAULTS, enabled: true, ...cfg },
+    dataDir,
+    timezone: 'Asia/Shanghai',
+    now: () => now,
+    random: () => 0.42,
+    persist: () => {},
+  });
+  await world.start({ log: { info() {}, warn() {} } });
+  const decl = world.webUi(language);
+
+  const bundle = await import('../dist/webui.js?' + Math.random());
+  const root = new Node('div');
+  intervalBox.list.length = 0;
+  const invocations = [];
+  const ctx = {
+    pageId: 'world:fun',
+    panelId: '',
+    language,
+    root,
+    signal: { aborted: false },
+    timeout() { return { dispose() {} }; },
+    interval(fn, ms) {
+      const entry = { fn, ms, disposed: false };
+      intervalBox.list.push(entry);
+      return { dispose() { entry.disposed = true; } };
+    },
+    async invoke(method, args) {
+      const record = { method, args };
+      invocations.push(record);
+      if (failList && method === 'list') throw new Error('boom');
+      const result = await decl.invoke(ctx.panelId, method, args ?? []);
+      record.result = result;
+      return result;
+    },
+  };
+
+  async function mount(id) {
+    ctx.panelId = id;
+    root.replaceChildren();
+    invocations.length = 0;
+    await bundle.default.panels[id].mount(ctx);
+    return root;
+  }
+
+  return { world, bundle, decl, mount, root, invocations, intervals: intervalBox.list, dataDir, tool: (n) => world.tools().find((t) => t.name === n).handler };
+}
+
+// ---------------------------------------------------------------------------
+
+test('bundle 形状对：面板 id 与服务端声明一一对上，mount 都是函数', async () => {
+  const b = await import('../dist/webui.js');
+  const { decl } = await mountPanels();
+  // 不写死面板数：webUi() 声明了几个就要求客户端导出几个。
+  // 对不上不会报错，只会点进去一片空白——所以这条必须钉住。
+  const declared = decl.panels.map((p) => p.id).sort();
+  assert.deepEqual(Object.keys(b.default.panels).sort(), declared,
+    `客户端导出的 ${Object.keys(b.default.panels).sort().join('、')} 与服务端声明的 ${declared.join('、')} 对不上`);
+  for (const id of declared) {
+    assert.equal(typeof b.default.panels[id].mount, 'function', `${id} 缺 mount`);
+  }
+  assert.ok(!Array.isArray(b.default.panels));
+});
+
+test('服务端面板声明带 getMethods，且声明的方法真的能调', async () => {
+  const { decl } = await mountPanels();
+  assert.equal(decl.panels.length, 2);
+  for (const p of decl.panels) {
+    assert.ok(p.title && p.description, `${p.id} 缺标题或说明`);
+    assert.ok(Array.isArray(p.getMethods) && p.getMethods.length, `${p.id} 没声明 getMethods`);
+    for (const m of p.getMethods) {
+      const r = await decl.invoke(p.id, m, []);
+      assert.equal(r.ok, true, `${p.id}.${m} 失败了：${r.error}`);
+    }
+  }
+});
+
+test('places 面板真挂：画出了十二处、标了开没开、有一趟正在逛', async () => {
+  const { mount, world, tool } = await mountPanels();
+  await tool('fun_go')({ place: '漫展' });
+  await tool('fun_wander')({ area: '同人展台', buy: '吧唧' });
+
+  const root = await mount('places');
+  await waitFor(() => root.querySelectorAll('.fun-card').length === 12, '画出十二处场所');
+
+  const cards = root.querySelectorAll('.fun-card');
+  const names = cards.map((c) => c.querySelector('.fun-card-name').textContent);
+  for (const n of ['游乐场', '海洋馆', '庙会', '漫展', '电影院', '动物园', '公园', '电玩城', 'KTV', '博物馆', '猫咖', '爬山']) {
+    assert.ok(names.includes(n), `缺 ${n}`);
+  }
+
+  // 开着的在前：14:00 时漫展开着，卡上应带 fun-card-open
+  const conCard = cards.find((c) => c.querySelector('.fun-card-name').textContent === '漫展');
+  assert.ok(conCard.classList.contains('fun-card-open'), '开着的卡要有 open 样式');
+
+  // 正在逛那一条
+  const live = root.querySelector('.fun-live');
+  assert.ok(live, '缺少「正在逛」那一条');
+  assert.ok(live.textContent.includes('正在漫展逛'), `实际：${live.textContent}`);
+  assert.ok(live.textContent.includes('同人展台'), '要写出逛过哪儿');
+  assert.ok(live.textContent.includes('买了 吧唧'), '要写出买了什么');
+  void world;
+});
+
+test('places 面板：没在逛时给的是「这会儿没在逛」而不是空', async () => {
+  const { mount } = await mountPanels();
+  const root = await mount('places');
+  await waitFor(() => root.querySelector('.fun-live'), '画出「没在逛」那一条');
+  const live = root.querySelector('.fun-live');
+  assert.ok(live.textContent.includes('这会儿没在逛'));
+  assert.ok(live.textContent.includes('14:00'), '要报当前时间');
+  assert.ok(live.classList.contains('fun-live-idle'));
+});
+
+test('places 面板：点卡片能展开详情，再点收起', async () => {
+  const { mount } = await mountPanels();
+  const root = await mount('places');
+  await waitFor(() => root.querySelectorAll('.fun-card').length === 12, '画出十二处');
+
+  const find = (name) => root.querySelectorAll('.fun-card')
+    .find((c) => c.querySelector('.fun-card-name').textContent === name);
+
+  find('猫咖').fire('click');
+  await waitFor(() => root.querySelector('.fun-detail'), '展开详情');
+  const detail = root.querySelector('.fun-detail');
+  assert.ok(detail.textContent.includes('猫咖'));
+  assert.ok(detail.textContent.includes('猫爬架'), '详情要列能逛的项目');
+  assert.ok(detail.textContent.includes('一包猫条'), '详情要列纪念品');
+  // 猫咖在素材库里没有场景，必须明说 scene 不用填
+  assert.ok(detail.textContent.includes('scene 不用填'), `实际：${detail.textContent.slice(-120)}`);
+  assert.ok(!detail.textContent.includes('scene 填「猫咖」'), '不能编库里没有的场景');
+
+  find('漫展').fire('click');
+  await waitFor(() => root.querySelector('.fun-detail')?.textContent.includes('漫展'), '切到漫展');
+  assert.ok(root.querySelector('.fun-detail').textContent.includes('scene 填「漫展」'), '漫展有场景，要指名');
+
+  find('漫展').fire('click');
+  await waitFor(() => !root.querySelector('.fun-detail'), '再点一次收起');
+});
+
+test('places 面板：搜索能按名字/别名/标签筛', async () => {
+  const { mount } = await mountPanels();
+  const root = await mount('places');
+  await waitFor(() => root.querySelectorAll('.fun-card').length === 12, '画出十二处');
+
+  const input = root.querySelector('.fun-search');
+  assert.ok(input, '缺搜索框');
+
+  input.value = '同人展';   // 别名
+  input.fire('input');
+  await waitFor(() => root.querySelectorAll('.fun-card').length === 1, '按别名筛出 1 处');
+  assert.equal(root.querySelector('.fun-card-name').textContent, '漫展');
+
+  input.value = '夜';       // 标签
+  input.fire('input');
+  await waitFor(() => root.querySelectorAll('.fun-card').length > 1, '按标签筛');
+
+  input.value = '月球';
+  input.fire('input');
+  await waitFor(() => root.querySelector('.fun-empty'), '筛不到时给空状态');
+  assert.ok(root.querySelector('.fun-empty').textContent.includes('月球'));
+});
+
+test('places 面板：失败时出错误卡，不是白屏', async () => {
+  const { mount } = await mountPanels({ failList: true });
+  const root = await mount('places');
+  await waitFor(() => root.querySelector('.fun-err'), '出错误卡');
+  assert.ok(root.querySelector('.fun-err').textContent.includes('boom'));
+});
+
+test('book 面板：空册子给一句话；逛完一趟之后能查回来', async () => {
+  const { mount, tool } = await mountPanels();
+  let root = await mount('book');
+  await waitFor(() => root.querySelector('.fun-empty'), '空册子');
+  assert.ok(root.querySelector('.fun-empty').textContent.includes('纪念册还是空的'));
+
+  await tool('fun_go')({ place: '海洋馆' });
+  await tool('fun_wander')({ area: '鲸豚湾', buy: '鲸鱼挂件', photo: '海底隧道正中间' });
+  await tool('fun_home')({});
+
+  root.replaceChildren();
+  root = await mount('book');
+  await waitFor(() => root.querySelector('.fun-trip'), '画出那一趟');
+  const trip = root.querySelector('.fun-trip');
+  assert.ok(trip.textContent.includes('海洋馆'));
+  assert.ok(trip.textContent.includes('鲸豚湾'));
+  assert.ok(trip.textContent.includes('鲸鱼挂件'));
+  assert.ok(trip.textContent.includes('scene：水族馆'), '有场景的要在纪念册里标出 scene');
+
+  // 统计条
+  const stats = root.querySelector('.fun-stats');
+  assert.ok(stats.textContent.includes('1'), '趟数应当是 1');
+});
+
+test('book 面板：多趟按地方汇总出「常去的」', async () => {
+  const { mount, tool } = await mountPanels();
+  for (const place of ['漫展', '漫展', '海洋馆']) {
+    await tool('fun_go')({ place });
+    await tool('fun_wander')({});
+    await tool('fun_home')({});
+  }
+  const root = await mount('book');
+  await waitFor(() => root.querySelectorAll('.fun-trip').length === 3, '画出三趟');
+  const chips = root.querySelectorAll('.fun-chip').map((c) => c.textContent);
+  assert.ok(chips.some((c) => c.startsWith('漫展 ×2')), `常去的排序不对：${chips.join('、')}`);
+});
+
+test('面板不写盘：invoke("list") 是只读的', async () => {
+  const { mount, dataDir, tool } = await mountPanels();
+  await tool('fun_go')({ place: '庙会' });
+  const before = await import('node:fs/promises').then((fs) => fs.readFile(join(dataDir, 'fun', 'state.json'), 'utf8'));
+  await mount('places');
+  await mount('book');
+  await new Promise((r) => setTimeout(r, 20));
+  const after = await import('node:fs/promises').then((fs) => fs.readFile(join(dataDir, 'fun', 'state.json'), 'utf8'));
+  assert.equal(before, after, '面板只读不该改动状态文件');
+});
+
+test('面板登记了定时刷新，并且能被宿主 dispose', async () => {
+  const { mount, intervals } = await mountPanels();
+  await mount('places');
+  assert.ok(intervals.length >= 1, 'places 面板应当登记一个刷新定时器');
+  assert.equal(intervals[0].ms, 60000);
+});
+
+test('英文界面也有标题，不回落成中文', async () => {
+  const { mount, decl } = await mountPanels({ language: 'en' });
+  assert.equal(decl.panels.find((p) => p.id === 'places').title, 'Where to go');
+  assert.equal(decl.panels.find((p) => p.id === 'book').title, 'Trip book');
+  const root = await mount('book');
+  await waitFor(() => root.querySelector('.fun-empty'), '渲染出来');
+  assert.ok(root.childNodes.length > 0);
+});
+
+report();
