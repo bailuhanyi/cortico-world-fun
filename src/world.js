@@ -56,13 +56,16 @@ export const FUN_TOOL_DECLS = [
   {
     name: 'fun_places',
     tags: ['read', 'snapshot'],
-    description: '看看今天能去哪儿逛：游乐场、海洋馆、庙会、漫展、电影院、动物园、公园、电玩城、KTV、博物馆、猫咖、爬山。默认按这会儿开没开、人多不多排前几个；想看全的就把 all 填 true，只想看某一类就填 kind。',
+    description: '看看今天能去哪儿逛：游乐场、海洋馆、庙会、漫展、电影院、动物园、公园、电玩城、KTV、博物馆、猫咖、爬山、咖啡店、奶茶店、餐厅、图书馆、夜市、澡堂、旧货市场、江边，一共二十处。默认按这会儿开没开、人多不多排前几个；想看全的就把 all 填 true，只想看某一类就填 kind。',
     parameters: {
       type: 'object',
       properties: {
         count: { type: 'integer', description: '看几个，默认 4。', minimum: 1, maximum: 8 },
-        kind: { type: 'string', description: '只看某一类，例如「室内」「户外」「夜」；也可以是某一处的正名（「电影院」）。' },
-        all: { type: 'boolean', description: '填 true 就列全部十二处（按开没开排序），不看 count。' },
+        kind: {
+          type: 'string',
+          description: '只看某一类。三档都认：某个大类（「吃饭喝东西」「户外」）、某种感受（「室内」「夜」「排队」「安静」「免费」「一个人」）、或者某一处的正名（「咖啡店」「猫咖」）。',
+        },
+        all: { type: 'boolean', description: '填 true 就列全部二十处（按开没开排序），不看 count。' },
       },
       additionalProperties: false,
     },
@@ -278,16 +281,26 @@ export class FunWorld {
     const count = clampInt(args?.count, 1, 8, 4);
     const avoid = recentPlaceIds(this.#state, 2);
 
-    // kind 既能填大类（室内 / 户外 / 夜），也能填某一处的正名或别名。
+    // kind 三档都认：某种体验（室内 / 户外 / 夜 / 排队，走 tags）、
+    // 某个大类（吃饭喝东西 / 户外，走 KIND_LABEL）、某一处正名或别名。
+    // 以前只查 tags + KIND_LABEL，于是「咖啡」这种细类词筛不到咖啡店——现在 tags 补全了。
     const kindFilter = typeof args?.kind === 'string' ? args.kind.trim() : '';
     let picks;
     if (kindFilter) {
       const byName = findVenue(VENUES, kindFilter);
+      // 「吃饭喝东西」按 hasFood 判，不只看 kind：夜市是 market 大类，但它也能吃。
+      // 这样以后再加能吃喝的地方不用回来改筛选逻辑。
+      const wantsFood = kindFilter === KIND_LABEL.food;
       const matched = byName
         ? [byName]
-        : VENUES.filter((v) => v.tags.includes(kindFilter) || KIND_LABEL[v.kind] === kindFilter || v.kind === kindFilter);
+        : VENUES.filter((v) => (wantsFood ? hasFood(v) : false)
+          || v.tags.includes(kindFilter)
+          || KIND_LABEL[v.kind] === kindFilter
+          || v.kind === kindFilter);
       if (!matched.length) {
-        return { text: `没有「${kindFilter}」这一类。能填的是：${Object.values(KIND_LABEL).join(' / ')}，或者某一处的正名。` };
+        const kinds = [...new Set(Object.values(KIND_LABEL))].join(' / ');
+        const tagHints = '室内 / 户外 / 夜 / 排队 / 安静';
+        return { text: `没有「${kindFilter}」这一类。能填的是：${kinds}；或者感受类的 ${tagHints}；或者某一处的正名（咖啡店 / 猫咖 …）。` };
       }
       picks = matched
         .map((venue) => ({ venue, state: hoursState(venue, nowMin) }))

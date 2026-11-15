@@ -124,6 +124,31 @@ test('fun_places all=true 列全所有场所，kind 能只看一类', async () =
 
   const bad = await b.tool('fun_places')({ kind: '月球' });
   assert.match(bad.text, /没有「月球」这一类/);
+  // 筛不到时的提示要说清三档，不然她不知道还能填什么
+  assert.match(bad.text, /吃饭喝东西/);
+  assert.match(bad.text, /室内/);
+});
+
+test('kind 筛选三档都能用：大类 / 感受 / 正名', async () => {
+  const b = await boot();
+  const names = (r) => r.text.split('\n').filter((l) => l.startsWith('- '))
+    .map((l) => l.split('（')[0].replace('- ', ''));
+
+  // 「吃饭喝东西」这个大类要按 hasFood 判：夜市是 market 大类但也能吃，必须一起出来
+  const eat = names(await b.tool('fun_places')({ kind: '吃饭喝东西' }));
+  for (const must of ['咖啡店', '奶茶店', '餐厅', '夜市']) {
+    assert.ok(eat.includes(must), `「吃饭喝东西」应当包含 ${must}，实际：${eat.join('、')}`);
+  }
+
+  // 感受类：免费 / 一个人 / 便宜
+  const free = names(await b.tool('fun_places')({ kind: '免费' }));
+  assert.ok(free.includes('图书馆') && free.includes('江边'), `免费：${free.join('、')}`);
+  const solo = names(await b.tool('fun_places')({ kind: '一个人' }));
+  assert.ok(solo.length >= 2, `一个人的选项太少：${solo.join('、')}`);
+
+  // 正名 + 细类词（0.1.3 时「咖啡」筛不到咖啡店，tags 补上了）
+  const coffee = names(await b.tool('fun_places')({ kind: '咖啡' }));
+  assert.deepEqual(coffee, ['咖啡店'], `「咖啡」应当只筛出咖啡店，实际：${coffee.join('、')}`);
 });
 
 test('完整一趟：进门 → 逛 → 买 → 拍照 → 收摊，落盘且纪念册有记录', async () => {

@@ -48,7 +48,11 @@ test('有 scene 的场所必须真的是素材库里有的那几处（不去编�
 
 test('能吃能喝的场所：food 只写品类名，绝不写味道', () => {
   const foodVenues = VENUES.filter(hasFood);
-  assert.deepEqual(foodVenues.map((v) => v.name).sort(), ['咖啡店', '奶茶店', '餐厅'].sort());
+  // 不写死是哪几处（加场所时这条不该红），只钉住「至少这三处，且都合规」。
+  const names = foodVenues.map((v) => v.name);
+  for (const must of ['咖啡店', '奶茶店', '餐厅']) {
+    assert.ok(names.includes(must), `${must} 应当有 food`);
+  }
   for (const v of foodVenues) {
     assert.ok(v.food.label && v.food.verb, `${v.name} 缺 label/verb`);
     assert.ok(v.food.items.length >= 4, `${v.name} 能吃能喝的太少`);
@@ -58,6 +62,20 @@ test('能吃能喝的场所：food 只写品类名，绝不写味道', () => {
       assert.doesNotMatch(item, /香|甜度|顺滑|回甘|浓郁|弹牙|醇厚/,
         `「${item}」写了味道——味道不该出现在这个插件的数据里`);
     }
+  }
+});
+
+test('kind 不与别的场所 id 撞车（0.1.3 猫咖踩过：kind 叫 cafe，而 cafe 是咖啡店的 id）', () => {
+  const ids = new Set(VENUES.map((v) => v.id));
+  const kinds = new Set(VENUES.map((v) => v.kind));
+  for (const kind of kinds) {
+    assert.ok(KIND_LABEL[kind], `kind「${kind}」没有中文标签`);
+  }
+  // 一个 id 如果同时是别人的 kind，按 kind 筛/按名字查就会打架。
+  for (const v of VENUES) {
+    if (v.kind === v.id) continue;                    // 自己 kind 等于自己 id，正常
+    assert.ok(!ids.has(v.kind),
+      `${v.name} 的 kind「${v.kind}」撞上了另一处的 id，会让筛选和查名错位`);
   }
 });
 
