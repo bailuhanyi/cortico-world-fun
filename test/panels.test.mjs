@@ -241,7 +241,8 @@ test('bundle 形状对：面板 id 与服务端声明一一对上，mount 都是
 
 test('服务端面板声明带 getMethods，且声明的方法真的能调', async () => {
   const { decl } = await mountPanels();
-  assert.equal(decl.panels.length, 2);
+  // 三张面板：去哪儿 / 纪念册 / 纪念品架（0.1.6 加的）。
+  assert.deepEqual(decl.panels.map((p) => p.id), ['places', 'book', 'shelf']);
   for (const p of decl.panels) {
     assert.ok(p.title && p.description, `${p.id} 缺标题或说明`);
     assert.ok(Array.isArray(p.getMethods) && p.getMethods.length, `${p.id} 没声明 getMethods`);
@@ -717,6 +718,46 @@ test('英文界面也有标题，不回落成中文', async () => {
   const root = await mount('book');
   await waitFor(() => root.querySelector('.fun-empty'), '渲染出来');
   assert.ok(root.childNodes.length > 0);
+});
+
+test('shelf 面板：空架子给一句话', async () => {
+  const { mount } = await mountPanels();
+  const root = await mount('shelf');
+  await waitFor(() => root.querySelector('.fun-empty'), '渲染出空架子提示');
+  assert.match(root.querySelector('.fun-empty').textContent, /架子上还什么都没有/);
+});
+
+test('shelf 面板：买过东西之后按地方归着，带件数和最早日期', async () => {
+  const { mount, tool } = await mountPanels();
+  await tool('fun_go')({ place: '漫展' });
+  await tool('fun_wander')({ area: '同人展台', buy: '吧唧' });
+  await tool('fun_home')({});
+
+  const root = await mount('shelf');
+  await waitFor(() => root.querySelectorAll('.fun-trip').length > 0, '画出架子');
+
+  const text = root.textContent;
+  assert.match(text, /漫展/, '要按地方归着');
+  assert.match(text, /吧唧/, '要列出东西');
+  assert.match(text, /1 样/, '要显示这一处有几样');
+  assert.ok(root.querySelectorAll('.fun-stat').length >= 3, '顶部要有统计数');
+});
+
+test('shelf 面板：进度里点出还差哪些没逛', async () => {
+  const { mount, tool } = await mountPanels();
+  await tool('fun_go')({ place: '漫展' });
+  await tool('fun_wander')({ area: '同人展台', buy: '吧唧' });
+  await tool('fun_home')({});
+
+  const root = await mount('shelf');
+  await waitFor(() => root.querySelectorAll('.fun-trip').length > 1, '画出去过的地方');
+  assert.match(root.textContent, /还差：/, '要具体点出还差什么');
+  assert.match(root.textContent, /逛过 1\/6/, '要有进度分母');
+});
+
+test('shelf 面板：英文界面也有标题', async () => {
+  const { decl } = await mountPanels({ language: 'en' });
+  assert.equal(decl.panels.find((p) => p.id === 'shelf').title, 'Shelf');
 });
 
 report();

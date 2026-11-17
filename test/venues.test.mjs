@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readdir } from 'node:fs/promises';
 
 import {
   CROWD_LABEL, KIND_LABEL, VENUES, allPlaces, findVenue, hasFood, hasScene, hmToMin, hoursState, pickSome, suggestPlaces,
@@ -43,6 +44,22 @@ test('有 scene 的场所必须真的是素材库里有的那几处（不去编�
     '有 scene 的应当是这五处；多一处就意味着替她编了一个库里可能没有的名字');
   for (const v of VENUES.filter((x) => !hasScene(x))) {
     assert.equal(v.scene, '', `${v.name} 的 scene 应当是空串`);
+  }
+});
+
+test('scene 指向的名字在 live 素材库里真的存在（能读到库时才查）', async () => {
+  // 这一条依赖本机素材库：读不到就跳过（降级是第一公民，绝不因此把测试判红）。
+  const lib = process.env.FUN_IMGGEN_LIB
+    || 'E:/Coopanion/data/home/companion/data/imggen-library/scenes';
+  let names;
+  try {
+    const dirs = await readdir(lib, { withFileTypes: true });
+    names = new Set(dirs.filter((d) => d.isDirectory()).map((d) => d.name));
+  } catch {
+    return; // 没有库：不查
+  }
+  for (const v of VENUES.filter(hasScene)) {
+    assert.ok(names.has(v.scene), `${v.name} 的 scene「${v.scene}」在素材库里没有——这就是「编了一个不存在的名字」`);
   }
 });
 

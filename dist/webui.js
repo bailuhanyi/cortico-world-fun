@@ -671,9 +671,91 @@ function mountBook(ctx) {
   return { refresh: load };
 }
 
+/**
+ * 纪念品架：跨趟归集的收藏 + 每处的集齐进度。
+ *
+ * 数据全部由服务端的 `shelf/list` 算好（`keepsakes.js` 是纯函数），
+ * 这里只负责画。**不自己聚合、不自己算日期**——两边各算一遍必然会不一致。
+ */
+function mountShelf(ctx) {
+  const root = ctx.root;
+  root.replaceChildren();
+  const box = shell(root);
+  const body = el('div');
+  box.appendChild(body);
+
+  const stat = (n, label) => el('div', { class: 'fun-stat' },
+    el('b', { text: String(n) }), el('span', { text: label }));
+
+  const pct = (part) => `${part.done}/${part.total}`;
+
+  const render = (data) => {
+    body.replaceChildren();
+    if (!data.total) {
+      body.appendChild(el('div', { class: 'fun-empty', text: '架子上还什么都没有——她买过纪念品，这里就有了。' }));
+      return;
+    }
+
+    body.appendChild(el('div', { class: 'fun-stats' },
+      stat(data.total, '样东西'),
+      stat(data.pieces, '件'),
+      stat(data.places, '处地方'),
+      stat(data.completePlaces, '处逛遍')));
+
+    // 每一处的架子：只列真有东西的，空的不用占版面。
+    body.appendChild(el('div', { class: 'fun-sec', text: '按地方归着' }));
+    for (const g of data.byPlace) {
+      body.appendChild(el('div', { class: 'fun-trip' },
+        el('div', { class: 'fun-trip-head' },
+          el('span', { class: 'fun-trip-name', text: g.placeName }),
+          el('span', { class: 'fun-trip-when', text: `${g.items.length} 样 · 最早 ${g.firstDay || '—'}` })),
+        el('div', { class: 'fun-chips' },
+          g.items.map((it) => el('span', {
+            class: 'fun-chip',
+            text: it.times > 1 ? `${it.name} ×${it.times}` : it.name,
+            title: it.firstDay ? `${it.firstDay} 第一次拿到` : '',
+          })))));
+    }
+
+    // 进度：只列去过的。服务端已按「快逛遍的」排好，这里照顺序画。
+    const visited = data.progress.filter((p) => p.visits > 0);
+    if (visited.length) {
+      body.appendChild(el('div', { class: 'fun-sec', text: `逛过的 ${visited.length} 处` }));
+      for (const p of visited) {
+        const left = p.areas.left.length;
+        body.appendChild(el('div', { class: 'fun-trip' },
+          el('div', { class: 'fun-trip-head' },
+            el('span', { class: 'fun-trip-name', text: p.placeName }),
+            el('span', { class: 'fun-trip-when', text: `去过 ${p.visits} 次 · ${p.percent}%` })),
+          el('div', { class: 'fun-meta', text: `逛过 ${pct(p.areas)}${p.souvenirs.total ? ` · 纪念品 ${pct(p.souvenirs)}` : ''}${p.photos.total ? ` · 拍过 ${pct(p.photos)}` : ''}` }),
+          left
+            ? el('div', { class: 'fun-trip-sum', text: `还差：${p.areas.left.slice(0, 6).join('、')}${left > 6 ? ` 等 ${left} 处` : ''}` })
+            : el('div', { class: 'fun-trip-sum', text: '这一处已经逛遍了。' })));
+      }
+    }
+  };
+
+  const load = async () => {
+    try {
+      const data = await ctx.invoke('list');
+      if (!data?.ok) throw new Error(data?.error ?? '返回不正常');
+      render(data);
+    } catch (err) {
+      root.replaceChildren();
+      ensureStyle(root);
+      const box2 = shell(root);
+      box2.appendChild(errorCard(err));
+    }
+  };
+
+  void load();
+  return { refresh: load };
+}
+
 export default {
   panels: {
     places: { mount: mountPlaces },
     book: { mount: mountBook },
+    shelf: { mount: mountShelf },
   },
 };

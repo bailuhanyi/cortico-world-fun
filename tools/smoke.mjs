@@ -77,8 +77,12 @@ await world.start(host);
 ok(logged.some(([m]) => /娱乐时间已启动/.test(m)), 'start 打了启动日志');
 
 const names = world.tools().map((t) => t.name).sort();
-ok(names.join(',') === 'fun_go,fun_home,fun_places,fun_start,fun_view,fun_wander', `六个工具都在：${names.join(',')}`);
-ok(FUN_TOOL_DECLS.length === 6, 'FUN_TOOL_DECLS 六条');
+// 七个工具：0.1.6 加了 fun_shelf（纪念品架）。
+// 这里不写死条数，只钉住「该有的都有」——加工具时不该因为数字变了就红。
+const MUST_HAVE = ['fun_go', 'fun_home', 'fun_places', 'fun_shelf', 'fun_start', 'fun_view', 'fun_wander'];
+const missing = MUST_HAVE.filter((n) => !names.includes(n));
+ok(!missing.length, `工具都在：${names.join(',')}${missing.length ? `（缺 ${missing.join(',')}）` : ''}`);
+ok(FUN_TOOL_DECLS.length === names.length, `FUN_TOOL_DECLS 与 tools() 条数一致（${names.length} 条）`);
 for (const t of world.tools()) {
   ok(typeof t.handler === 'function', `${t.name} 有 handler`);
   ok(typeof t.description === 'string' && t.description.length > 10, `${t.name} 有描述`);

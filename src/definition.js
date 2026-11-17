@@ -31,6 +31,10 @@ const TOOL_SUMMARIES = {
     zh: '纪念册：以前逛过哪些趟、每一趟逛了什么买了什么。',
     en: 'The trip book: where she has been, what she wandered and bought.',
   },
+  fun_shelf: {
+    zh: '纪念品架：攒下来的东西按地方归着，写清在哪买的、哪天，以及这儿还差什么没逛。',
+    en: 'The shelf: what the trips have gathered, grouped by place, with where and when each came from and what is left to wander.',
+  },
 };
 
 function describeTools(decls) {

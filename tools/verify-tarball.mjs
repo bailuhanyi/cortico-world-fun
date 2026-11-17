@@ -104,7 +104,12 @@ try {
   const world = def.create({ cfg: def.defaults(), dataDir, timezone: 'Asia/Shanghai', persist: () => {} });
   await world.start({ log: { info() {}, warn() {}, error() {} } });
   const tool = (n) => world.tools().find((t) => t.name === n).handler;
-  ok(world.tools().length === 6, '六个工具都在');
+  // 不写死条数：0.1.6 加了 fun_shelf 之后，写死的 6 让验包一直红。
+  // 真正要查的是「该有的工具都在、describe 和代码一致」。
+  const MUST_HAVE = ['fun_go', 'fun_home', 'fun_places', 'fun_shelf', 'fun_start', 'fun_view', 'fun_wander'];
+  const missing = MUST_HAVE.filter((n) => !world.tools().some((t) => t.name === n));
+  ok(!missing.length, `工具都在${missing.length ? `（缺 ${missing.join(',')}）` : ''}`);
+  const toolCount = world.tools().length;
 
   const go = await tool('fun_go')({ place: '海洋馆' });
   ok(/进了海洋馆/.test(go.text), '进门正常');
@@ -120,7 +125,7 @@ try {
 
   console.log('5) 包里的 describe.json 自洽');
   const onDisk = JSON.parse(await readFile(join(pkgDir, 'describe.json'), 'utf8'));
-  ok(Array.isArray(onDisk.tools) && onDisk.tools.length === 6, `describe 里 6 个工具（实际 ${onDisk.tools?.length}）`);
+  ok(Array.isArray(onDisk.tools) && onDisk.tools.length === toolCount, `describe 里的工具数与代码一致（${onDisk.tools?.length} / ${toolCount}）`);
   ok(Array.isArray(onDisk.events) && onDisk.events.length === 0, 'describe 里 0 个事件（本插件不推事件）');
   ok(Array.isArray(onDisk.prompts) && onDisk.prompts.length === 1, 'describe 里有 1 份提示词');
   ok(onDisk.prompts[0].content.includes('feast_life_now'), '提示词内容是完整模板');

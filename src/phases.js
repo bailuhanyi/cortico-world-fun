@@ -90,6 +90,60 @@ export function eventsNow(venue, nowMin) {
 }
 
 /**
+ * 「少见」事件池：同一处地方去得多了才会碰上的那种。
+ *
+ * ## 为什么要分两层
+ *
+ * 一处 5 条事件、一趟逛 6 个地方，第三次去就全是旧话——`filterRepeatedEvents`
+ * 会把碰过的滤掉，剩下的越来越薄，最后只能在旧话里循环。这是「越玩越一样」
+ * 的根，光加数量解决不了（加 20 条也只是把枯竭往后推）。
+ *
+ * 所以加一层**rare**：内容和语气都更「这一次特别」，
+ * 只在**第 2 趟起**才有机会被抽到，而且概率低。
+ *
+ *   · 常见池：每次都在，负责「这儿就是这样的」。
+ *   · 少见池：要来过才轮到，负责「今天居然碰上了」。
+ *
+ * 阶段也可以带自己的 rare（夜里才有的那种），一并追加。
+ */
+export function rareEventsNow(venue, nowMin) {
+  const { phase } = phaseAt(venue, nowMin);
+  const base = Array.isArray(venue?.rareEvents) ? venue.rareEvents : [];
+  const extra = Array.isArray(phase?.rareEvents) ? phase.rareEvents.filter(Boolean) : [];
+  return [...extra, ...base];
+}
+
+/**
+ * 这次逛到的是常见池还是少见池。
+ *
+ * 判据两条，都满足才可能出少见：
+ *   1. **来过至少一趟**（`visits >= 1`，即这是第 2 趟起）——第一次去不该
+ *      撞见「老板记得你」。少见事件的内容是按「熟人」写的。
+ *   2. 掷一次骰子小于 `chance`。
+ *
+ * `chance` 给 0 就永远走常见池（测试和「别太跳」的场合用）。
+ *
+ * 为什么是概率而不是「集齐解锁」：罕见事件的价值在于**不确定**。
+ * 按顺序解锁就变成了清单，她会去找，而不是碰上。
+ *
+ * @param {object[]} common  常见池（已滤过重复）
+ * @param {object[]} rare    少见池（已滤过重复）
+ * @param {number} visits    这一处去过几次（不含这一趟）
+ * @param {() => number} random
+ * @param {number} chance
+ * @returns {object[]} 这次该从哪个池子里抽
+ */
+export function eventPool(common, rare, visits, random = Math.random, chance = 0.15) {
+  const c = Array.isArray(common) ? common : [];
+  const r = Array.isArray(rare) ? rare : [];
+  if (!r.length) return c;
+  if (!(Number(visits) >= 1)) return c;
+  const p = Number(chance);
+  if (!Number.isFinite(p) || p <= 0) return c;
+  return Number(random()) < p ? r : c;
+}
+
+/**
  * 这一处此刻「还没去的」可逛项目。
  *
  * 阶段可以覆盖 `areas`（例如夜市白天只开一半摊位、澡堂深夜只有休息区）。

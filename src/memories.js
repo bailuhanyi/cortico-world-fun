@@ -18,6 +18,28 @@
 
 const norm = (v, max) => (typeof v === 'string' ? v.replace(/\s+/g, ' ').trim().slice(0, max) : '');
 
+const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * 这一趟算哪一天。
+ *
+ * 优先 `leftDay`（收摊时按本地时区算好存下的）；老数据没有，回退到
+ * 「用 `leftAt` 反算」——那是 0.1.5 的行为，按 UTC 算，早上 8 点前收的摊会偏一天。
+ *
+ * 为什么不再统一用 UTC 反算：她在上海，早上 6 点爬完山 7 点再去，
+ * 会被告知「你之前来过这里 1 次，上一次是昨天」——其实是同一个早上。
+ */
+function tripDay(trip) {
+  const stored = norm(trip?.leftDay, 10);
+  if (DAY_RE.test(stored)) return stored;
+  try {
+    const day = trip?.leftAt ? new Date(trip.leftAt).toISOString().slice(0, 10) : '';
+    return DAY_RE.test(day) ? day : '';
+  } catch {
+    return '';
+  }
+}
+
 /** 某一天（YYYY-MM-DD）到「哪天」的中文说法。`today` 由调用方给，避免这里感知时区。 */
 export function dayPhrase(day, today) {
   const d = norm(day, 10);
@@ -62,14 +84,9 @@ export function historyFor(trips, placeId, today = '') {
 
     for (const t of list) {
       visitCount += 1;
-      // leftAt 可能是坏的（手改过的 state、旧版本写的）：坏就这一天不知道，但这一趟还得算。
-      let day = '';
-      try {
-        day = t.leftAt ? new Date(t.leftAt).toISOString().slice(0, 10) : '';
-        if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) day = '';
-      } catch {
-        day = '';
-      }
+      // 优先收摊时存下的本地日期；老数据回退到用 leftAt 反算。
+      // 反算可能是坏的（手改过的 state、旧版本写的）：坏就这一天不知道，但这一趟还得算。
+      const day = tripDay(t);
       if (day) {
         if (!firstDay || day < firstDay) firstDay = day;
         if (!lastDay || day > lastDay) lastDay = day;
@@ -133,7 +150,6 @@ export function memoryLine(history, today = '') {
   // 上一次就是今天时，上面已经说过「今天来过」，这里别再复读一遍。
   const when = sameDay ? '' : (history.lastDayPhrase || '');
   parts.push(`你之前来过这里 ${n} 次${when ? `，上一次是${when}` : ''}。`);
-
   // 逛过的：最多提三处，带次数（去过两次以上的才标次数，一次的不标）。
   const areas = history.areas.slice(0, 3)
     .map((a) => (a.times > 1 ? `${a.area}（${a.times} 次）` : a.area));
@@ -149,6 +165,45 @@ export function memoryLine(history, today = '') {
   if (ate) parts.push(`${ate.item}也喝过吃过。`);
 
   return parts.join('');
+}
+
+/**
+ * 这一处算不算「常来的地方」。
+ *
+ * 判据是去过 5 趟以上。为什么是 5 而不是 3：3 趟还可能是「刚发现这儿」，
+ * 5 趟才到了「老板认识你」的程度。常客语气只在够格时才用，否则那句
+ * 「老板娘认出你了」会显得廉价。
+ */
+export const REGULAR_VISITS = 5;
+
+export function isRegular(history) {
+  return (history?.visitCount ?? 0) >= REGULAR_VISITS;
+}
+
+/**
+ * 常客那半句：和 `memoryLine` 分开，因为它的**语气**不一样。
+ *
+ * `memoryLine` 是「摆事实」（来过几次、买过什么）——第一次再去时这样最合适。
+ * 常客那句是「关系」：认得你了、多给一串、记得你上次要什么。
+ * 这部分刻意**不夸大**：不写「你就是这儿的常客了」，只写一个具体的小动作，
+ * 剩下的让她自己接。
+ *
+ * 返回空串表示还不够格（调用方一个字都不加）。
+ *
+ * @param {object} history historyFor() 的结果
+ * @param {string} placeName
+ */
+export function regularLine(history, placeName = '') {
+  if (!isRegular(history)) return '';
+  const n = history.visitCount;
+  const who = placeName ? `${placeName}的` : '';
+  const lines = [
+    `${who}人对你有印象了——来了 ${n} 次。`,
+    `${who}人认得你了（第 ${n} 次），这回没多问就把你常要的那份记下了。`,
+    `来过 ${n} 次了，${who}人朝你点了一下头。`,
+  ];
+  // 按次数取，稳定不随机：同一个次数永远同一句话，免得她以为是随机事件。
+  return lines[n % lines.length];
 }
 
 /**
@@ -185,9 +240,17 @@ export function cameEarlierToday(history, today) {
  * 这句话就不成立了——她这次没买，上次买了。同一个地方去得越多，
  * 撞上旧事的概率越高，痕迹就成了复读机。
  *
- * 判据很保守：**只在她确实做过这件事时**才拦，不做模糊语义匹配。
- * 例如她买过「吧唧」，就过滤掉提到「吧唧」的事件；她吃过「珍珠奶茶」同理。
- * 没做过的事一律不拦（那是新鲜的）。
+ * 拦两类：
+ *   1. **她确实做过这件事**（买过 / 喝过 / 拍过）：事件文本里出现那件东西的名字，
+ *      就说明这条是在讲她上次买过的东西，这次没发生。
+ *   2. **这条事件她以前碰上过**（`history.events`，按原文比对）：
+ *      同一处去五次、事件池只有五条，第五次就全是旧话。
+ *
+ * 第 2 条以前是**写了没接**：`historyFor` 一直算着 `events`，但没有任何人用它，
+ * 于是「去过的地方会记得」这一层漏了半年。现在接上。
+ *
+ * 判据仍然保守：只按原文/名字比对，不做模糊语义匹配，没碰过的一律放过
+ * （池子抽干时调用方会退回全池，见 `pickEvent`）。
  */
 export function filterRepeatedEvents(events, history) {
   const pool = Array.isArray(events) ? events : [];
@@ -197,6 +260,35 @@ export function filterRepeatedEvents(events, history) {
     ...(history.ate ?? []).map((s) => s.item),
     ...(history.photos ?? []).map((s) => s.spot),
   ].filter(Boolean);
-  if (!done.length) return [...pool];
-  return pool.filter((e) => !done.some((d) => String(e).includes(d)));
+  const seen = new Set((history.events ?? []).map((e) => norm(e, 120)).filter(Boolean));
+  return pool.filter((e) => {
+    const line = norm(e, 120);
+    if (seen.has(line)) return false;
+    return !done.some((d) => String(e).includes(d));
+  });
+}
+
+/**
+ * 从池子里抽一条她这趟还没碰过的事件。
+ *
+ * 分两层退让，目的是「宁可重复，也别没有」：
+ *   1. 全池里挑这趟没碰过的；
+ *   2. 全池都碰过了（这处去太多次了）→ 退回全池随机，照样有一条。
+ *
+ * 以前调用方各写一遍这段，其中 `fun_wander` 自动挑那一支还漏传事件池
+ * （0.1.6 批次修过）。抽出来一处，就不会再有第二份漏传。
+ *
+ * @param {string[]} pool   已经过 `filterRepeatedEvents` 的事件池
+ * @param {string[]} seen   这一趟已经碰过的事件（session.events）
+ * @param {() => number} random
+ * @returns {string|null}
+ */
+export function pickEvent(pool, seen = [], random = Math.random) {
+  const list = Array.isArray(pool) ? pool : [];
+  if (!list.length) return null;
+  const had = new Set((Array.isArray(seen) ? seen : []).map((e) => norm(e, 120)));
+  const fresh = list.filter((e) => !had.has(norm(e, 120)));
+  const source = fresh.length ? fresh : list;
+  const i = Math.floor(Number(random()) * source.length) % source.length;
+  return source[i] ?? null;
 }

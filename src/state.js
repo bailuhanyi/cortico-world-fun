@@ -75,6 +75,9 @@ export function newState(day) {
 
 const text = (v, max) => (typeof v === 'string' ? v.replace(/\s+/g, ' ').trim().slice(0, max) : '');
 
+/** 本地日期形状：`YYYY-MM-DD`。存在 trip 上，读回来时校验形状而不是重新换算。 */
+const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
+
 function textList(v, maxItems, maxLen) {
   const arr = Array.isArray(v) ? v : [];
   return arr.map((x) => text(x, maxLen)).filter(Boolean).slice(0, maxItems);
@@ -123,8 +126,21 @@ function normalizeTrip(raw) {
     placeName: text(raw.placeName, 40) || placeId,
     scene: text(raw.scene, 40),
     outfit: text(raw.outfit, 40),
+    // 跟谁一起去的：只进回执不留档的话，「上一次是和阿岚去的」这种话永远说不出来。
+    company: text(raw.company, 40),
     enteredAt: Number.isFinite(Number(raw.enteredAt)) ? Number(raw.enteredAt) : 0,
     leftAt: Number.isFinite(Number(raw.leftAt)) ? Number(raw.leftAt) : 0,
+    /**
+     * 收摊那天的**本地**日期（YYYY-MM-DD）。
+     *
+     * 为什么单存一个：`leftAt` 是毫秒，换算成「哪天」需要时区。老代码用
+     * `toISOString().slice(0,10)` 取 UTC 日期，于是上海时间早上 8 点前收的摊
+     * 会被算成前一天——「同一天早上去过两次」会被说成「上一次是昨天」。
+     * 收摊时由 World 按它自己的时区算好存下来，读的人就不用再猜了。
+     */
+    leftDay: DAY_RE.test(text(raw.leftDay, 10)) ? text(raw.leftDay, 10) : '',
+    /** 收摊时说的那一句（和 `visited[].note` 不是一回事：那是逛某处时记的）。 */
+    note: text(raw.note, 120),
     visited: normalizeVisited(raw.visited),
     souvenirs: textList(raw.souvenirs, 12, 40),
     photos: textList(raw.photos, 12, 60),
@@ -145,35 +161,70 @@ function normalizeSession(raw) {
 
 /**
  * 把磁盘上的旧状态补齐成当前形状（不信任文件内容）。
- * `day` 和今天不一致 = 跨天了：只清 session，纪念册（trips）留着。
- */
-/**
- * 把磁盘上的旧状态补齐成当前形状（不信任文件内容）。
  *
- * `day` 和今天不一致 = 跨天了：**只清掉没逛完的那一趟（session）**，
- * 纪念册（trips）必须留着。
+ * ## 跨天为什么不再无脑清 session
  *
- * 这一条是做「去过的痕迹」时修的：旧版一直整份重来，于是 `trips` 活不过一天——
- * 「去过的痕迹」做出来才发现纪念册每天清零，记了等于没记。
- * 跨天该清的是「今天正在逛什么」，不是「她去过哪儿」。
+ * 0.1.5 及以前：`raw.day !== day` 就直接 `session = null`。这看起来合理
+ * （「昨天没逛完就是不逛完了」），实际会踩一条真会发生的路：
+ *
+ *   夜市 17:30–01:00、KTV 18:00–02:00。23:50 进夜市逛着，过了午夜再
+ *   `fun_wander`，回执就是「你还没进门呢」——她正在逛的那一趟凭空消失，
+ *   而那个地方本来就没打烊。
+ *
+ * 现在的判据是两条取或：
+ *
+ *   1. **还是同一天** → 留着。同一天里挂久了不算「没逛完」，`fun_wander`
+ *      会提一句「挂得有点久了」，但绝不替她把这一趟收掉（这是 0.1.4 的行为，
+ *      不能因为修跨午夜就一起改坏）。
+ *   2. **跨了天，但上一次动在 TTL 之内** → 留着。这就是夜市/KTV 那条路。
+ *
+ * 跨了天、又挂过 TTL 的才丢（「逛到一半去睡觉，第二天回来发现不算了」）。
+ *
+ * 纪念册（`trips`）**任何时候都不清**——跨天该清的是「今天正在逛什么」，
+ * 不是「她去过哪儿」。这一条是 0.1.5 修的，别改回去。
  */
-export function normalizeState(raw, day) {
+export function normalizeState(raw, day, nowMs = 0, ttlMin = DEFAULT_TTL_MIN) {
   if (!raw || typeof raw !== 'object') return newState(day);
-  const sameDay = raw.day === day;
+  const session = normalizeSession(raw.session);
+  const keep = session && (raw.day === day || sessionAlive(session, nowMs, ttlMin));
   return {
     day,
-    // 跨天一律丢 session：昨天没逛完的那一趟就是不逛完了，不该接着逛。
-    session: sameDay ? normalizeSession(raw.session) : null,
+    session: keep ? session : null,
     trips: (Array.isArray(raw.trips) ? raw.trips : []).map(normalizeTrip).filter(Boolean).slice(0, MAX_TRIPS),
   };
+}
+
+/** 和 config.js 的 `funSessionTTLMin` 默认值保持一致（纯函数不 import 配置，防循环依赖）。 */
+export const DEFAULT_TTL_MIN = 90;
+
+/**
+ * 这一趟挂太久没有（跨天时用来判「还认不认昨天那一趟」）。
+ *
+ * 只看「上次动过之后过了多久」，不看日历。**不传 now 时返回 true**
+ * （没有时间可判时宁可留着——丢错了她会「你还没进门呢」，留错了顶多提醒一句收摊）。
+ */
+export function sessionAlive(session, nowMs, ttlMin = DEFAULT_TTL_MIN) {
+  if (!session) return false;
+  const now = Number(nowMs);
+  const last = Number(session.lastAt ?? session.enteredAt);
+  if (!Number.isFinite(now) || now <= 0) return true;
+  if (!Number.isFinite(last) || last <= 0) return true;
+  // 时钟往回调过（last 在未来）：当作还活着，别因为对钟就把人踢出去。
+  if (last > now) return true;
+  const ttl = Math.max(1, Math.round(Number(ttlMin) || DEFAULT_TTL_MIN));
+  return now - last <= ttl * 60000;
 }
 
 /**
  * 进门：把一处场所变成一趟 session。
  * 已经在逛就**不覆盖**——先让她 `fun_home` 收摊，或者她自己说换地方。
+ *
+ * `company` 是「跟谁一起去的」，进 session 也进纪念册：只写进当次回执的话，
+ * 「上一次是和阿岚去的」这种话以后永远说不出来。
+ *
  * 返回 { session, already } —— already 为 true 表示原来就有一趟没结束。
  */
-export function enterVenue(state, venue, nowMs, random = Math.random) {
+export function enterVenue(state, venue, nowMs, random = Math.random, company = '') {
   if (state.session) return { session: state.session, already: true };
   const session = {
     id: `${venue.id}-${nowMs}`,
@@ -184,6 +235,7 @@ export function enterVenue(state, venue, nowMs, random = Math.random) {
     // imggen 会提示「库里没找到」，那一项白填还显得她填错了。
     scene: typeof venue.scene === 'string' ? venue.scene.trim() : '',
     outfit: venue.recommendedOutfit || '',
+    company: text(company, 40),
     enteredAt: nowMs,
     lastAt: nowMs,
     visited: [],
@@ -288,17 +340,28 @@ export function buySouvenir(state, item, nowMs) {
  *
  * `note` 是她收摊时说的一句话（可空）。**回执正文由 World 拼**，
  * 这里只给结构化摘要，便于单测断言。
+ *
+ * `day` 必须由调用方按**本地时区**算好传进来（`dayIn(tz, nowMs)`），
+ * 存进 `trip.leftDay`。以前不传，于是所有读纪念册的地方都用 UTC 反算日期，
+ * 上海时间早上 8 点前收的摊会被算成前一天。不传就留空，读的一方回退到
+ * 「用 leftAt 反算」，行为与旧版一致（不迁移、不报错）。
  */
-export function closeSession(state, nowMs, note = '') {
+export function closeSession(state, nowMs, note = '', day = '') {
   const s = state.session;
   if (!s) return null;
+  const said = text(note, 120);
   const trip = {
     placeId: s.placeId,
     placeName: s.placeName,
     scene: s.scene,
     outfit: s.outfit,
+    company: text(s.company, 40),
     enteredAt: s.enteredAt,
     leftAt: nowMs,
+    leftDay: DAY_RE.test(text(day, 10)) ? text(day, 10) : '',
+    // 收摊这句话以前只出现在回执里，转头就没了：纪念册重看这一趟只剩「逛了哪儿」。
+    // 「今天人很多，但很开心」这种话才是她自己的记录，必须存。
+    note: said,
     visited: s.visited.map((v) => ({ ...v })),
     souvenirs: [...s.souvenirs],
     photos: [...s.photos],
@@ -309,7 +372,7 @@ export function closeSession(state, nowMs, note = '') {
   state.trips.unshift(trip);
   if (state.trips.length > MAX_TRIPS) state.trips.length = MAX_TRIPS;
   const stayedMin = Math.max(0, Math.round((nowMs - s.enteredAt) / 60000));
-  return { trip, stayedMin, note: text(note, 120) };
+  return { trip, stayedMin, note: said };
 }
 
 /** 这一趟挂太久了没？超过 ttlMin 就该提醒收摊（但绝不替她收）。 */
@@ -329,12 +392,33 @@ export function visitedText(session) {
 export function tripSummary(trip) {
   if (!trip) return '';
   const parts = [trip.placeName];
+  if (trip.company) parts.push(`跟${trip.company}一起`);
   if (trip.visited?.length) parts.push(`逛了${trip.visited.map((v) => v.area).join('、')}`);
   if (trip.souvenirs?.length) parts.push(`买了${trip.souvenirs.join('、')}`);
   if (trip.photos?.length) parts.push(`在${trip.photos.join('、')}拍了照`);
   // 吃了/喝了什么：只说「喝了杯奶茶」，不说味道——味道不在这个插件里。
   if (trip.ate?.length) parts.push(`${trip.ate.map((x) => `${x.verb}了${x.item}`).join('、')}`);
   return parts.join('，');
+}
+
+/**
+ * 这一趟算哪一天（本地日期）。
+ *
+ * 优先用收摊时存下的 `leftDay`；老数据没有这个字段，回退到「用 leftAt 反算」，
+ * 也就是旧版的行为——**不迁移、不改写老文件**。
+ *
+ * 回退那条路径仍然按 UTC 算，所以老数据在早上 8 点前收的摊会偏一天。
+ * 这是已知的、只影响历史记录的偏差；新收的摊都走 `leftDay`，不会再有。
+ */
+export function tripDay(trip) {
+  const stored = text(trip?.leftDay, 10);
+  if (DAY_RE.test(stored)) return stored;
+  try {
+    const day = trip?.leftAt ? new Date(trip.leftAt).toISOString().slice(0, 10) : '';
+    return DAY_RE.test(day) ? day : '';
+  } catch {
+    return '';
+  }
 }
 
 /** 最近去过的地方 id（跨天也算），给 fun_places 排序用。正在逛的排最前。 */

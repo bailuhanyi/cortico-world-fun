@@ -4,8 +4,8 @@ import assert from 'node:assert/strict';
 import { VENUES } from '../src/venues.js';
 import {
   buySouvenir, closeSession, dayIn, enterVenue, hmIn, isStale, minutesIn,
-  newState, normalizeState, photoSpotsFor, recentPlaceIds, souvenirsFor,
-  takePhoto, tripSummary, venueById, visitedText, wanderOnce,
+  newState, normalizeState, photoSpotsFor, recentPlaceIds, sessionAlive, souvenirsFor,
+  takePhoto, tripDay, tripSummary, venueById, visitedText, wanderOnce,
 } from '../src/state.js';
 
 const TZ = 'Asia/Shanghai';
@@ -19,10 +19,11 @@ test('dayIn / hmIn / minutesIn 按时区算', () => {
   assert.equal(minutesIn(TZ, t), 14 * 60 + 5);
 });
 
-test('normalizeState：跨天整份重来，坏数据不炸', () => {
+test('normalizeState：坏数据不炸，坏 session 丢掉', () => {
   const day = '2026-11-15';
   assert.deepEqual(normalizeState(null, day), newState(day));
-  assert.deepEqual(normalizeState({ day: '2026-11-14', session: { placeId: 'con' } }, day), newState(day));
+  // session 形状坏（连 placeId 都没有）→ 丢掉；但纪念册照旧读。
+  assert.deepEqual(normalizeState({ day: '2026-11-14', session: {} }, day), newState(day));
   assert.deepEqual(normalizeState({ day, session: 'garbage', trips: 'nope' }, day), newState(day));
   // 同一天：session 与 trips 都补齐成当前形状。
   const s = normalizeState({
@@ -35,19 +36,81 @@ test('normalizeState：跨天整份重来，坏数据不炸', () => {
   assert.equal(s.trips.length, 1, '坏 trip 要丢掉');
 });
 
-test('normalizeState：跨天只清 session，纪念册必须留着', () => {
-  // 0.1.x 一直是「跨天整份重来」，于是 trips 活不过一天——做「去过的痕迹」时才发现
-  // 纪念册每天清零，记了等于没记。这条钉住修好后的行为。
+test('normalizeState：纪念册任何时候都不清', () => {
+  // 0.1.x 早期「跨天整份重来」让纪念册活不过一天——做「去过的痕迹」时才发现。
   const raw = {
     day: '2026-11-14',
-    session: { placeId: 'con', placeName: '漫展', enteredAt: 1 },
+    session: null,
     trips: [{ placeId: 'con', placeName: '漫展', enteredAt: 1, leftAt: 2, visited: [{ area: '同人展台' }] }],
   };
   const next = normalizeState(raw, '2026-11-15');
   assert.equal(next.day, '2026-11-15');
-  assert.equal(next.session, null, '跨天不该接着逛昨天那趟');
   assert.equal(next.trips.length, 1, '纪念册要跨天留着');
   assert.equal(next.trips[0].placeName, '漫展');
+});
+
+test('normalizeState：跨午夜但还没挂太久，这一趟要保住', () => {
+  // 真会踩的场景：夜市 17:30–01:00、KTV 18:00–02:00。
+  // 23:50 进门逛着，过了午夜再 fun_wander，以前会回「你还没进门呢」。
+  const entered = at('2026-11-17T23:50:00+08:00');
+  const now = at('2026-11-18T00:05:00+08:00');      // 15 分钟后，已经跨了日历日
+  const raw = { day: '2026-11-17', session: { placeId: 'nightmarket', placeName: '夜市', enteredAt: entered, lastAt: entered }, trips: [] };
+  const next = normalizeState(raw, '2026-11-18', now, 90);
+  assert.ok(next.session, '跨午夜不该把正在逛的这一趟丢掉');
+  assert.equal(next.session.placeName, '夜市');
+});
+
+test('normalizeState：挂过 TTL 的那一趟仍然丢掉', () => {
+  const entered = at('2026-11-17T23:50:00+08:00');
+  const now = at('2026-11-18T04:00:00+08:00');      // 4 小时 10 分后，超过 90 分钟 TTL
+  const raw = { day: '2026-11-17', session: { placeId: 'nightmarket', placeName: '夜市', enteredAt: entered, lastAt: entered }, trips: [] };
+  assert.equal(normalizeState(raw, '2026-11-18', now, 90).session, null, '挂太久该丢');
+});
+
+test('normalizeState：时钟往回调过也不踢人', () => {
+  const future = at('2026-11-18T10:00:00+08:00');
+  const now = at('2026-11-18T09:00:00+08:00');
+  const raw = { day: '2026-11-18', session: { placeId: 'con', placeName: '漫展', enteredAt: future, lastAt: future }, trips: [] };
+  assert.ok(normalizeState(raw, '2026-11-18', now, 90).session, 'lastAt 在未来时应当当作还活着');
+});
+
+test('normalizeState：不传 now 时宁可留着（fail-safe）', () => {
+  // 不传 now 就没有「过了多久」可判。这时**留着**比丢掉安全：
+  // 丢错了她会「你还没进门呢」，留错了顶多是下次 fun_wander 提一句该收摊了。
+  const raw = { day: '2026-11-14', session: { placeId: 'con', placeName: '漫展', enteredAt: 1, lastAt: 1 }, trips: [] };
+  assert.ok(normalizeState(raw, '2026-11-15').session, '不传 now 时不该把这一趟丢掉');
+});
+
+test('sessionAlive：判据就是「上次动过之后过了多久」', () => {
+  const now = at('2026-11-18T12:00:00+08:00');
+  const fresh = { enteredAt: now - 10 * 60000, lastAt: now - 10 * 60000 };
+  const old = { enteredAt: now - 300 * 60000, lastAt: now - 300 * 60000 };
+  assert.equal(sessionAlive(fresh, now, 90), true);
+  assert.equal(sessionAlive(old, now, 90), false);
+  assert.equal(sessionAlive(null, now, 90), false);
+  // 没有 lastAt 的老数据：用 enteredAt 判，别因为缺字段就踢人。
+  assert.equal(sessionAlive({ enteredAt: now - 5 * 60000 }, now, 90), true);
+});
+
+test('closeSession：收摊那句话、同行的人、本地日期都进纪念册', () => {
+  const st = newState('2026-11-18');
+  const now = at('2026-11-18T00:10:00+08:00');   // 凌晨收摊：UTC 还是前一天
+  enterVenue(st, CON, now, Math.random, '阿岚');
+  const closed = closeSession(st, now, '今天人很多，但很开心', '2026-11-18');
+  assert.equal(closed.note, '今天人很多，但很开心');
+  assert.equal(closed.trip.note, '今天人很多，但很开心', '收摊那句话要存进 trip');
+  assert.equal(closed.trip.company, '阿岚', '同行的人要存进 trip');
+  assert.equal(closed.trip.leftDay, '2026-11-18', '日期要按本地存，不能存 UTC 那天');
+  assert.match(tripSummary(closed.trip), /跟阿岚一起/);
+});
+
+test('tripDay：优先用存下的 leftDay，老数据回退到反算', () => {
+  const now = at('2026-11-18T00:10:00+08:00');
+  assert.equal(tripDay({ leftAt: now, leftDay: '2026-11-18' }), '2026-11-18');
+  // 老数据没有 leftDay：回退到用 leftAt 反算（UTC，会偏一天，但它只是历史记录）
+  assert.equal(tripDay({ leftAt: now }), '2026-11-17');
+  assert.equal(tripDay({}), '');
+  assert.equal(tripDay({ leftDay: 'garbage', leftAt: now }), '2026-11-17');
 });
 
 test('enterVenue：进门建 session；已经在逛就不覆盖', () => {

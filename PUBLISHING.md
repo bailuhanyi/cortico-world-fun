@@ -23,6 +23,7 @@ node test/world.test.mjs
 node test/panels.test.mjs
 node test/memories.test.mjs
 node test/phases.test.mjs
+node test/keepsakes.test.mjs
 node test/user-venues.test.mjs
 node tools/check-prompt.mjs      # 模板变量与 envPromptVars 对上
 node tools/check-isolation.mjs   # 不依赖别的 World、吃喝数据不含味道词
@@ -34,9 +35,9 @@ node tools/publish-check.mjs     # 市场收录口径（加 --online 额外查 n
 
 `prepublishOnly` 已经把上面这一串（除 `--online`、`verify-tarball` 外）都串起来了，`npm publish` 之前自动跑一遍，任何一处失败就发不出去。
 
-当前状态（0.1.5，**已发**）：**25 项通过、0 失败、1 警告**（没截 `screenshots`）；**152 个单测全绿**
-（venues 12 · state 14 · memories 12 · phases 14 · user-venues 19 · world 57 · panels 24）；
-打包 **17 个文件**、解包约 313KB。
+当前状态（0.1.6，**待发**）：**25 项通过、0 失败、1 警告**（没截 `screenshots`）；**193 个单测全绿**
+（venues 13 · state 21 · memories 18 · phases 14 · keepsakes 15 · user-venues 19 · world 65 · panels 28）；
+打包 **18 个文件**、解包约 355KB。
 
 > 这里曾写「162 项」。那是把 7 个文件的分项加错了一次——逐个数下来是 152，
 > 与 `npm test` 实际跑出的一致。以后改测试数量请以实跑结果为准，别照抄文档。

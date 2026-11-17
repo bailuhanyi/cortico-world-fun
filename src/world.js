@@ -28,19 +28,21 @@ import {
   CROWD_LABEL, KIND_LABEL, VENUES, allPlaces, findVenue, hasFood, hasScene, hoursState, suggestPlaces,
 } from './venues.js';
 import {
-  areasNow, descNow, eventsNow, phaseLabelAt,
+  areasNow, descNow, eventPool, eventsNow, phaseLabelAt, rareEventsNow,
 } from './phases.js';
 import {
-  cameEarlierToday, dayPhrase, filterRepeatedEvents, historyFor, memoryLine, untriedAreas,
+  cameEarlierToday, dayPhrase, filterRepeatedEvents, historyFor, memoryLine, pickEvent,
+  regularLine, untriedAreas,
 } from './memories.js';
 import {
   USER_PREFIX, blankVenue, cleanOverride, cleanUserVenue, idFromName, isPresetId,
   mergeVenues, parseVenueFile, stringifyVenueFile,
 } from './user-venues.js';
+import { collectSouvenirs, progressFor, progressLine } from './keepsakes.js';
 import {
   buySouvenir, closeSession, dayIn, enterVenue, hmIn, isStale, minutesIn,
   newState, normalizeState, photoSpotsFor, recentPlaceIds, recordConsume,
-  souvenirsFor, takePhoto, tripSummary, visitedText, wanderOnce,
+  souvenirsFor, takePhoto, tripDay, tripSummary, visitedText, wanderOnce,
 } from './state.js';
 
 const ENV_PROMPT = fileURLToPath(new URL('./ENV_PROMPT.md', import.meta.url));
@@ -143,6 +145,18 @@ export const FUN_TOOL_DECLS = [
       type: 'object',
       properties: {
         count: { type: 'integer', description: '看最近几趟，默认 5。', minimum: 1, maximum: 20 },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'fun_shelf',
+    tags: ['read', 'snapshot'],
+    description: '纪念品架：这些趟攒下来的东西，按地方归着，写清哪件是在哪儿哪天拿到的、去过几次、这一处还差什么没逛。想知道「我都攒了什么」「哪几处快集齐了」就看这个。',
+    parameters: {
+      type: 'object',
+      properties: {
+        place: { type: 'string', description: '只看某一处的架子（填地方名，可选）。不填就看全部。' },
       },
       additionalProperties: false,
     },
@@ -347,6 +361,7 @@ export class FunWorld {
       case 'fun_home': return await this.#homeTool(args);
       case 'fun_start': return this.#startTool();
       case 'fun_view': return this.#viewTool(args);
+      case 'fun_shelf': return this.#shelfTool(args);
       default: return { text: `[${name} 失败] 不认识这个工具。`, failed: true };
     }
   }
@@ -407,7 +422,7 @@ export class FunWorld {
   async #goTool(args) {
     const now = this.#now();
     const day = dayIn(this.timezone, now);
-    this.#state = normalizeState(this.#state, day);
+    this.#state = this.#normalizeState();
 
     const places = this.#places();
     const venue = findVenue(places, args?.place);
@@ -417,7 +432,8 @@ export class FunWorld {
     }
 
     const state = hoursState(venue, minutesIn(this.timezone, now));
-    const { session, already } = enterVenue(this.#state, venue, now, this.#random);
+    const company = typeof args?.company === 'string' ? args.company.trim() : '';
+    const { session, already } = enterVenue(this.#state, venue, now, this.#random, company);
     if (already) {
       return {
         text: `你已经在「${this.#state.session.placeName}」逛着了（${visitedText(this.#state.session)}）。\n要么接着 fun_wander，要么 fun_home 收了再换地方。`,
@@ -448,13 +464,28 @@ export class FunWorld {
     const history = historyFor(this.#state.trips, venue.id, day);
     if (history) {
       const memory = memoryLine(history, day);
-      const untried = history.visitCount >= 2 ? untriedAreas(history, areasNow(venue, nowMin)) : [];
       const bits = [];
       if (cameEarlierToday(history, day)) bits.push('今天你已经来过一次了。');
       if (memory) bits.push(memory);
       if (bits.length) lines.push(`（${bits.join('')}）`);
-      // 来过几次却总有没逛到的：直接点出来，比复述去过哪儿有用。
-      if (untried.length) lines.push(`还没去过：${untried.join('、')}。`);
+
+      // 常来的地方换一种口气：这是「这处是我的」和「一个场所库」的区别。
+      // 只在够格时出现（5 趟起），且和上面那句分开放，免得事实和关系糊成一团。
+      const regular = regularLine(history, venue.name);
+      if (regular) lines.push(regular);
+
+      // 还差哪几处：用**这一处自己的完整清单**（不是此刻被时段收窄的那份），
+      // 和集齐进度共用一份数据，别让两句话各算各的又各说一遍。
+      const prog = progressFor(venue, this.#state.trips);
+      if (prog.areas.left.length) {
+        const shown = prog.areas.left.slice(0, 4);
+        const more = prog.areas.left.length - shown.length;
+        lines.push(`还没去过：${shown.join('、')}${more > 0 ? ` 等 ${prog.areas.left.length} 处` : ''}。`);
+      }
+      // 纪念品集齐了值得说一句；没集齐不报数（「还差两件纪念品」是清单口气）。
+      if (prog.souvenirs.complete && prog.souvenirs.total) {
+        lines.push(`（这儿的纪念品你集齐了：${prog.souvenirs.got.join('、')}。）`);
+      }
     }
 
     lines.push('一处一处来：fun_wander 逛一处（不填 area 就自动挑一个没逛过的），看到纪念品/拍照点会用得了。');
@@ -464,7 +495,7 @@ export class FunWorld {
   async #wanderTool(args) {
     const now = this.#now();
     const day = dayIn(this.timezone, now);
-    this.#state = normalizeState(this.#state, day);
+    this.#state = this.#normalizeState();
     const session = this.#state.session;
     if (!session) {
       return { text: `你还没进门呢。先 fun_go 挑一处地方（${VENUES.slice(0, 4).map((v) => v.name).join(' / ')}…一共 ${VENUES.length} 处，fun_places 能看全），再一处一处逛。` };
@@ -492,24 +523,39 @@ export class FunWorld {
     // （上次买了吧唧，这次又抽到「吧唧挑了半天」——那件事这次没发生）。
     const pastHistory = historyFor(this.#state.trips, venue.id, day);
     const liveEvents = filterRepeatedEvents(eventsNow(venue, nowMin), pastHistory);
+    // 少见事件：来过才轮到（内容是按「熟人」写的），而且只是**有机会**。
+    // 两池都先滤掉碰过的，再按 `eventPool` 决定这次从哪个池子里抽。
+    const rarePool = filterRepeatedEvents(rareEventsNow(venue, nowMin), pastHistory);
+    const visitsBefore = pastHistory?.visitCount ?? 0;
+    const chosenPool = eventPool(liveEvents, rarePool, visitsBefore, this.#random);
 
     // 指定了没逛过的项目就用它，否则自动挑。
+    //
+    // `area` 和 `buy` / `photo` / `consume` 一样**必须先判「这儿真有这处」再记**。
+    // 以前这里是 `hit ?? wanted`：填一个库里没有的名字（「蹦极」）会被原样接受，
+    // 回执写「海洋馆 · 蹦极」，还进了纪念册——等于替她编了一个不存在的地方。
+    // 现在三档认：正名、别名式包含、或者不填让系统挑。
     const wanted = typeof args?.area === 'string' ? args.area.trim() : '';
-    let area = wanted;
     let picked = null;
+    let areaMiss = '';
     if (wanted) {
       const hit = liveAreas.includes(wanted) ? wanted : liveAreas.find((a) => a.includes(wanted));
-      area = hit ?? wanted;
-      const evPool = liveEvents.filter((e) => !session.events.includes(e));
-      const ev = evPool.length ? evPool[Math.floor(this.#random() * evPool.length) % evPool.length] : null;
-      if (!session.visited.some((v) => v.area === area)) {
-        session.visited.push({ area, note: String(args?.note ?? '').slice(0, 120), at: now });
+      if (!hit) {
+        // 这一处**此刻**没有这处项目。可能是时段收窄了（夜市刚开摊只有几家），
+        // 也可能是这处压根不存在——两种都如实说，把能逛的递给她。
+        const allHere = (venue.areas || []).includes(wanted) ? '（这会儿还没开）' : '';
+        areaMiss = `${venue.name}没有「${wanted}」这处${allHere}。这会儿能逛的是：${liveAreas.join('、')}。`;
+      } else {
+        const ev = pickEvent(chosenPool, session.events, this.#random);
+        if (!session.visited.some((v) => v.area === hit)) {
+          session.visited.push({ area: hit, note: String(args?.note ?? '').slice(0, 120), at: now });
+        }
+        session.lastAt = now;
+        if (ev) session.events.push(ev);
+        picked = { area: hit, event: ev };
       }
-      session.lastAt = now;
-      if (ev) session.events.push(ev);
-      picked = { area, event: ev };
     } else {
-      picked = wanderOnce(this.#state, venue, now, this.#random, liveAreas, liveEvents);
+      picked = wanderOnce(this.#state, venue, now, this.#random, liveAreas, chosenPool);
       if (!picked) {
         return { text: `${venue.name}这几处你都逛过了。${this.#homeHint()}` };
       }
@@ -547,6 +593,18 @@ export class FunWorld {
       else ate = recordConsume(this.#state, venue, eatName, now);
     }
     await this.#save();
+
+    // 点的那处不存在：不编一个「逛了」，把能逛的如实递给她，买/拍照/吃喝照常结算
+    // （她可能就是想在那儿买点东西，没必要连这个也拦掉）。
+    if (areaMiss) {
+      const lines = [`（${areaMiss}）`];
+      if (bought) lines.push(bought.duplicate ? `（${bought.item} 你之前已经买过了。）` : `买了：${bought.item}。`);
+      if (shot) lines.push(shot.duplicate ? `（${shot.spot} 已经拍过了。）` : `拍了张照：${shot.spot}。`);
+      if (ate) lines.push(ate.duplicate ? `（${ate.item} 你这一趟已经${ate.verb}过了。）` : `${ate.verb}了：${ate.item}。`);
+      for (const m of misfit) lines.push(`（${m}。）`);
+      lines.push('这一处没记进这一趟。想接着逛就挑上面某一处，或者不填 area 让我自己挑。');
+      return { text: lines.join('\n') };
+    }
 
     const lines = [`${venue.name}${phaseName ? `（${phaseName}）` : ''} · ${picked.area}`, this.#areaLine(venue, picked.area, nowMin)];
     if (picked.event) lines.push(`——${picked.event}`);
@@ -596,14 +654,16 @@ export class FunWorld {
   async #homeTool(args) {
     const now = this.#now();
     const day = dayIn(this.timezone, now);
-    this.#state = normalizeState(this.#state, day);
+    this.#state = this.#normalizeState();
     if (!this.#state.session) {
       return { text: '你这会儿没在逛啊。想出门就 fun_go，先挑一处地方。' };
     }
 
     const venue = this.#places().find((v) => v.id === this.#state.session.placeId)
       ?? { name: this.#state.session.placeName, scene: this.#state.session.scene };
-    const closed = closeSession(this.#state, now, args?.note);
+    // day 按**本地时区**算好传进去：trip 里存的是 leftDay，
+    // 读纪念册的人就不用拿 leftAt 去猜时区（以前用 UTC 猜，早上 8 点前会偏一天）。
+    const closed = closeSession(this.#state, now, args?.note, day);
     await this.#save();
 
     const { trip, stayedMin, note } = closed;
@@ -661,8 +721,89 @@ export class FunWorld {
     if (trips.length) {
       lines.push('去过的地方：');
       for (const t of trips) {
-        const when = t.leftAt ? `${new Date(t.leftAt).toISOString().slice(0, 10)}` : '';
+        const when = tripDay(t);
         lines.push(`- ${when} ${tripSummary(t)}`);
+        // 她自己收摊时说的那一句：以前只出现在当次回执里，重看纪念册就没了。
+        if (t.note) lines.push(`  （你记的：${t.note}）`);
+      }
+    }
+    return { text: lines.join('\n') };
+  }
+
+  /**
+   * 纪念品架：这些趟攒下来的东西，按地方归着。
+   *
+   * 数据全部来自 `state.trips` 的归集（`keepsakes.js`），**不落新状态**——
+   * 所以老用户的纪念册一升级就自动有了架子，不需要迁移，也不会因为
+   * 清空纪念册之外的操作而丢失。
+   *
+   * 只读工具：不写盘、不改状态。
+   */
+  #shelfTool(args) {
+    const places = this.#places();
+    const want = typeof args?.place === 'string' ? args.place.trim() : '';
+    let only = null;
+    if (want) {
+      only = findVenue(places, want);
+      if (!only) {
+        const names = places.map((v) => v.name).join(' / ');
+        return {
+          text: `没听说过「${want}」这处。能看的是：${names}。\n（不填 place 就看全部。）`,
+          failed: true,
+        };
+      }
+    }
+
+    const rack = collectSouvenirs(this.#state.trips);
+    const trips = this.#state.trips ?? [];
+    const target = only ? rack.byPlace.find((p) => p.placeId === only.id) : null;
+
+    const lines = [];
+    if (only) {
+      const prog = progressFor(only, trips);
+      const group = target;
+      lines.push(`${only.name}的架子（去过 ${prog.visits} 次）：`);
+      if (group?.items?.length) {
+        for (const it of group.items) {
+          const when = it.firstDay ? `${it.firstDay} 第一次拿到` : '';
+          const times = it.times > 1 ? `，一共 ${it.times} 件` : '';
+          lines.push(`- ${it.name}${when ? `（${when}${times}）` : (times ? `（${times.replace('，', '')}）` : '')}`);
+        }
+      } else {
+        lines.push('（这处还什么都没买过。）');
+      }
+      // 三条进度：项目 / 纪念品 / 拍照点。说得具体，不报百分比。
+      const bits = [];
+      bits.push(`逛过 ${prog.areas.done}/${prog.areas.total} 处`);
+      if (prog.souvenirs.total) bits.push(`纪念品 ${prog.souvenirs.done}/${prog.souvenirs.total}`);
+      if (prog.photos.total) bits.push(`拍过 ${prog.photos.done}/${prog.photos.total} 个点`);
+      lines.push(bits.join('，') + '。');
+      const leftLine = progressLine(prog, 5);
+      if (leftLine) lines.push(leftLine);
+      return { text: lines.join('\n') };
+    }
+
+    if (!rack.items.length) {
+      return { text: '架子上还什么都没有——还没买过纪念品。想逛就 fun_start 或 fun_places 看看。' };
+    }
+
+    lines.push(`架子上一共 ${rack.items.length} 样东西（${rack.total} 件），来自 ${rack.uniquePlaces} 处地方：`);
+    for (const group of rack.byPlace) {
+      const bits = group.items.map((it) => (it.times > 1 ? `${it.name}×${it.times}` : it.name));
+      const when = group.firstDay ? `（最早 ${group.firstDay}）` : '';
+      lines.push(`- ${group.placeName}${when}：${bits.join('、')}`);
+    }
+    // 哪几处快集齐了：这是「再去一次把它补完」的钩子，比总数有用。
+    const close = places
+      .map((v) => ({ v, p: progressFor(v, trips) }))
+      .filter((x) => x.p.visits > 0 && x.p.areas.total > 0)
+      .sort((a, b) => b.p.percent - a.p.percent || b.p.visits - a.p.visits)
+      .slice(0, 3);
+    if (close.length) {
+      lines.push('快逛遍的：');
+      for (const { v, p } of close) {
+        const left = p.areas.left.length;
+        lines.push(`- ${v.name}：逛过 ${p.areas.done}/${p.areas.total}${left ? `，还差${p.areas.left.slice(0, 3).join('、')}` : '，已经逛遍'}。`);
       }
     }
     return { text: lines.join('\n') };
@@ -727,10 +868,22 @@ export class FunWorld {
     const day = dayIn(this.timezone, this.#now());
     try {
       const raw = JSON.parse(await readFile(this.stateFile(), 'utf8'));
-      return normalizeState(raw, day);
+      return normalizeState(raw, day, this.#now(), this.#ttlMin());
     } catch {
       return newState(day);
     }
+  }
+
+  /**
+   * 每次工具调用前把状态对齐到今天。
+   *
+   * **所有**用到状态的地方都走这一个方法，别在别处直接调 `normalizeState`——
+   * `now` 和 `ttlMin` 必须一起传，少传一个就会退回「跨天无脑清 session」的旧行为
+   * （夜市凌晨逛着逛着就「你还没进门呢」）。
+   */
+  #normalizeState() {
+    const now = this.#now();
+    return normalizeState(this.#state, dayIn(this.timezone, now), now, this.#ttlMin());
   }
 
   async #save() {
@@ -803,6 +956,7 @@ export class FunWorld {
           methods: ['save', 'remove', 'reset', 'resetAll'],
         },
         { id: 'book', title: p.book.title, description: p.book.description, getMethods: ['list'] },
+        { id: 'shelf', title: p.shelf.title, description: p.shelf.description, getMethods: ['list'] },
       ],
       invoke: (panel, method, args) => this.#invoke(panel, method, args ?? []),
       config: [configGroup(this.language)],
@@ -862,6 +1016,12 @@ export class FunWorld {
         switch (method) {
           case 'list': return this.#bookData();
           default: throw new Error(`book 没有 ${method} 这个方法`);
+        }
+      }
+      if (panel === 'shelf') {
+        switch (method) {
+          case 'list': return this.#shelfData();
+          default: throw new Error(`shelf 没有 ${method} 这个方法`);
         }
       }
       throw new Error(`不认识的面板：${panel}`);
@@ -1049,6 +1209,7 @@ export class FunWorld {
         placeName: st.session.placeName,
         scene: st.session.scene,
         outfit: st.session.outfit,
+        company: st.session.company || '',
         enteredHm: hmIn(tz, st.session.enteredAt),
         lastHm: hmIn(tz, st.session.lastAt),
         stayedMin: Math.max(0, Math.round((now - st.session.enteredAt) / 60000)),
@@ -1078,10 +1239,13 @@ export class FunWorld {
       placeName: t.placeName,
       scene: t.scene,
       outfit: t.outfit,
-      day: t.leftAt ? dayIn(tz, t.leftAt) : '',
+      company: t.company || '',
+      // 用 trip 里存下的本地日期，别拿 leftAt 去反算（UTC 会把早上 8 点前的摊算成前一天）。
+      day: tripDay(t),
       enteredHm: t.enteredAt ? hmIn(tz, t.enteredAt) : '',
       leftHm: t.leftAt ? hmIn(tz, t.leftAt) : '',
       stayedMin: t.leftAt && t.enteredAt ? Math.max(0, Math.round((t.leftAt - t.enteredAt) / 60000)) : 0,
+      note: t.note || '',
       visited: t.visited.map((v) => v.area),
       souvenirs: t.souvenirs,
       photos: t.photos,
@@ -1107,6 +1271,56 @@ export class FunWorld {
       mostVisited,
       trips,
       session: st.session ? { placeName: st.session.placeName, summary: tripSummary(st.session) } : null,
+    };
+  }
+
+  /**
+   * 「纪念品架」面板：跨趟归集的收藏 + 每处的集齐进度。
+   *
+   * 只读、幂等、不写盘（和 book / places 同一套契约）。数据全部从 `trips`
+   * 现算，所以面板永远和纪念册一致，不会出现「架子上有、册子里没有」。
+   */
+  #shelfData() {
+    const now = this.#now();
+    const st = this.#state ?? newState(dayIn(this.timezone, now));
+    const trips = st.trips ?? [];
+    const rack = collectSouvenirs(trips);
+    const places = this.#places();
+
+    // 每一处都给进度：面板上按「去过但没逛遍」排前面，没去过的排最后。
+    const progress = places.map((v) => {
+      const p = progressFor(v, trips);
+      return {
+        placeId: v.id,
+        placeName: v.name,
+        scene: v.scene,
+        visits: p.visits,
+        percent: p.percent,
+        areas: { done: p.areas.done, total: p.areas.total, left: p.areas.left, complete: p.areas.complete },
+        souvenirs: { done: p.souvenirs.done, total: p.souvenirs.total, left: p.souvenirs.left, complete: p.souvenirs.complete },
+        photos: { done: p.photos.done, total: p.photos.total, left: p.photos.left, complete: p.photos.complete },
+        items: rack.byPlace.find((g) => g.placeId === v.id)?.items ?? [],
+      };
+    });
+    // 去过 > 没逛遍 > 逛遍了，同级按完成度降序。
+    const rank = (x) => {
+      if (!x.visits) return 2;
+      const allDone = x.areas.complete && (x.souvenirs.total === 0 || x.souvenirs.complete)
+        && (x.photos.total === 0 || x.photos.complete);
+      return allDone ? 1 : 0;
+    };
+    progress.sort((a, b) => rank(a) - rank(b) || b.percent - a.percent || b.visits - a.visits);
+
+    return {
+      ok: true,
+      total: rack.items.length,
+      pieces: rack.total,
+      places: rack.uniquePlaces,
+      visitedPlaces: progress.filter((x) => x.visits > 0).length,
+      completePlaces: progress.filter((x) => rank(x) === 1).length,
+      items: rack.items,
+      byPlace: rack.byPlace,
+      progress,
     };
   }
 

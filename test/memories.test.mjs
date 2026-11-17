@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  cameEarlierToday, dayPhrase, filterRepeatedEvents, historyFor, memoryLine, untriedAreas,
+  REGULAR_VISITS, cameEarlierToday, dayPhrase, filterRepeatedEvents, historyFor, isRegular,
+  memoryLine, pickEvent, regularLine, untriedAreas,
 } from '../src/memories.js';
 
 const at = (s) => Date.parse(s);
@@ -136,4 +137,54 @@ test('historyFor 的 lastTrip 是最近那一趟', () => {
   ];
   const h = historyFor(trips, 'con', '2026-11-15');
   assert.deepEqual(h.lastTrip.visited.map((v) => v.area), ['舞台区']);
+});
+
+test('filterRepeatedEvents：以前碰上过的那条不再出现（events 是死数据，现在接上了）', () => {
+  // historyFor 一直算着 events，但没人用它——同一处去五次，事件池只有五条，
+  // 第五次就全是旧话。这条钉住「接上了」。
+  const events = ['排队排了四十分钟', '套中了一个歪歪的小熊', '没碰过的新事'];
+  const h = { souvenirs: [], ate: [], photos: [], events: ['排队排了四十分钟'] };
+  const left = filterRepeatedEvents(events, h);
+  assert.deepEqual(left, ['套中了一个歪歪的小熊', '没碰过的新事']);
+});
+
+test('filterRepeatedEvents：既拦「做过的」也拦「见过的」', () => {
+  const events = ['买了吧唧', '碰见过的', '全新的'];
+  const h = { souvenirs: [{ item: '吧唧', times: 1 }], ate: [], photos: [], events: ['碰见过的'] };
+  assert.deepEqual(filterRepeatedEvents(events, h), ['全新的']);
+});
+
+test('pickEvent：优先这趟没碰过的；全碰过了也要给一条，不能不给', () => {
+  const pool = ['a', 'b', 'c'];
+  assert.equal(pickEvent([], [], () => 0), null);
+  // 这趟碰过 a：从 b/c 里挑，random 0 取到 b
+  assert.equal(pickEvent(pool, ['a'], () => 0), 'b');
+  // 全碰过：退回全池，仍然给一条
+  assert.equal(pickEvent(pool, ['a', 'b', 'c'], () => 0), 'a');
+  // 池子里只有跑过的那条：也得给
+  assert.equal(pickEvent(['a'], ['a'], () => 0), 'a');
+});
+
+test('isRegular：5 趟起才算常客', () => {
+  assert.equal(REGULAR_VISITS, 5);
+  assert.equal(isRegular(null), false);
+  assert.equal(isRegular({ visitCount: 4 }), false);
+  assert.equal(isRegular({ visitCount: 5 }), true);
+});
+
+test('regularLine：不够格时一个字都不给', () => {
+  assert.equal(regularLine(null, '猫咖'), '');
+  assert.equal(regularLine({ visitCount: 4 }, '猫咖'), '', '4 趟还不到常客，不该说认得了');
+});
+
+test('regularLine：够格时给一句带地方名和次数的话，且稳定不随机', () => {
+  const h = { visitCount: 5 };
+  const a = regularLine(h, '猫咖');
+  assert.ok(a.length > 0);
+  assert.match(a, /猫咖/, '要带地方名');
+  assert.match(a, /5/, '要带次数');
+  assert.equal(regularLine(h, '猫咖'), a, '同一个次数永远同一句话');
+  // 次数不同时句子会变，但都还带次数
+  assert.notEqual(regularLine({ visitCount: 6 }, '猫咖'), a);
+  assert.match(regularLine({ visitCount: 6 }, '猫咖'), /6/);
 });

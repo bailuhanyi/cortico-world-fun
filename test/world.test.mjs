@@ -52,10 +52,10 @@ test('describe 里 events 是空数组：这个 World 不推事件', () => {
   }
 });
 
-test('六件工具都注册了', () => {
+test('七件工具都注册了', () => {
   const w = funDefinition.create({ cfg: {}, dataDir: process.cwd(), timezone: TZ });
   const names = w.tools().map((t) => t.name).sort();
-  assert.deepEqual(names, ['fun_go', 'fun_home', 'fun_places', 'fun_start', 'fun_view', 'fun_wander']);
+  assert.deepEqual(names, ['fun_go', 'fun_home', 'fun_places', 'fun_shelf', 'fun_start', 'fun_view', 'fun_wander']);
 });
 
 test('envPromptVars 永不抛错；关掉 funOn 时注入空串', async () => {
@@ -208,6 +208,18 @@ test('素材库里没有的场所，收摊时一个字都不提 scene', async ()
   assert.doesNotMatch(home.text, /scene 填「电影院」/);
   // 但 outfits 的建议还在
   assert.match(home.text, /outfits 填「外出外套」/);
+});
+
+test('自填地点同样没有 scene：收摊回执明说不用填', async () => {
+  const b = await boot();
+  await b.world.webUi('zh').invoke('places', 'save', [{
+    name: '旧书店', areas: ['书架间'], recommendedOutfit: '通勤衬衫',
+  }]);
+  await b.tool('fun_go')({ place: '旧书店' });
+  await b.tool('fun_wander')({ area: '书架间' });
+  const home = await b.tool('fun_home')({});
+  assert.match(home.text, /scene 不用填/);
+  assert.doesNotMatch(home.text, /scene 填「旧书店」/);
 });
 
 test('没进门就逛 / 没在逛就收摊：给提示不报错', async () => {
@@ -757,12 +769,83 @@ test('挂太久会提醒收摊，但不替她收', async () => {
   assert.ok(b.world.webUi().badges.some((x) => x.label === '正在逛'), '仍算在逛');
 });
 
-test('跨天：状态整份重来，昨天的 session 不会带进今天', async () => {
+test('跨天 + 挂太久：昨天那一趟不该带进今天', async () => {
   const b = await boot();
   await b.tool('fun_go')({ place: '漫展' });
-  b.setNow(at('2026-11-16T10:00:00+08:00'));
+  b.setNow(at('2026-11-16T10:00:00+08:00')); // 跨天，且已经过去 20 小时（远过 TTL）
   const r = await b.tool('fun_wander')({});
-  assert.match(r.text, /还没进门/, '跨天之后不该还认得昨天那一趟');
+  assert.match(r.text, /还没进门/, '跨天又挂太久的那一趟不该还认得');
+});
+
+test('跨午夜：夜市逛着过零点，这一趟不能丢', async () => {
+  // 真会踩：夜市 17:30–01:00。23:50 进门，00:05 再逛，以前回「你还没进门呢」。
+  const b = await boot({ now: at('2026-11-17T23:50:00+08:00') });
+  await b.tool('fun_go')({ place: '夜市' });
+  await b.tool('fun_wander')({});
+  b.setNow(at('2026-11-18T00:05:00+08:00'));
+  const r = await b.tool('fun_wander')({});
+  assert.ok(!/还没进门/.test(r.text), '跨过午夜不该把正在逛的这一趟丢掉');
+  assert.match(r.text, /夜市/);
+  assert.match(r.text, /这一趟逛了 2 处/);
+});
+
+test('fun_wander：填一处这儿没有的地方，不编一个「逛了」', async () => {
+  const b = await boot();
+  await b.tool('fun_go')({ place: '海洋馆' });
+  const r = await b.tool('fun_wander')({ area: '蹦极' });
+  assert.match(r.text, /海洋馆没有「蹦极」这处/, '要么认这处，要么如实说没有，不能原样接受');
+  assert.ok(!/海洋馆 · 蹦极/.test(r.text), '不能把库里没有的地方当标题');
+  assert.match(r.text, /这会儿能逛的是：/);
+  // 也不能记进这一趟
+  const view = await b.tool('fun_view')({});
+  assert.ok(!/蹦极/.test(view.text), '没逛成的东西不该进纪念册');
+});
+
+test('fun_wander：时段收窄时说「这会儿还没开」，不是「没有这处」', async () => {
+  // 夜市白天只开一半摊子；「糖水铺」是深夜才有的（见 phases 数据）。
+  const b = await boot({ now: at('2026-11-15T11:00:00+08:00') });
+  await b.tool('fun_go')({ place: '夜市' });
+  const r = await b.tool('fun_wander')({ area: '深夜才有的摊' });
+  assert.match(r.text, /夜市没有「深夜才有的摊」这处/);
+});
+
+test('收摊那句话进纪念册，fun_view 能再看到', async () => {
+  const b = await boot();
+  await b.tool('fun_go')({ place: '漫展' });
+  await b.tool('fun_wander')({ area: '同人展台' });
+  await b.tool('fun_home')({ note: '今天人很多，但很开心' });
+  const view = await b.tool('fun_view')({});
+  assert.match(view.text, /你记的：今天人很多，但很开心/, '重看纪念册要能读回收摊时那句话');
+});
+
+test('同行的人进纪念册', async () => {
+  const b = await boot();
+  await b.tool('fun_go')({ place: '漫展', company: '阿岚' });
+  await b.tool('fun_wander')({});
+  await b.tool('fun_home')({});
+  const view = await b.tool('fun_view')({});
+  assert.match(view.text, /跟阿岚一起/);
+});
+
+test('收摊日期按本地时区存，早上 8 点前不会算成前一天', async () => {
+  // 上海 06:20 收摊：UTC 还是前一天 22:20。以前纪念册会标成 11-17。
+  const b = await boot({ now: at('2026-11-18T06:20:00+08:00') });
+  await b.tool('fun_go')({ place: '爬山' });
+  await b.tool('fun_wander')({});
+  await b.tool('fun_home')({});
+  const book = await b.world.webUi('zh').invoke('book', 'list');
+  assert.equal(book.trips[0].day, '2026-11-18', '要按本地日期，不是 UTC');
+});
+
+test('同一天早上再去：说「今天来过」，不是「上一次是昨天」', async () => {
+  const b = await boot({ now: at('2026-11-18T06:20:00+08:00') });
+  await b.tool('fun_go')({ place: '爬山' });
+  await b.tool('fun_wander')({});
+  await b.tool('fun_home')({});
+  b.setNow(at('2026-11-18T07:10:00+08:00'));   // 同一天，一小时后
+  const r = await b.tool('fun_go')({ place: '爬山' });
+  assert.match(r.text, /今天你已经来过一次了/, '同一天要认成今天');
+  assert.ok(!/上一次是昨天/.test(r.text), '不能把同一天早上说成昨天');
 });
 
 test('重启后同一趟还在（同一天）', async () => {

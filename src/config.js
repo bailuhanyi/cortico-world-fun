@@ -110,6 +110,10 @@ export function panelText(language = 'zh') {
         title: 'Trip book',
         description: 'Every trip she has taken: where she went, what she wandered and bought.',
       },
+      shelf: {
+        title: 'Shelf',
+        description: 'Everything the trips have gathered, grouped by place: what came from where and when, how many times she has been, and what is still left to wander at each place.',
+      },
     };
   }
   return {
@@ -120,6 +124,10 @@ export function panelText(language = 'zh') {
     book: {
       title: '纪念册',
       description: '她去过的每一趟：逛了什么、买了什么、在哪儿拍了照。',
+    },
+    shelf: {
+      title: '纪念品架',
+      description: '这些趟攒下来的东西，按地方归着：哪件是在哪儿哪天拿到的、去过几次、每一处还差什么没逛。',
     },
   };
 }
