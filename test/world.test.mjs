@@ -80,22 +80,27 @@ test('配置段缺键会被补齐（宿主 /api/config 不合并 defaults）', a
   });
   await world.start({ log: { info() {}, warn() {} } });
   assert.equal(persisted.length, 1);
-  assert.deepEqual(Object.keys(persisted[0]).sort(), ['funAskReport', 'funSessionTTLMin']);
+  assert.deepEqual(Object.keys(persisted[0]).sort(),
+    ['funAskReport', 'funSessionTTLMin', 'funTasteFromFeast']);
   assert.equal(persisted[0].funAskReport, true);
   assert.equal(persisted[0].funSessionTTLMin, 90);
+  assert.equal(persisted[0].funTasteFromFeast, true);
 });
 
 test('缺键补齐：盘上已有的值一个都不覆盖', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'fun-cfg2-'));
   const persisted = [];
   const world = new FunWorld({
-    cfg: { enabled: true, funOn: false, funSessionTTLMin: 30, funAskReport: false },
+    cfg: {
+      enabled: true, funOn: false, funSessionTTLMin: 30,
+      funAskReport: false, funTasteFromFeast: false,
+    },
     dataDir: dir,
     timezone: TZ,
     persist: (patch) => { persisted.push(patch); },
   });
   await world.start({ log: { info() {}, warn() {} } });
-  assert.deepEqual(persisted, [], '三项都在，不该补任何东西');
+  assert.deepEqual(persisted, [], '四项都在，不该补任何东西');
 });
 
 test('fun_places：按开放时段排，正文带开没开和人多少', async () => {
@@ -511,6 +516,234 @@ test('去过的痕迹：以前买过的东西，不会再抽到同一件小事�
     const w = await b.tool('fun_wander')({});
     assert.doesNotMatch(w.text, /吧唧挑了半天/, `第 ${i + 1} 次仍抽到了买过的那件事`);
   }
+});
+
+test('自填地点：保存后能进门、能逛、能收摊', async () => {
+  const b = await boot();
+  const saved = await b.world.webUi('zh').invoke('places', 'save', [{
+    name: '巷子里的旧书店',
+    desc: '木门，书堆到天花板。',
+    hours: { open: '10:00', close: '20:00' },
+    areas: ['书架之间', '柜台'],
+    souvenirs: ['一本旧书'],
+    photoSpots: ['柜台前'],
+    tags: ['室内', '安静', '淘'],
+  }]);
+  assert.equal(saved.ok, true, saved.error);
+  assert.ok(saved.venue.id.startsWith('user-'));
+
+  const places = await b.tool('fun_places')({ all: true });
+  assert.match(places.text, /巷子里的旧书店/);
+
+  const go = await b.tool('fun_go')({ place: '旧书店' });
+  assert.match(go.text, /进了巷子里的旧书店/);
+  assert.match(go.text, /书架之间、柜台/);
+  const wander = await b.tool('fun_wander')({ area: '柜台', buy: '一本旧书' });
+  assert.match(wander.text, /买了：一本旧书/);
+  const home = await b.tool('fun_home')({});
+  assert.match(home.text, /巷子里的旧书店/);
+  assert.match(home.text, /scene 不用填/, '自填地点没有素材库场景，不能编');
+
+  // 落盘了
+  const raw = JSON.parse(await readFile(join(b.dir, 'fun', 'venues.json'), 'utf8'));
+  assert.equal(raw.venues.length, 1);
+  assert.equal(raw.venues[0].name, '巷子里的旧书店');
+});
+
+test('自填地点：重启之后还在', async () => {
+  const b = await boot();
+  const saved = await b.world.webUi('zh').invoke('places', 'save', [{ name: '天台上的小桌椅', areas: ['栏杆边'] }]);
+  assert.equal(saved.ok, true);
+  await b.world.stop();
+
+  const world2 = new FunWorld({
+    cfg: { ...DEFAULTS, enabled: true },
+    dataDir: b.dir,
+    timezone: TZ,
+    now: () => at('2026-11-15T14:00:00+08:00'),
+    random: () => 0,
+  });
+  await world2.start({ log: { info() {}, warn() {} } });
+  const r = await world2.tools().find((t) => t.name === 'fun_places').handler({ all: true });
+  assert.match(r.text, /天台上的小桌椅/);
+  await world2.stop();
+});
+
+// B 阶段：预设可以改（写覆盖层），但**不能删**；新建自填仍不能撞预设正名。
+const presetForm = (id, patch = {}) => {
+  const v = VENUES.find((x) => x.id === id);
+  return {
+    id, name: v.name, aliases: v.aliases, tags: v.tags, desc: v.desc,
+    recommendedOutfit: v.recommendedOutfit, crowd: v.crowd, hours: v.hours,
+    areas: v.areas, souvenirs: v.souvenirs, photoSpots: v.photoSpots,
+    randomEvents: v.randomEvents, ...(v.food ? { food: v.food } : {}), ...patch,
+  };
+};
+
+test('B 阶段：预设能改，落的是稀疏覆盖层，且不能删', async () => {
+  const b = await boot();
+  const ui = b.world.webUi('zh').invoke.bind(b.world.webUi('zh'));
+
+  const edit = await ui('places', 'save', [presetForm('con', { souvenirs: ['我自己写的吧唧'] })]);
+  assert.equal(edit.ok, true, edit.error);
+  let data = await ui('places', 'list', []);
+  const con = data.places.find((p) => p.id === 'con');
+  assert.deepEqual(con.souvenirs, ['我自己写的吧唧'], '改的字段生效');
+  assert.equal(con.name, '漫展', '没改的字段仍来自预设');
+  assert.equal(con.overridden, true, '面板要标出已改');
+  assert.equal(data.overriddenCount, 1);
+  assert.equal(data.total, 20, '改预设不会多出一处，也不会少一处');
+
+  // 落盘形状：只有改过的字段，且带 id
+  const raw = JSON.parse(await readFile(join(b.dir, 'fun', 'venues.json'), 'utf8'));
+  assert.deepEqual(Object.keys(raw.overrides.con), ['souvenirs'], '覆盖层必须稀疏，否则会锁死预设升级');
+  assert.deepEqual(raw.venues, [], '自填列表没动');
+
+  // 预设删不掉
+  const del = await ui('places', 'remove', [{ id: 'con' }]);
+  assert.equal(del.ok, false);
+  assert.match(del.error, /删不掉/);
+
+  // 新建自填仍不能撞预设正名
+  const dup = await ui('places', 'save', [{ name: '咖啡店', areas: ['x'] }]);
+  assert.equal(dup.ok, false);
+  assert.match(dup.error, /预设里的名字/);
+});
+
+test('B 阶段：编辑预设不能把名字/别名改成另一处预设的正名', async () => {
+  const b = await boot();
+  const ui = b.world.webUi('zh').invoke.bind(b.world.webUi('zh'));
+  const bad = await ui('places', 'save', [presetForm('con', { name: '咖啡店' })]);
+  assert.equal(bad.ok, false);
+  assert.match(bad.error, /另一处预设的名字/);
+});
+
+test('B 阶段：预设改动重启后还在；恢复一处 / 恢复全部都回到预设', async () => {
+  const b = await boot();
+  const ui = b.world.webUi('zh').invoke.bind(b.world.webUi('zh'));
+  await ui('places', 'save', [presetForm('con', { souvenirs: ['吧唧A'] })]);
+  await ui('places', 'save', [presetForm('aquarium', { desc: '我改过的海洋馆' })]);
+  assert.equal((await ui('places', 'list', [])).overriddenCount, 2);
+
+  await b.world.stop();
+  const world2 = new FunWorld({
+    cfg: { ...DEFAULTS, enabled: true }, dataDir: b.dir, timezone: TZ,
+    now: () => at('2026-11-15T14:00:00+08:00'), random: () => 0,
+  });
+  await world2.start({ log: { info() {}, warn() {} } });
+  const ui2 = world2.webUi('zh').invoke.bind(world2.webUi('zh'));
+  let data = await ui2('places', 'list', []);
+  assert.equal(data.overriddenCount, 2, '重启之后覆盖层还在');
+  assert.deepEqual(data.places.find((p) => p.id === 'con').souvenirs, ['吧唧A']);
+
+  const one = await ui2('places', 'reset', [{ id: 'con' }]);
+  assert.equal(one.ok, true);
+  data = await ui2('places', 'list', []);
+  assert.equal(data.overriddenCount, 1);
+  assert.equal(data.places.find((p) => p.id === 'con').overridden, false);
+  assert.ok(data.places.find((p) => p.id === 'aquarium').desc.includes('我改过的'));
+
+  const all = await ui2('places', 'resetAll', []);
+  assert.equal(all.ok, true);
+  assert.equal(all.cleared, 1);
+  data = await ui2('places', 'list', []);
+  assert.equal(data.overriddenCount, 0);
+  assert.deepEqual(data.places.find((p) => p.id === 'aquarium').desc,
+    VENUES.find((v) => v.id === 'aquarium').desc);
+  await world2.stop();
+});
+
+test('B 阶段：预设升级照常生效——没改过的字段跟着新版预设走', async () => {
+  const b = await boot();
+  const ui = b.world.webUi('zh').invoke.bind(b.world.webUi('zh'));
+  await ui('places', 'save', [presetForm('con', { souvenirs: ['我自己的吧唧'] })]);
+  // 模拟预设升级：给漫展加一个新摊位（不改 mergeVenues 之外的东西，直接测纯函数）
+  const { mergeVenues } = await import('../src/user-venues.js');
+  const grown = VENUES.map((v) => (v.id === 'con' ? { ...v, areas: [...v.areas, '新加的摊位'] } : v));
+  const raw = JSON.parse(await readFile(join(b.dir, 'fun', 'venues.json'), 'utf8'));
+  const merged = mergeVenues(grown, raw.venues, raw.overrides);
+  const con = merged.find((v) => v.id === 'con');
+  assert.deepEqual(con.souvenirs, ['我自己的吧唧'], '用户改动优先');
+  assert.ok(con.areas.includes('新加的摊位'), '没碰过的字段拿到预设的新内容');
+});
+
+test('B 阶段：自填地点与预设改动共存，互不串味', async () => {
+  const b = await boot();
+  const ui = b.world.webUi('zh').invoke.bind(b.world.webUi('zh'));
+  const mine = await ui('places', 'save', [{ name: '我的小院', areas: ['藤椅'] }]);
+  assert.equal(mine.ok, true);
+  await ui('places', 'save', [presetForm('con', { souvenirs: ['吧唧B'] })]);
+
+  const data = await ui('places', 'list', []);
+  assert.equal(data.total, 21);
+  assert.equal(data.userVenueCount, 1);
+  assert.equal(data.overriddenCount, 1);
+  assert.deepEqual(data.places.find((p) => p.id === mine.venue.id).areas, ['藤椅']);
+  assert.deepEqual(data.places.find((p) => p.id === 'con').souvenirs, ['吧唧B']);
+});
+
+test('自填地点：改自己的、删自己的都行', async () => {
+  const b = await boot();
+  const ui = b.world.webUi('zh').invoke.bind(b.world.webUi('zh'));
+  const made = await ui('places', 'save', [{ name: '我的小院', areas: ['藤椅'] }]);
+  assert.equal(made.ok, true);
+
+  const edited = await ui('places', 'save', [{ id: made.venue.id, name: '我的小院', areas: ['藤椅', '花架'], souvenirs: ['一片叶子'] }]);
+  assert.equal(edited.ok, true);
+  let data = await ui('places', 'list', []);
+  const mine = data.places.find((p) => p.name === '我的小院');
+  assert.deepEqual(mine.allAreas, ['藤椅', '花架']);
+  assert.deepEqual(mine.souvenirs, ['一片叶子']);
+  assert.equal(data.userVenueCount, 1);
+
+  const removed = await ui('places', 'remove', [{ id: made.venue.id }]);
+  assert.equal(removed.ok, true);
+  data = await ui('places', 'list', []);
+  assert.equal(data.userVenueCount, 0);
+  assert.equal(data.total, 20, '删掉之后回到纯预设');
+});
+
+test('自填地点：预设升级照常生效、用户改动优先', async () => {
+  // 这一条直接测合并层：用户改了漫展的纪念品，预设后来加了新摊位。
+  const { mergeVenues } = await import('../src/user-venues.js');
+  const grown = VENUES.map((v) => (v.id === 'con' ? { ...v, areas: [...v.areas, '新加的摊位'] } : v));
+  const merged = mergeVenues(grown, [{ id: 'con', souvenirs: ['我自己的吧唧'] }]);
+  const con = merged.find((v) => v.id === 'con');
+  assert.deepEqual(con.souvenirs, ['我自己的吧唧']);
+  assert.ok(con.areas.includes('新加的摊位'));
+  assert.equal(con.name, '漫展', '没写的字段仍来自预设');
+});
+
+test('鱼的开关：开着时吃喝回执指向 feast_menu / feast_eat', async () => {
+  const b = await boot();
+  await b.tool('fun_go')({ place: '奶茶店' });
+  const w = await b.tool('fun_wander')({ consume: '珍珠奶茶' });
+  assert.match(w.text, /feast_menu/);
+  assert.match(w.text, /feast_eat/);
+  assert.match(w.text, /九维口感/);
+});
+
+test('鱼的开关：关掉后只说喝了什么，一个字都不提味道和 feast', async () => {
+  const b = await boot({ cfg: { funTasteFromFeast: false } });
+  const data = await b.world.webUi('zh').invoke('places', 'list', []);
+  assert.equal(data.feast, false, '面板要能显示开关状态');
+
+  await b.tool('fun_go')({ place: '奶茶店' });
+  const w = await b.tool('fun_wander')({ consume: '珍珠奶茶' });
+  assert.match(w.text, /喝了：珍珠奶茶/, '吃喝这件事照常记');
+  assert.doesNotMatch(w.text, /feast_menu|feast_eat/);
+  assert.doesNotMatch(w.text, /九维|口感|香气|余韵/);
+  assert.doesNotMatch(w.text, /味道别自己编/);
+});
+
+test('鱼的开关：关掉也不影响别的回执（进门、收摊照常）', async () => {
+  const b = await boot({ cfg: { funTasteFromFeast: false } });
+  const go = await b.tool('fun_go')({ place: '奶茶店' });
+  assert.match(go.text, /这儿还能喝：珍珠奶茶/, '能喝什么照常列');
+  await b.tool('fun_wander')({ consume: '珍珠奶茶' });
+  const home = await b.tool('fun_home')({});
+  assert.match(home.text, /喝了珍珠奶茶/);
+  assert.match(home.text, /feast_life_play/, '记账提醒跟这个开关无关');
 });
 
 test('挂太久会提醒收摊，但不替她收', async () => {

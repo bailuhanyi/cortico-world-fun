@@ -8,8 +8,8 @@ import { FUN_TOOL_DECLS, FunWorld } from './world.js';
 /** 自描述里每个工具配一句给人看的话，按工具名。 */
 const TOOL_SUMMARIES = {
   fun_places: {
-    zh: '看今天能去哪儿逛：十二处地方，按开放时段和拥挤度排；也能只看某一类或列全部。',
-    en: 'See where she can go today: twelve places ranked by opening hours and crowd; can filter by kind or list all.',
+    zh: '看今天能去哪儿逛：二十处地方，按开放时段和拥挤度排；也能只看某一类或列全部。',
+    en: 'See where she can go today: twenty places ranked by opening hours and crowd; can filter by kind or list all.',
   },
   fun_go: {
     zh: '进门：挑一处地方开始这一趟，回执给进门那一下的样子和能逛什么。',

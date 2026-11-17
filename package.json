@@ -1,6 +1,6 @@
 {
   "name": "cortico-world-fun",
-  "version": "0.1.6",
+  "version": "0.1.5",
   "type": "module",
   "description": "娱乐时间 —— 给 Coopanion 桌宠二十处真能去逛的地方：游乐场、海洋馆、庙会、漫展、电影院、动物园、公园、电玩城、KTV、博物馆、猫咖、爬山、咖啡店、奶茶店、餐厅、图书馆、夜市、澡堂、旧货市场、江边。进门、逛摊位、买纪念品、拍张照、吃喝点什么，收摊记一笔。能和「鱼的每一天」「生图工作室」联动，但都不依赖。",
   "license": "MIT",
@@ -39,13 +39,13 @@
     "PUBLISHING.md"
   ],
   "scripts": {
-    "test": "node test/venues.test.mjs && node test/state.test.mjs && node test/world.test.mjs && node test/panels.test.mjs",
+    "test": "node test/venues.test.mjs && node test/state.test.mjs && node test/memories.test.mjs && node test/phases.test.mjs && node test/user-venues.test.mjs && node test/world.test.mjs && node test/panels.test.mjs",
     "verify": "node tools/fix-ps1-bom.mjs install.ps1 && node tools/check-prompt.mjs && node tools/check-isolation.mjs && node tools/smoke.mjs && node tools/make-describe.mjs --check",
     "describe": "node tools/make-describe.mjs",
     "check:publish": "node tools/publish-check.mjs --online",
     "check:isolation": "node tools/check-isolation.mjs",
     "verify:published": "node tools/verify-published.mjs",
-    "prepublishOnly": "node test/venues.test.mjs && node test/state.test.mjs && node test/world.test.mjs && node test/panels.test.mjs && node tools/check-prompt.mjs && node tools/check-isolation.mjs && node tools/smoke.mjs && node tools/make-describe.mjs --check && node tools/publish-check.mjs --online"
+    "prepublishOnly": "node test/venues.test.mjs && node test/state.test.mjs && node test/memories.test.mjs && node test/phases.test.mjs && node test/user-venues.test.mjs && node test/world.test.mjs && node test/panels.test.mjs && node tools/check-prompt.mjs && node tools/check-isolation.mjs && node tools/smoke.mjs && node tools/make-describe.mjs --check && node tools/publish-check.mjs --online"
   },
   "cortico": {
     "kind": "world",

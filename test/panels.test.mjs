@@ -518,6 +518,143 @@ test('places 面板：去过的场所标出「去过 N 次」', async () => {
   assert.ok(!find('江边').textContent.includes('去过'), '没去过的不能标');
 });
 
+test('places 面板：能添加自填地点，表单填完保存后卡片出现', async () => {
+  const { mount, invocations, world } = await mountPanels();
+  const root = await mount('places');
+  await waitFor(() => root.querySelectorAll('.fun-card').length === VENUES.length, '画出全部');
+
+  const add = root.findAll((n) => n.tagName === 'BUTTON' && n.textContent.includes('添加地点'))[0];
+  assert.ok(add, '缺「添加地点」按钮');
+  add.fire('click');
+  const form = root.querySelector('.fun-form');
+  assert.ok(form, '点开后要有表单');
+  assert.ok(form.textContent.includes('添加一处自己的地方'));
+  assert.ok(root.querySelector('.fun-hint').textContent.includes('现在也能改'), '要说清预设现在可编辑');
+
+  // 填最小必填项：名字 + 能逛的
+  const inputs = form.findAll((n) => n.tagName === 'INPUT');
+  const nameInput = inputs.find((i) => i.placeholder.includes('巷子里'));
+  assert.ok(nameInput, '缺名字输入框');
+  nameInput.value = '我的小院';
+  const areas = form.findAll((n) => n.tagName === 'TEXTAREA')
+    .find((t) => String(t.placeholder).includes('一行一处'));
+  assert.ok(areas, '缺「能逛的」输入框');
+  areas.value = '藤椅\n花架';
+
+  const save = form.findAll((n) => n.tagName === 'BUTTON' && n.textContent === '保存')[0];
+  assert.ok(save);
+  save.fire('click');
+
+  await waitFor(() => invocations.find((x) => x.method === 'save')?.result, 'save 有回执');
+  const saveCall = invocations.find((x) => x.method === 'save');
+  assert.equal(saveCall.result.ok, true);
+  await waitFor(() => {
+    const cards = root.querySelectorAll('.fun-card-name').map((n) => n.textContent);
+    return cards.includes('我的小院');
+  }, '新地点出现在卡片里');
+
+  // 服务端确实存了
+  const data = await world.webUi('zh').invoke('places', 'list', []);
+  assert.equal(data.userVenueCount, 1);
+  assert.equal(data.total, VENUES.length + 1);
+});
+
+test('places 面板：自填地点和预设都有「编辑」按钮（B 阶段）', async () => {
+  const { mount, world } = await mountPanels();
+  await world.webUi('zh').invoke('places', 'save', [{ name: '我的小院', areas: ['藤椅'] }]);
+  const root = await mount('places');
+  await waitFor(() => root.querySelectorAll('.fun-card').length === VENUES.length + 1, '画出全部');
+
+  const find = (name) => root.querySelectorAll('.fun-card')
+    .find((c) => c.querySelector('.fun-card-name').textContent === name);
+  find('我的小院').fire('click');
+  await waitFor(() => root.querySelector('.fun-detail-edit'), '自填地点要有编辑按钮');
+  assert.ok(root.querySelector('.fun-detail').textContent.includes('我的小院'));
+
+  // B 阶段起预设也能编辑
+  find('漫展').fire('click');
+  await waitFor(() => root.querySelector('.fun-detail')?.textContent.includes('漫展'), '切到漫展');
+  assert.ok(root.querySelector('.fun-detail-edit'), '预设也要能编辑');
+});
+
+test('places 面板：编辑自填地点时表单带出原值，改完生效', async () => {
+  const { mount, world } = await mountPanels();
+  const made = await world.webUi('zh').invoke('places', 'save', [{
+    name: '我的小院', areas: ['藤椅'], souvenirs: ['一片叶子'],
+  }]);
+  assert.equal(made.ok, true);
+
+  const root = await mount('places');
+  await waitFor(() => root.querySelectorAll('.fun-card').length === VENUES.length + 1, '画出全部');
+  const mine = root.querySelectorAll('.fun-card')
+    .find((c) => c.querySelector('.fun-card-name').textContent === '我的小院');
+  mine.fire('click');
+  await waitFor(() => root.querySelector('.fun-detail-edit'), '有编辑按钮');
+  root.querySelector('.fun-detail-edit').fire('click');
+
+  const form = root.querySelector('.fun-form');
+  assert.ok(form, '打开编辑表单');
+  assert.ok(form.textContent.includes('编辑：我的小院'));
+  const areaBox = form.findAll((n) => n.tagName === 'TEXTAREA')
+    .find((t) => String(t.placeholder).includes('一行一处'));
+  assert.ok(areaBox.value.includes('藤椅'), '表单要带出原值');
+  assert.ok(form.textContent.includes('删除这处'), '编辑态有删除按钮');
+});
+
+test('places 面板：编辑预设时表单带出原值，且是「恢复预设」不是「删除」', async () => {
+  const { mount } = await mountPanels();
+  const root = await mount('places');
+  await waitFor(() => root.querySelectorAll('.fun-card').length === VENUES.length, '画出全部');
+
+  const card = root.querySelectorAll('.fun-card')
+    .find((c) => c.querySelector('.fun-card-name').textContent === '漫展');
+  card.fire('click');
+  await waitFor(() => root.querySelector('.fun-detail-edit'), '预设要有编辑按钮');
+  root.querySelector('.fun-detail-edit').fire('click');
+
+  const form = root.querySelector('.fun-form');
+  assert.ok(form, '打开编辑表单');
+  assert.ok(form.textContent.includes('编辑预设：漫展'), '标题要写清是预设');
+  assert.ok(form.textContent.includes('覆盖层'), '要说明改的是覆盖层');
+  assert.ok(form.textContent.includes('恢复预设'), '预设不能删，给的是恢复');
+  assert.ok(!form.textContent.includes('删除这处'), '预设不该出现删除');
+  const areaBox = form.findAll((n) => n.tagName === 'TEXTAREA')
+    .find((t) => String(t.placeholder).includes('一行一处'));
+  assert.ok(areaBox.value.includes('同人展台'), '表单要带出预设原值');
+});
+
+test('places 面板：改过的预设标「已改」，并能一键恢复全部', async () => {
+  const { mount, invocations, world } = await mountPanels();
+  // 直接通过服务端改一处预设（改纪念品）
+  const con = VENUES.find((v) => v.id === 'con');
+  const saved = await world.webUi('zh').invoke('places', 'save', [{
+    id: 'con', name: con.name, aliases: con.aliases, tags: con.tags, desc: con.desc,
+    recommendedOutfit: con.recommendedOutfit, crowd: con.crowd, hours: con.hours,
+    areas: con.areas, souvenirs: ['我自己写的吧唧'], photoSpots: con.photoSpots,
+    randomEvents: con.randomEvents,
+  }]);
+  assert.equal(saved.ok, true, saved.error);
+
+  const root = await mount('places');
+  await waitFor(() => root.querySelectorAll('.fun-card').length === VENUES.length, '画出全部');
+  const conCard = root.querySelectorAll('.fun-card')
+    .find((c) => c.querySelector('.fun-card-name').textContent === '漫展');
+  conCard.fire('click');
+  await waitFor(() => root.querySelector('.fun-detail'), '展开详情');
+  assert.ok(root.querySelector('.fun-detail').textContent.includes('已改'), '改过的预设要标「已改」');
+
+  const resetBtn = root.findAll((n) => n.tagName === 'BUTTON' && n.textContent.includes('恢复全部预设'))[0];
+  assert.ok(resetBtn, '要有「恢复全部预设」按钮');
+  resetBtn.fire('click');
+  await waitFor(() => invocations.find((x) => x.method === 'resetAll')?.result, 'resetAll 有回执');
+  assert.equal(invocations.find((x) => x.method === 'resetAll').result.ok, true);
+
+  const data = await world.webUi('zh').invoke('places', 'list', []);
+  assert.equal(data.overriddenCount, 0, '恢复之后覆盖层清空');
+  assert.equal(data.places.find((p) => p.id === 'con').souvenirs.includes('我自己写的吧唧'), false,
+    '恢复之后纪念品回到预设');
+});
+
 test('book 面板：空册子给一句话；逛完一趟之后能查回来', async () => {
   const { mount, tool } = await mountPanels();
   let root = await mount('book');

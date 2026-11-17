@@ -55,6 +55,18 @@ for (const [needle, why] of [
   ok(template.includes(needle), `ENV_PROMPT 里写了 ${needle}（${why}）`);
 }
 
+// 瘦身时最容易误删的红线：教程式说明可以砍，约束一个字都不能少。
+// 这些是「不编味道 / 不探测别的扩展 / 不编库里没有的名字」的落点，
+// 少了模板还在、行为却会悄悄跑偏（她开始自己形容味道、硬填 scene）。
+for (const [needle, why] of [
+  ['别形容味道', '吃喝不编味道'],
+  ['不会探测', '不探测别的扩展装没装'],
+  ['库里没找到', '不替她编库里没有的场景名'],
+  ['预设删不掉', '预设只能恢复不能删'],
+]) {
+  ok(template.includes(needle), `ENV_PROMPT 里留着红线：${why}`);
+}
+
 await world.stop();
 
 console.log('');

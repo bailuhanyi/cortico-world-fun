@@ -13,7 +13,7 @@
  * 自定义属性会继承进 shadow root，所以明暗两套主题都不用自己写。
  *
  * 两个面板：
- *   places —— 十二处地方此刻的状态，以及她正在逛的这一趟
+ *   places —— 二十处地方（以及自己加的、改过的）此刻的状态，以及她正在逛的这一趟
  *   book   —— 纪念册：去过的每一趟
  */
 
@@ -45,6 +45,22 @@ const CSS = `
 .fun-chip-phase{color:var(--f-ink);border-color:var(--f-accent);background:color-mix(in srgb,var(--f-accent) 10%,transparent);font-size:11px}
 .fun-phases{display:flex;gap:6px;flex-wrap:wrap;margin-top:2px}
 .fun-detail-desc{font-size:12.5px;line-height:1.65;margin:0 0 7px}
+.fun-hint{font-size:11.5px;color:var(--f-dim);margin:0 0 9px;line-height:1.55}
+.fun-form{border:1px solid var(--f-accent);border-radius:var(--radius-sm,6px);padding:12px 13px;margin-bottom:12px;background:var(--f-soft)}
+.fun-form-title{font-weight:600;font-size:14px;margin-bottom:4px}
+.fun-form-note{font-size:11.5px;color:var(--f-dim);line-height:1.55;margin-bottom:9px}
+.fun-form-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:8px;margin-bottom:8px}
+.fun-field{display:flex;flex-direction:column;gap:3px;margin-bottom:7px;min-width:0}
+.fun-field-label{font-size:11.5px;color:var(--f-dim);font-weight:600}
+.fun input,.fun select,.fun textarea{font:inherit;color:inherit;background:var(--f-card);border:1px solid var(--f-line);border-radius:var(--radius-sm,6px);padding:5px 9px;outline:none;width:100%}
+.fun textarea{resize:vertical;line-height:1.5}
+.fun input:focus,.fun select:focus,.fun textarea:focus{border-color:var(--f-accent)}
+.fun-form-actions{display:flex;gap:8px;align-items:center;margin-top:9px;flex-wrap:wrap}
+.fun-form-error{color:#d9534f;font-size:12px;margin-bottom:7px;min-height:1em}
+.fun-danger{margin-left:auto;border-color:#d9534f;color:#d9534f}
+.fun-detail-actions{display:flex;gap:6px;align-items:center}
+.fun-detail-edit{font-size:11.5px;padding:2px 9px;cursor:pointer;background:transparent;border:1px solid var(--f-accent);border-radius:999px;color:var(--f-accent)}
+.fun-detail-edit:hover{background:color-mix(in srgb,var(--f-accent) 10%,transparent)}
 .fun-note{font-size:11.5px;color:var(--f-dim);margin-top:5px;line-height:1.5}
 .fun-stale{color:var(--f-warm)}
 
@@ -154,8 +170,20 @@ function mountPlaces(ctx) {
 
   let keyword = '';
   let expanded = null;
+  /** null = 没在编辑；{ mode: 'new' | 'edit', venue } = 打开表单。 */
+  let editing = null;
+  let formError = '';
+  /** 表单打开期间收到的最新数据，等关掉表单再补画，免得把用户填的内容冲掉。 */
+  let currentData = null;
 
   const render = (data) => {
+    // 表单相关声明要放在最前：点「添加地点」时 render 会重跑，
+    // 而那一轮里 `venueForm()` 在 `if (editing)` 处就会用到 `fields`。
+    // 放在后面会撞上 TDZ（`Cannot access 'fields' before initialization`）。
+    const renderAll = () => render(data);
+    const fields = {};
+    const lines = (v) => (Array.isArray(v) ? v.join('\n') : '');
+    const parseLines = (s) => String(s ?? '').split(/[\n,，、]/).map((x) => x.trim()).filter(Boolean);
     body.replaceChildren();
 
     // ---- 正在逛的那一趟 ----
@@ -189,7 +217,7 @@ function mountPlaces(ctx) {
       ));
     }
 
-    // ---- 搜索条 ----
+    // ---- 搜索条 + 自填地点 ----
     const input = el('input', {
       class: 'fun-search',
       type: 'search',
@@ -201,7 +229,49 @@ function mountPlaces(ctx) {
       // 只重画列表，不重画搜索框——否则每敲一个字就丢焦点（feast 踩过这条）。
       renderList();
     });
-    body.appendChild(el('div', { class: 'fun-bar' }, input));
+    const addBtn = el('button', {
+      class: 'fun-btn-primary',
+      type: 'button',
+      onclick: () => {
+        editing = { mode: 'new', venue: null };
+        formError = '';
+        renderAll();
+      },
+    }, '＋ 添加地点');
+    body.appendChild(el('div', { class: 'fun-bar' }, input, addBtn));
+
+    // B 阶段：预设也能编辑（改的是覆盖层，预设本身不动）；删只对自己的地方。
+    body.appendChild(el('div', { class: 'fun-hint' },
+      `预设的 ${data.total - data.userVenueCount} 处插件自带，现在也能改——改过的会标「已改」，`
+      + `随时能恢复；你自己加了 ${data.userVenueCount} 处，随时能改能删。`
+      + (data.overriddenCount
+        ? `　已改过 ${data.overriddenCount} 处预设。`
+        : '')
+      + (data.feast
+        ? '　吃喝的味道会去「鱼的每一天」拿（可在配置里关掉）。'
+        : '　吃喝只记名字、不描述味道（可在配置里打开「去鱼的每一天拿」）。')));
+
+    // 一键恢复全部预设：只在真有覆盖层时给，免得平时多一个没用的按钮。
+    if (data.overriddenCount) {
+      body.appendChild(el('button', {
+        class: 'fun-btn-primary',
+        type: 'button',
+        style: { marginBottom: '10px' },
+        onclick: async () => {
+          try {
+            const r = await ctx.invoke('resetAll', []);
+            if (!r?.ok) { formError = r?.error ?? '恢复不了'; return; }
+            formError = '';
+            await load();
+          } catch (err) {
+            formError = err?.message ?? String(err);
+          }
+        },
+      }, `恢复全部预设（${data.overriddenCount} 处）`));
+    }
+
+    // ---- 编辑表单（打开时在最上面） ----
+    if (editing) body.appendChild(venueForm());
 
     const listBox = el('div');
     body.appendChild(listBox);
@@ -309,18 +379,31 @@ function mountPlaces(ctx) {
     const detail = (p) => {
       const d = el('div', { class: 'fun-detail' },
         el('div', { class: 'fun-detail-top' },
-          el('h4', { text: p.name }),
-          el('button', {
-            class: 'fun-detail-close',
-            type: 'button',
-            title: '收起',
-            onclick: (ev) => {
-              // 卡片自己也绑了 onclick：不拦住的话会先收起再被卡片重新展开。
-              ev?.stopPropagation?.();
-              expanded = null;
-              renderList();
-            },
-          }, '收起')),
+          el('h4', { text: p.name },
+            p.overridden ? el('span', { class: 'fun-chip fun-chip-on', text: '已改', style: { marginLeft: '6px' } }) : null),
+          el('div', { class: 'fun-detail-actions' },
+            // B 阶段起预设也能编辑：改的是覆盖层，预设常量不动。
+            el('button', {
+              class: 'fun-detail-edit',
+              type: 'button',
+              onclick: (ev) => {
+                ev?.stopPropagation?.();
+                editing = { mode: 'edit', venue: p };
+                formError = '';
+                renderAll();
+              },
+            }, '编辑'),
+            el('button', {
+              class: 'fun-detail-close',
+              type: 'button',
+              title: '收起',
+              onclick: (ev) => {
+                // 卡片自己也绑了 onclick：不拦住的话会先收起再被卡片重新展开。
+                ev?.stopPropagation?.();
+                expanded = null;
+                renderList();
+              },
+            }, '收起'))),
         el('p', { class: 'fun-dim', text: `${p.kindLabel} · ${p.crowdLabel} · ${p.hours.open}–${p.hours.close} · ${p.stateLabel}` }),
         // 此刻的那段描写：有阶段的场所显示的是「这会儿的样子」，不是通用那段。
         el('p', { class: 'fun-detail-desc', text: p.desc }),
@@ -358,6 +441,141 @@ function mountPlaces(ctx) {
       return d;
     };
 
+    // ---- 地点表单（自填新建 / 自填编辑 / 预设编辑三态）----
+    // 放在 render 内部：能直接拿到当前 data 与 editing，保存后整体重画一次即可。
+    function venueForm() {
+      const v = editing.venue ?? {};
+      // 预设编辑：改的是覆盖层，不删场所；没改过的字段仍跟着预设升级走。
+      const isPreset = Boolean(v.id) && !v.userVenue;
+      const verb = v.food?.verb ?? 'none';
+      const foodItems = v.food?.items ?? [];
+      const errorNode = el('div', { class: 'fun-form-error', text: formError });
+
+      const field = (label, key, opts = {}) => {
+        const { type = 'text', value = '', hint = '', multiline = false, options = null, rows = '3' } = opts;
+        let input;
+        if (options) {
+          input = el('select', {});
+          for (const [val, lab] of options) input.appendChild(el('option', { value: val, text: lab }));
+          input.value = value;
+        } else if (multiline) {
+          input = el('textarea', { rows, placeholder: hint });
+          input.value = value;
+        } else {
+          input = el('input', { type, placeholder: hint });
+          input.value = value;
+        }
+        fields[key] = input;
+        return el('label', { class: 'fun-field' },
+          el('span', { class: 'fun-field-label', text: label }), input);
+      };
+
+      const save = async () => {
+        const payload = {
+          ...(v.id ? { id: v.id } : {}),
+          name: fields.name.value.trim(),
+          aliases: parseLines(fields.aliases.value),
+          tags: parseLines(fields.tags.value),
+          desc: fields.desc.value.trim(),
+          recommendedOutfit: fields.outfit.value.trim(),
+          crowd: fields.crowd.value,
+          hours: { open: fields.open.value.trim(), close: fields.close.value.trim() },
+          areas: parseLines(fields.areas.value),
+          souvenirs: parseLines(fields.souvenirs.value),
+          photoSpots: parseLines(fields.photoSpots.value),
+          randomEvents: parseLines(fields.randomEvents.value),
+        };
+        const foodVerb = fields.foodVerb.value;
+        if (foodVerb && foodVerb !== 'none') {
+          payload.food = { verb: foodVerb === 'drink' ? '喝' : '吃', items: parseLines(fields.foodItems.value) };
+        }
+        try {
+          const r = await ctx.invoke('save', [payload]);
+          if (!r?.ok) {
+            // 只改错误行，不重画表单——重画会把用户刚填的一整页冲掉。
+            formError = r?.error ?? '存不下来';
+            errorNode.textContent = formError;
+            return;
+          }
+          editing = null;
+          formError = '';
+          keyword = '';
+          expanded = null;
+          await load();
+        } catch (err) {
+          formError = err?.message ?? String(err);
+          errorNode.textContent = formError;
+        }
+      };
+
+      const remove = async () => {
+        if (!v.id) return;
+        try {
+          // 预设不能删，只能「恢复预设」（抹掉这一处覆盖层）。
+          const r = isPreset
+            ? await ctx.invoke('reset', [{ id: v.id }])
+            : await ctx.invoke('remove', [{ id: v.id }]);
+          if (!r?.ok) { formError = r?.error ?? '操作没成'; errorNode.textContent = formError; return; }
+          editing = null;
+          formError = '';
+          expanded = null;
+          await load();
+        } catch (err) {
+          formError = err?.message ?? String(err);
+          errorNode.textContent = formError;
+        }
+      };
+
+      const title = editing.mode === 'new'
+        ? '添加一处自己的地方'
+        : (isPreset ? `编辑预设：${v.name}` : `编辑：${v.name}`);
+      const note = isPreset
+        ? '改的是「覆盖层」，预设本身不动：只存你真改过的字段，以后预设升级的新内容照样能拿到。'
+          + '时段分段（不同时段不一样）不在这里改；想还原就点「恢复预设」。名字别改成另一处预设的正名。'
+        : '只写名字和「能逛的」就能用；别的留空也行。一行一条。';
+      return el('div', { class: 'fun-form' },
+        el('div', { class: 'fun-form-title', text: title }),
+        el('div', { class: 'fun-form-note', text: note }),
+        errorNode,
+        el('div', { class: 'fun-form-grid' },
+          field('名字 *', 'name', { value: v.name ?? '', hint: '例如「巷子里的旧书店」' }),
+          field('别名', 'aliases', { value: lines(v.aliases), hint: '一行一个，可选' }),
+          field('标签', 'tags', { value: lines(v.tags), hint: '室内 / 夜 / 免费… 一行一个' }),
+          field('推荐穿搭', 'outfit', { value: v.recommendedOutfit ?? '', hint: '可选，例如「外出外套」' }),
+          field('开门时间', 'open', { value: v.hours?.open ?? '09:00', hint: 'HH:MM' }),
+          field('关门时间', 'close', { value: v.hours?.close ?? '21:00', hint: 'HH:MM' }),
+          field('人多不多', 'crowd', {
+            value: v.crowd ?? 'normal',
+            options: [['quiet', '人不多'], ['normal', '人不算多'], ['packed', '人很多']],
+          }),
+          field('能吃能喝', 'foodVerb', {
+            value: verb === '喝' ? 'drink' : (verb === '吃' ? 'eat' : 'none'),
+            options: [['none', '没有'], ['drink', '喝的'], ['eat', '吃的']],
+          })),
+        // 预设可能带时段：面板的 desc 是「此刻那段」，编辑要用通用那段（descAll），
+        // 否则编辑一次会把某一段的描写写进覆盖层，别的时段全变成那一段。
+        field('这处是什么样子', 'desc', { value: v.descAll ?? v.desc ?? '', hint: '只写空间与陈设，别写她在干什么', multiline: true, rows: '3' }),
+        field('能逛的 *', 'areas', { value: lines(v.allAreas ?? v.areas), hint: '一行一处，至少一处', multiline: true, rows: '4' }),
+        field('纪念品', 'souvenirs', { value: lines(v.souvenirs), hint: '一行一样', multiline: true, rows: '2' }),
+        field('拍照点', 'photoSpots', { value: lines(v.photoSpots), hint: '一行一处', multiline: true, rows: '2' }),
+        field('能吃能喝的品类', 'foodItems', { value: lines(foodItems), hint: '品类名，一行一样；别写味道', multiline: true, rows: '2' }),
+        field('可能碰上的小事', 'randomEvents', { value: lines(v.randomEvents), hint: '一行一条，可选', multiline: true, rows: '2' }),
+        el('div', { class: 'fun-form-actions' },
+          el('button', { class: 'fun-btn-primary', type: 'button', onclick: save }, '保存'),
+          v.id ? el('button', { class: 'fun-danger', type: 'button', onclick: remove },
+            isPreset ? '恢复预设' : '删除这处') : null,
+          el('button', {
+            type: 'button',
+            onclick: () => {
+              editing = null;
+              formError = '';
+              // 表单开着时自动刷新只存了数据没重画；关掉时用最新那份补画。
+              if (currentData) { render(currentData); currentData = null; }
+              else renderAll();
+            },
+          }, '取消')));
+    }
+
     renderList();
   };
 
@@ -365,6 +583,8 @@ function mountPlaces(ctx) {
     try {
       const data = await ctx.invoke('list');
       if (!data?.ok) throw new Error(data?.error ?? '返回不正常');
+      // 正在填表单时别重画——一分钟的自动刷新会把用户刚填的一整页冲掉。
+      if (editing) { currentData = data; return; }
       render(data);
     } catch (err) {
       root.replaceChildren();

@@ -1,5 +1,5 @@
 /**
- * 内置场所库：十二处地方，开箱即用，不依赖任何别的 World。
+ * 内置场所库：二十处地方，开箱即用，不依赖任何别的 World。
  *
  * 关键设计（`FUN-联动方案.md` §三，2026-11-15 修订）：
  *
@@ -899,12 +899,12 @@ export function hoursState(venue, nowMin) {
 /**
  * 挑今天能去的几个：先按「此刻开着」筛，再按拥挤度、是否多走一天排。
  *
- * 返回 `[{ venue, state }]`，state 是 hoursState 的结果。
- * `avoid` 里放过最近去过的 id，排在后面而不是删掉——她想去还是能去。
- * `count` 夹在 1–8；要列全部就传 `limit` 或者用 `allPlaces()`。
+ * `places` 是「预设 + 用户自填」的合并表（缺省用纯预设）——不传的话
+ * 用户自己加的地方永远进不了 `fun_places`，这是做「自填地点」时踩过的坑。
+ * `count` 夹在 1–8；要列全部就用 `allPlaces()`。
  */
-export function suggestPlaces(nowMin, count = 4, avoid = []) {
-  const ranked = rankPlaces(nowMin, avoid);
+export function suggestPlaces(nowMin, count = 4, avoid = [], places = VENUES) {
+  const ranked = rankPlaces(nowMin, avoid, places);
   // count 的夹取写明白：坏值（NaN / 对象 / 空）才回落 4，0 是真的 0（夹到 1）。
   const raw = Number(count);
   const n = Number.isFinite(raw) ? Math.max(1, Math.min(8, Math.round(raw))) : 4;
@@ -912,19 +912,23 @@ export function suggestPlaces(nowMin, count = 4, avoid = []) {
 }
 
 /** 全部场所按「开着 > 快关了 > 关着」排好，不截断（`fun_places all=true` 用）。 */
-export function allPlaces(nowMin, avoid = []) {
-  return rankPlaces(nowMin, avoid);
+export function allPlaces(nowMin, avoid = [], places = VENUES) {
+  return rankPlaces(nowMin, avoid, places);
 }
 
-function rankPlaces(nowMin, avoid = []) {
+function rankPlaces(nowMin, avoid = [], places = VENUES) {
+  const list = Array.isArray(places) ? places : VENUES;
   const avoidSet = new Set(Array.isArray(avoid) ? avoid : []);
-  const scored = VENUES.map((venue, idx) => {
+  const scored = list.map((venue, idx) => {
     const state = hoursState(venue, nowMin);
     // 开着的最先；快关了的其次；关着的排最后（但还在列表里，她自己判断）。
     const stateRank = state === 'open' ? 0 : (state === 'closingSoon' ? 1 : 2);
     const avoidRank = avoidSet.has(venue.id) ? 1 : 0;
     const crowdRank = venue.crowd === 'packed' ? 2 : (venue.crowd === 'normal' ? 1 : 0);
-    return { venue, state, rank: [avoidRank, stateRank, crowdRank, idx] };
+    // 用户自己加的地方排最前：那是他特意写的，不该被「拥挤度」算法挤到
+    // 默认列表后面，否则看起来像没加上。开着/关着仍然在它之后生效。
+    const customRank = String(venue.id).startsWith('user-') ? 0 : 1;
+    return { venue, state, rank: [customRank, avoidRank, stateRank, crowdRank, idx] };
   });
   scored.sort((a, b) => {
     for (let i = 0; i < a.rank.length; i += 1) {

@@ -16,19 +16,27 @@
 ```powershell
 cd 'E:\deep seek\fun-world'
 
-node test/venues.test.mjs        # 10 项
-node test/state.test.mjs         # 13 项
-node test/world.test.mjs         # 24 项
+# 单测逐个跑（不要 node --test：受限沙箱里 spawn 子进程会 EPERM）
+node test/venues.test.mjs
+node test/state.test.mjs
+node test/world.test.mjs
+node test/panels.test.mjs
+node test/memories.test.mjs
+node test/phases.test.mjs
+node test/user-venues.test.mjs
 node tools/check-prompt.mjs      # 模板变量与 envPromptVars 对上
+node tools/check-isolation.mjs   # 不依赖别的 World、吃喝数据不含味道词
 node tools/smoke.mjs             # dry-mount：按宿主顺序真加载一遍
 node tools/make-describe.mjs --check
-node tools/publish-check.mjs --online   # 市场收录口径 + npm 包名占用
+node tools/verify-tarball.mjs    # 按 files 白名单组包、从安装形态真跑
+node tools/publish-check.mjs     # 市场收录口径（加 --online 额外查 npm 占用）
 ```
 
-`prepublishOnly` 已经把上面这一串（除 `--online` 外）都串起来了，`npm publish` 之前自动跑一遍，任何一处失败就发不出去。
+`prepublishOnly` 已经把上面这一串（除 `--online`、`verify-tarball` 外）都串起来了，`npm publish` 之前自动跑一遍，任何一处失败就发不出去。
 
-当前状态（0.1.3）：**25 项通过、0 失败、1 警告**（没截 `screenshots`）；**70 个单测全绿**
-（venues 12 · state 13 · world 30 · panels 16，另有隔离审计 `check-isolation`）；打包 **14 个文件**。
+当前状态（0.1.5，待发）：**25 项通过、0 失败、1 警告**（没截 `screenshots`）；**162 个单测全绿**
+（venues 12 · state 14 · memories 12 · phases 14 · user-venues 19 · world 57 · panels 24）；
+打包 **17 个文件**、解包约 321KB。
 
 ---
 
@@ -36,9 +44,11 @@ node tools/publish-check.mjs --online   # 市场收录口径 + npm 包名占用
 
 `package.json` 顶层已有三行（指向 `bailuhanyi/cortico-world-fun`）。**必须写在顶层**，Action 不读 `cortico` 块。
 
-仓库要在 GitHub 上先建好（这台机器没装 `gh`，走网页建空仓，**不要**勾 README/LICENSE/gitignore）：
+仓库 `bailuhanyi/cortico-world-fun` **已经建好并推过**（到 0.1.6 批次的提交）。
+下面这段是**首次建仓时的历史示例，现在不要再跑**（`git init` / `remote add` 会重复）：
 
 ```powershell
+# ==== 仅首次建仓时做过一次，已过时，别再执行 ====
 cd 'E:\deep seek\fun-world'
 git init
 git add -A
@@ -47,6 +57,9 @@ git branch -M main
 git remote add origin https://github.com/bailuhanyi/cortico-world-fun.git
 git push -u origin main
 ```
+
+现在发版只需要 `git commit` + `git push`（这台机器 `schannel` 报 `SEC_E_NO_CREDENTIALS`，
+推仓库要在你自己的 PowerShell 里敲）。
 
 `.gitignore` 已排掉 `fun/`（运行时状态）、`node_modules/`、`*.bak-*`。
 
@@ -77,13 +90,14 @@ npm config get registry   # 应是 https://registry.npmjs.org/
 npm pack --dry-run
 ```
 
-0.1.1 应该是 **14 个文件**、解包约 190KB：
+0.1.5 是 **17 个文件**、解包约 321KB：
 
 ```
 package.json  README.md  CHANGELOG.md  PUBLISHING.md  describe.json
 assets/icon.png
 dist/webui.js          # 面板（去哪儿 / 纪念册）
-src/index.js  src/definition.js  src/config.js  src/venues.js  src/state.js  src/world.js  src/ENV_PROMPT.md
+src/index.js  src/definition.js  src/config.js  src/venues.js  src/state.js
+src/memories.js  src/phases.js  src/user-venues.js  src/world.js  src/ENV_PROMPT.md
 ```
 
 `test/`、`tools/`、`install.ps1` 都在 `files` 之外，不会发出去——测试、图标生成器、装机脚本是我们的工具，不是用户要的东西。
@@ -97,8 +111,10 @@ src/index.js  src/definition.js  src/config.js  src/venues.js  src/state.js  src
 npm publish --otp 123456
 ```
 
-**这是首发**（`cortico-world-fun` 在 npm 上还是 404），所以不需要 `--access public`
-（那是作用域包 `@you/xxx` 才要）。`latest` 会从无到 **0.1.0**。
+**这不是首发**：npm 上已有 `cortico-world-fun`（`latest` 目前是 **0.1.4**），
+这一版发的是 **0.1.5**（0.1.5/0.1.6/0.1.7 是本地批次、从未发过，一次补齐）。
+不需要 `--access public`（那是作用域包 `@you/xxx` 才要）。`npm version patch` 会把
+`package.json` 的版本号改对——**别手改版本号再用 `npm version`，会跳号**。
 
 发完立刻验：
 
@@ -144,7 +160,8 @@ Action 平时每 30 分钟扫一次，GitHub 定时任务常推迟。想立刻�
 5. 截图改了就必须**发新版本**——市场按版本扫包
 
 > 0.1.1 起**有面板页了**（`dist/webui.js`，两张：去哪儿 / 纪念册），所以现在能截：
-> Coo 世界页的「娱乐时间」卡片、**「去哪儿」面板**（十二处 + 正在逛那条）、**「纪念册」面板**、配置页。
+> Coo 世界页的「娱乐时间」卡片、**「去哪儿」面板**（二十处 + 自己加的/改过的 + 正在逛那条）、
+> **「纪念册」面板**、配置页（4 项）。
 
 ---
 

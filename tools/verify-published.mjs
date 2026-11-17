@@ -151,7 +151,12 @@ try {
   ok(ui.panels?.length === 2, `声明了 2 个面板（实际 ${ui.panels?.length}）`);
   const places = await ui.invoke('places', 'list', []);
   ok(places.ok === true, 'places 面板取数成功');
-  ok(places.total === 12, `十二处场所（实际 ${places.total}）`);
+  // 绑包里那份预设库，别写死数字：0.1.4 从 12 处加到 20 处时，写死的 12 让验包一直红。
+  // dataDir 是临时空目录，纯预设、没有用户自填，total 应当正好等于预设数。
+  const presetCount = Array.isArray(mod.VENUES) ? mod.VENUES.length : null;
+  ok(presetCount !== null, '包里导出了 VENUES（能拿到预设场所数）');
+  ok(presetCount !== null && places.total === presetCount,
+    `${presetCount ?? '?'} 处预设场所（实际 ${places.total}）`);
   const book = await ui.invoke('book', 'list', []);
   ok(book.ok === true, 'book 面板取数成功');
   ok(book.total === 1, `纪念册里有一趟（实际 ${book.total}）`);

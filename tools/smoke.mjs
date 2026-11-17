@@ -23,6 +23,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import definition, { funDefinition, FUN_TOOL_DECLS, FunWorld, VENUES } from '../src/index.js';
+import { DEFAULTS } from '../src/config.js';
 import { hasScene } from '../src/venues.js';
 
 const TZ = 'Asia/Shanghai';
@@ -50,7 +51,10 @@ console.log('2) defaults / preflight');
 const d = funDefinition.defaults();
 ok(typeof d === 'object' && d !== null, 'defaults() 返回对象');
 ok(d.enabled === false, 'defaults().enabled 恒为 false（启用由部署决定）');
-ok(Object.keys(d).length === 4, `defaults 只有 4 个键（含 enabled），实际 ${Object.keys(d).length}`);
+// 数量绑到 DEFAULTS / configGroup 本身：加配置项时这条不该红，
+// 红的是「某个配置项没出现在面板上」那种真问题。
+ok(Object.keys(d).length === Object.keys(DEFAULTS).length,
+  `defaults 与 DEFAULTS 键数一致（实际 ${Object.keys(d).length}）`);
 funDefinition.preflight({ cfg: {} });
 ok(true, 'preflight 不抛');
 const d2 = funDefinition.defaults();
@@ -81,7 +85,7 @@ for (const t of world.tools()) {
   ok(t.parameters?.type === 'object', `${t.name} 有 parameters`);
 }
 
-// envPromptVars 两次调用都不抛，且把十二处都带上了
+// envPromptVars 两次调用都不抛，且把全部预设场所都带上了
 let vars;
 try {
   vars = world.envPromptVars();
@@ -113,7 +117,12 @@ ok(Array.isArray(ui.config) && ui.config.length === 1, 'webUi 一组配置');
 ok(ui.promptDocs?.[0]?.key === 'worlds.fun.env', 'webUi 的 promptDocs key 是 worlds.fun.env');
 const cfgPaths = Object.keys(ui.config[0].schema.properties);
 ok(cfgPaths.every((p) => p.startsWith('worlds.fun.')), `配置路径都在 worlds.fun. 段：${cfgPaths.join(',')}`);
-ok(cfgPaths.length === 3, `配置项就是 3 个，实际 ${cfgPaths.length}`);
+ok(cfgPaths.length === Object.keys(DEFAULTS).length - 1,
+  `面板配置项数量 = DEFAULTS 去掉 enabled（实际 ${cfgPaths.length}）`);
+for (const key of Object.keys(DEFAULTS)) {
+  if (key === 'enabled') continue;
+  ok(cfgPaths.includes(`worlds.fun.${key}`), `面板上声明了 ${key}`);
+}
 
 console.log('5) 真跑一趟');
 const tool = (n) => world.tools().find((t) => t.name === n).handler;

@@ -34,9 +34,13 @@ import {
   cameEarlierToday, dayPhrase, filterRepeatedEvents, historyFor, memoryLine, untriedAreas,
 } from './memories.js';
 import {
+  USER_PREFIX, blankVenue, cleanOverride, cleanUserVenue, idFromName, isPresetId,
+  mergeVenues, parseVenueFile, stringifyVenueFile,
+} from './user-venues.js';
+import {
   buySouvenir, closeSession, dayIn, enterVenue, hmIn, isStale, minutesIn,
   newState, normalizeState, photoSpotsFor, recentPlaceIds, recordConsume,
-  souvenirsFor, takePhoto, tripSummary, venueById, visitedText, wanderOnce,
+  souvenirsFor, takePhoto, tripSummary, visitedText, wanderOnce,
 } from './state.js';
 
 const ENV_PROMPT = fileURLToPath(new URL('./ENV_PROMPT.md', import.meta.url));
@@ -62,7 +66,7 @@ export const FUN_TOOL_DECLS = [
   {
     name: 'fun_places',
     tags: ['read', 'snapshot'],
-    description: '看看今天能去哪儿逛：游乐场、海洋馆、庙会、漫展、电影院、动物园、公园、电玩城、KTV、博物馆、猫咖、爬山、咖啡店、奶茶店、餐厅、图书馆、夜市、澡堂、旧货市场、江边，一共二十处。默认按这会儿开没开、人多不多排前几个；想看全的就把 all 填 true，只想看某一类就填 kind。',
+    description: '看看今天能去哪儿逛：内置的二十处地方，加上主人在面板上自己加的（全部名字在环境提示词里列着）。默认按这会儿开没开、人多不多排前几个；想看全的就把 all 填 true，只想看某一类就填 kind。',
     parameters: {
       type: 'object',
       properties: {
@@ -79,7 +83,7 @@ export const FUN_TOOL_DECLS = [
   {
     name: 'fun_go',
     tags: ['write'],
-    description: '进门：挑一处地方开始这一趟。回执是进门那一下看到的样子，以及接下来能逛什么。place 填地方名（游乐场、海洋馆、庙会、漫展、电影院、动物园、公园、电玩城、KTV、博物馆、猫咖、爬山，别名也认）。进去之后用 fun_wander 一处一处逛，逛完用 fun_home 收摊。',
+    description: '进门：挑一处地方开始这一趟。回执是进门那一下看到的样子，以及接下来能逛什么。place 填地方名或别名（有哪些地方看 fun_places / 环境提示词）。进去之后用 fun_wander 一处一处逛，逛完用 fun_home 收摊。',
     parameters: {
       type: 'object',
       properties: {
@@ -154,6 +158,10 @@ export class FunWorld {
   #random;
   #persist = null;
   #rawCfg = null;
+  /** 用户自填的地点（从 venues.json 读进内存；同步工具回执要即时用）。 */
+  #userVenues = null;
+  /** B 阶段：预设覆盖层 `{ [presetId]: {字段: 值} }`，稀疏、只存改过的字段。 */
+  #overrides = {};
 
   constructor(opts = {}) {
     this.id = ID;
@@ -183,6 +191,17 @@ export class FunWorld {
   #askReport() {
     const v = this.cfg?.funAskReport;
     return v === undefined || v === null ? Boolean(DEFAULTS.funAskReport) : Boolean(v);
+  }
+
+  /**
+   * 吃喝的味道去不去「鱼的每一天」拿。
+   *
+   * 这是**用户意愿开关**，不是自动探测：World 不能去探测别的扩展装没装
+   * （那本身就是一种依赖，认证要查）。拨关就一个字都不提味道。
+   */
+  #tasteFromFeast() {
+    const v = this.cfg?.funTasteFromFeast;
+    return v === undefined || v === null ? Boolean(DEFAULTS.funTasteFromFeast) : Boolean(v);
   }
 
   /**
@@ -216,14 +235,66 @@ export class FunWorld {
     return join(this.dataDir, 'fun', 'state.json');
   }
 
+  /** 用户自填地点的文件。和 state.json 分开放：一个是「她逛到哪」，一个是「主人配了什么」。 */
+  venuesFile() {
+    return join(this.dataDir, 'fun', 'venues.json');
+  }
+
+  // -------------------------------------------------------------------------
+  // 场所：预设 + 用户自填
+  // -------------------------------------------------------------------------
+
+  /**
+   * 当前可用的全部场所：预设 20 处（可带覆盖层）+ 用户自填。
+   *
+   * **永远返回数组，永远不抛错**——场所表读不出来时退回纯预设，
+   * 这个 World 照常能逛（降级是第一公民）。
+   *
+   * 合并规则见 `user-venues.js`：用户改动优先，预设升级照常生效。
+   * 这个方法是同步的（工具回执要即时算），所以用户数据在 `#load` 时读进内存。
+   */
+  #places() {
+    try {
+      const users = Array.isArray(this.#userVenues) ? this.#userVenues : [];
+      return mergeVenues(VENUES, users, this.#overrides);
+    } catch (err) {
+      this.#host?.log?.warn?.('娱乐时间：场所合并失败，退回预设', { err: msg(err) });
+      return [...VENUES];
+    }
+  }
+
+  /**
+   * 读 venues.json（坏文件、目录不存在一律当空，不抛）。
+   * 兼容 A 阶段旧格式：顶层数组或只有 `{ venues: [...] }`。
+   */
+  async #loadVenueFile() {
+    try {
+      const raw = JSON.parse(await readFile(this.venuesFile(), 'utf8'));
+      return parseVenueFile(raw);
+    } catch {
+      return { venues: [], overrides: {} };
+    }
+  }
+
+  /** 写 venues.json（tmp → rename 原子写）；覆盖层与自填地点一起落盘。 */
+  async #saveVenueFile(venues, overrides) {
+    const file = this.venuesFile();
+    await mkdir(dirname(file), { recursive: true });
+    const tmp = `${file}.tmp`;
+    await writeFile(tmp, stringifyVenueFile({ venues, overrides }), 'utf8');
+    await rename(tmp, file);
+    this.#userVenues = venues;
+    this.#overrides = overrides;
+  }
+
   // -------------------------------------------------------------------------
   // 提示词
   // -------------------------------------------------------------------------
 
   /**
-   * 只放**一天变不了几次**的东西：十二处场所的正名与别名。
+   * 只放**一天变不了几次**的东西：二十处场所的正名与别名。
    *
-   * 十二处全列细节会顶掉几百 token 的常驻前缀，所以这里**只列名字和别名**，
+   * 二十处全列细节会顶掉几百 token 的常驻前缀，所以这里**只列名字和别名**，
    * 细节留给 `fun_places` / `fun_go` 按需给。生图素材库里有的那几处后面带一句
    * 「scene 填「X」」；没有的不带——**不能让她以为每处都有 scene 可填**。
    *
@@ -234,7 +305,7 @@ export class FunWorld {
     try {
       if (!this.#on()) return { fun_places_block: '' };
       const lines = ['（能去逛的地方：）'];
-      for (const v of VENUES) {
+      for (const v of this.#places()) {
         const alias = v.aliases.length ? `（也叫 ${v.aliases.slice(0, 3).join('、')}）` : '';
         const scene = hasScene(v) ? ` 生图 scene 填「${v.scene}」` : '';
         lines.push(`- ${v.name}${alias}${scene}`);
@@ -283,6 +354,7 @@ export class FunWorld {
   #placesTool(args) {
     const now = this.#now();
     const nowMin = minutesIn(this.timezone, now);
+    const places = this.#places();
     const all = args?.all === true;
     const count = clampInt(args?.count, 1, 8, 4);
     const avoid = recentPlaceIds(this.#state, 2);
@@ -293,13 +365,13 @@ export class FunWorld {
     const kindFilter = typeof args?.kind === 'string' ? args.kind.trim() : '';
     let picks;
     if (kindFilter) {
-      const byName = findVenue(VENUES, kindFilter);
+      const byName = findVenue(places, kindFilter);
       // 「吃饭喝东西」按 hasFood 判，不只看 kind：夜市是 market 大类，但它也能吃。
       // 这样以后再加能吃喝的地方不用回来改筛选逻辑。
       const wantsFood = kindFilter === KIND_LABEL.food;
       const matched = byName
         ? [byName]
-        : VENUES.filter((v) => (wantsFood ? hasFood(v) : false)
+        : places.filter((v) => (wantsFood ? hasFood(v) : false)
           || v.tags.includes(kindFilter)
           || KIND_LABEL[v.kind] === kindFilter
           || v.kind === kindFilter);
@@ -312,7 +384,7 @@ export class FunWorld {
         .map((venue) => ({ venue, state: hoursState(venue, nowMin) }))
         .sort((a, b) => rankOf(a.state) - rankOf(b.state));
     } else {
-      picks = all ? allPlaces(nowMin, avoid) : suggestPlaces(nowMin, count, avoid);
+      picks = all ? allPlaces(nowMin, avoid, places) : suggestPlaces(nowMin, count, avoid, places);
     }
 
     const lines = [`这会儿 ${hmIn(this.timezone, now)}，能去逛的：`];
@@ -325,8 +397,8 @@ export class FunWorld {
     if (this.#state.session) {
       lines.push(`（你正在「${this.#state.session.placeName}」逛着，${visitedText(this.#state.session)}；要换地方先 fun_home 收个摊。）`);
     }
-    if (!all && !kindFilter && VENUES.length > picks.length) {
-      lines.push(`（一共 ${VENUES.length} 处，这里只排了 ${picks.length} 处；想看全的就 all 填 true，只想看室内/户外/夜就填 kind。）`);
+    if (!all && !kindFilter && places.length > picks.length) {
+      lines.push(`（一共 ${places.length} 处，这里只排了 ${picks.length} 处；想看全的就 all 填 true，只想看室内/户外/夜就填 kind。）`);
     }
     lines.push('定了就用 fun_go（place 填地方名）进门。');
     return { text: lines.join('\n') };
@@ -337,9 +409,10 @@ export class FunWorld {
     const day = dayIn(this.timezone, now);
     this.#state = normalizeState(this.#state, day);
 
-    const venue = findVenue(VENUES, args?.place);
+    const places = this.#places();
+    const venue = findVenue(places, args?.place);
     if (!venue) {
-      const names = VENUES.map((v) => v.name).join(' / ');
+      const names = places.map((v) => v.name).join(' / ');
       return { text: `没听说过「${args?.place ?? ''}」这处。现在能去的是：${names}。\n（拿不准就 fun_places 看看，或者 all 填 true 列全部。）`, failed: true };
     }
 
@@ -396,7 +469,11 @@ export class FunWorld {
     if (!session) {
       return { text: `你还没进门呢。先 fun_go 挑一处地方（${VENUES.slice(0, 4).map((v) => v.name).join(' / ')}…一共 ${VENUES.length} 处，fun_places 能看全），再一处一处逛。` };
     }
-    const venue = venueById(session.placeId) ?? findVenue(VENUES, session.placeName);
+    const places = this.#places();
+    // venueById 只认预设；自填地点要在这份合并表里按 id 查，否则用户加的地方
+    // 进门第一趟正常、第二趟 fun_wander 就找不到它了。
+    const venue = places.find((v) => v.id === session.placeId)
+      ?? findVenue(places, session.placeName);
     if (!venue) {
       return { text: `找不到「${session.placeName}」这处了（场所库改过？）。fun_home 收个摊吧。` };
     }
@@ -524,7 +601,8 @@ export class FunWorld {
       return { text: '你这会儿没在逛啊。想出门就 fun_go，先挑一处地方。' };
     }
 
-    const venue = venueById(this.#state.session.placeId) ?? { name: this.#state.session.placeName, scene: this.#state.session.scene };
+    const venue = this.#places().find((v) => v.id === this.#state.session.placeId)
+      ?? { name: this.#state.session.placeName, scene: this.#state.session.scene };
     const closed = closeSession(this.#state, now, args?.note);
     await this.#save();
 
@@ -558,12 +636,13 @@ export class FunWorld {
   #startTool() {
     const now = this.#now();
     const nowMin = minutesIn(this.timezone, now);
-    const picks = suggestPlaces(nowMin, 5, recentPlaceIds(this.#state, 2));
+    const places = this.#places();
+    const picks = suggestPlaces(nowMin, 5, recentPlaceIds(this.#state, 2), places);
     const lines = [`这会儿 ${hmIn(this.timezone, now)}。想现在就出门的话，能去：`];
     for (const { venue, state } of picks) {
       lines.push(`- ${venue.name}（${STATE_LABEL[state]}，${CROWD_LABEL[venue.crowd] || '人不少'}）：${venue.areas.slice(0, 4).join('、')}`);
     }
-    lines.push(`（一共 ${VENUES.length} 处，fun_places all 填 true 能看全，kind 填「室内」「户外」「夜」能只看一类。）`);
+    lines.push(`（一共 ${places.length} 处，fun_places all 填 true 能看全，kind 填「室内」「户外」「夜」能只看一类。）`);
     lines.push('怎么走：fun_go 进门 → fun_wander 一处一处逛（能顺手买纪念品、拍照）→ fun_home 收摊。');
     lines.push('收摊回执会把这一趟收成一句话，你照着 feast_life_play 记一笔就行。');
     return { text: lines.join('\n') };
@@ -604,7 +683,9 @@ export class FunWorld {
     const idx = (venue.areas || []).indexOf(area);
     const n = idx >= 0 ? idx + 1 : null;
     // desc 的第一段（到第一个分号）通常就是空间本身，够用且不啰嗦。
-    const scenery = descNow(venue, nowMin).split('；')[0].replace(/^[^：]*：/, '');
+    let scenery = descNow(venue, nowMin).split('；')[0].replace(/^[^：]*：/, '');
+    // 自填地点的描述是用户手写的，可能本来就有句号；别再补一个变成「。。」。
+    scenery = scenery.replace(/[。！？.!?]+$/, '');
     const where = n ? `（第 ${n} 处，共 ${venue.areas.length} 处）` : '';
     return `${scenery}。${where}`;
   }
@@ -614,32 +695,28 @@ export class FunWorld {
   }
 
   /**
-   * 吃 / 喝那句：把味道这件事**交回给鱼的每一天**。
+   * 吃 / 喝那句：按 `funTasteFromFeast` 走两条路。
    *
-   * 为什么不是本插件自己写味道：菜品库（824 道菜、九维口感、实吃描写）在
-   * `cortico-world-feast` 里。World 契约不允许一个 World 读另一个 World 的库，
-   * 认证会查「一个 World 依赖另一个扩展」。所以这里只做两件事：
+   * 为什么不自动探测 feast 装没装：World 契约不允许一个 World 依赖另一个扩展，
+   * 认证会查这条。探测本身就是依赖。所以这一项是**用户自己拨的意愿开关**。
    *
-   *   1. 告诉她「这儿能吃到什么」（品类名，本插件自己的数据）
-   *   2. 告诉她「去 feast 点一道真的」——具体点哪道、什么味道，由她自己在
-   *      同一回合调 `feast_menu` / `feast_eat`，那是她的工具，不是我们的
+   *   开着 → 告诉她去 `feast_menu` / `feast_eat` 点一道真的，那里才有九维口感
+   *   关着 → 只说她在这儿吃了喝了什么，**一个字都不提味道**
    *
-   * **没装 feast 怎么办**：她的 `feast_eat` 调不出来（工具不存在），于是她只知道
-   * 「我在这儿喝了杯奶茶」——没有九维、没有香气余韵。这不是 bug，是有意的降级：
-   * 与其编一个假的味道档案，不如只说她真知道的那件事。
-   *
-   * 本插件永远不会知道 feast 装没装（不该去探测别人的扩展），所以这段话
-   * **同时给出两条路**，让她按自己手头有什么走。
+   * 两条路都不编味道。开着时她调不到 feast_eat 也会自然退回「只说喝了什么」。
    */
   #foodHint(venue) {
     const f = venue.food;
     const sample = f.items.slice(0, 3).join(' / ');
-    return [
-      `想${f.verb}点什么就自己挑（${sample}…）。`,
-      // 措辞按「喝 / 吃」分开写，别拼出「喝了什么」这种别扭话。
-      `但味道别自己编：装了「鱼的每一天」就用 feast_menu 挑一道同类的、feast_eat 真${f.verb}一口，`
-      + `你才能说得出九维口感、香气和余韵；没装就只说在这儿${f.verb}了什么，一句人话，别形容味道。`,
-    ].join('');
+    const head = `想${f.verb}点什么就自己挑（${sample}…）。`;
+    if (!this.#tasteFromFeast()) {
+      // 关掉时连「味道」这个词都不该出现——否则她会以为自己该形容一番。
+      return `${head}只说你在这儿${f.verb}了什么就够了，一句人话。`;
+    }
+    // 措辞按「喝 / 吃」分开写，别拼出「喝了什么」这种别扭话。
+    return `${head}但味道别自己编：装了「鱼的每一天」就用 feast_menu 挑一道同类的、`
+      + `feast_eat 真${f.verb}一口，你才能说得出九维口感、香气和余韵；`
+      + `没装就只说在这儿${f.verb}了什么，一句人话，别形容味道。`;
   }
 
   // -------------------------------------------------------------------------
@@ -687,17 +764,18 @@ export class FunWorld {
     const now = this.#now();
     const state = this.#state ?? newState(dayIn(this.timezone, now));
     const nowMin = minutesIn(this.timezone, now);
-    const openCount = VENUES.filter((v) => hoursState(v, nowMin) !== 'closed').length;
+    const places = this.#places();
+    const openCount = places.filter((v) => hoursState(v, nowMin) !== 'closed').length;
     const session = state.session;
     const badges = [
       {
         label: t.badgePlaces,
-        value: `${openCount}/${VENUES.length}`,
+        value: `${openCount}/${places.length}`,
         tone: openCount > 0 ? 'plain' : 'off',
       },
     ];
     if (session) {
-      const venue = venueById(session.placeId);
+      const venue = this.#places().find((v) => v.id === session.placeId);
       badges.unshift({
         label: t.badgeSession,
         value: `${session.placeName}·${session.visited.length}/${venue?.areas.length ?? '?'}`,
@@ -715,7 +793,15 @@ export class FunWorld {
       }],
       badges,
       panels: [
-        { id: 'places', title: p.places.title, description: p.places.description, getMethods: ['list'] },
+        {
+          id: 'places',
+          title: p.places.title,
+          description: p.places.description,
+          // getMethods 是**只读**方法；save/remove/reset/resetAll 是写方法，
+          // 单独声明给宿主看，免得面板被当成纯展示、宿主判定它不需要刷新。
+          getMethods: ['list', 'blank'],
+          methods: ['save', 'remove', 'reset', 'resetAll'],
+        },
         { id: 'book', title: p.book.title, description: p.book.description, getMethods: ['list'] },
       ],
       invoke: (panel, method, args) => this.#invoke(panel, method, args ?? []),
@@ -762,6 +848,13 @@ export class FunWorld {
       if (panel === 'places') {
         switch (method) {
           case 'list': return this.#placesData();
+          // 写方法：只动用户的 venues.json，绝不动预设常量。
+          case 'save': return await this.#saveVenue(args?.[0] ?? args ?? {});
+          case 'remove': return await this.#removeVenue(args?.[0]?.id ?? args?.id);
+          // B 阶段：恢复预设（抹掉这一处 / 全部覆盖层）。
+          case 'reset': return await this.#resetVenue(args?.[0]?.id ?? args?.id);
+          case 'resetAll': return await this.#resetAllVenues();
+          case 'blank': return { ok: true, venue: blankVenue(), feast: this.#tasteFromFeast() };
           default: throw new Error(`places 没有 ${method} 这个方法`);
         }
       }
@@ -778,6 +871,107 @@ export class FunWorld {
   }
 
   /**
+   * 保存一个地点：预设写覆盖层，自填写完整场所（B 阶段）。
+   *
+   * 两条路共用 `cleanUserVenue` 的校验，但落盘形状不同：
+   *   - 预设 id → `cleanOverride` 压成稀疏差异存进 overrides（预设升级照常生效）；
+   *   - `user-` 前缀 → 完整场所存进 venues（A 阶段原样）；
+   *   - 没有 id → 新建自填地点（按名字生成 id）。
+   *
+   * 预设**不能删**，所以这里不接受「删除预设」；要恢复用 reset / resetAll。
+   * 新建自填仍不能撞预设的正名（否则按名字找会二义）；编辑预设时保留正名是合法的。
+   */
+  async #saveVenue(raw) {
+    const list = Array.isArray(this.#userVenues) ? [...this.#userVenues] : [];
+    const overrides = { ...(this.#overrides ?? {}) };
+    const editingId = typeof raw?.id === 'string' && raw.id.trim() ? raw.id.trim() : '';
+    const presetHit = VENUES.find((v) => v.id === editingId);
+
+    if (presetHit) {
+      // B 阶段：编辑预设 → 稀疏覆盖层。名字/别名撞别的预设仍要拦（按名字找会二义）。
+      const name = typeof raw?.name === 'string' ? raw.name.trim() : '';
+      const clash = VENUES.find((v) => v.id !== editingId
+        && (v.name === name || (Array.isArray(raw?.aliases)
+          && raw.aliases.some((a) => String(a).trim() === v.name))));
+      if (clash) {
+        return { ok: false, error: `「${clash.name}」是另一处预设的名字，换一个吧——不然按名字找会撞。` };
+      }
+      const { fields, problems } = cleanOverride(raw, presetHit);
+      if (problems.length) return { ok: false, error: problems.join('；') || '这条改动存不下来' };
+      if (Object.keys(fields).length) overrides[editingId] = fields;
+      else delete overrides[editingId]; // 跟预设一模一样 = 没有覆盖层
+      await this.#saveVenueFile(list, overrides);
+      this.#host?.log?.info?.('娱乐时间：改了预设场所（覆盖层）', { id: editingId, fields: Object.keys(fields) });
+      return { ok: true, venue: this.#places().find((v) => v.id === editingId), places: this.#places().length };
+    }
+
+    // 自填地点（新建 / 改自己的）
+    if (editingId && !editingId.startsWith(USER_PREFIX)) {
+      return { ok: false, error: `不认识的 id「${editingId}」：既不是预设，也不是自己加的地方。` };
+    }
+    const name = typeof raw?.name === 'string' ? raw.name.trim() : '';
+    if (name && VENUES.some((v) => v.name === name)) {
+      return { ok: false, error: `「${name}」是预设里的名字，换一个吧——不然按名字找会撞。` };
+    }
+
+    const existingIds = [...VENUES.map((v) => v.id), ...list.map((v) => v.id)];
+    const id = editingId || idFromName(name, existingIds);
+    const { venue, problems } = cleanUserVenue({ ...raw, id }, { requireId: true });
+    if (!venue) return { ok: false, error: problems.join('；') || '这条地点存不下来' };
+
+    const at = list.findIndex((v) => v.id === venue.id);
+    if (at >= 0) list[at] = venue;
+    else list.push(venue);
+
+    await this.#saveVenueFile(list, overrides);
+    this.#host?.log?.info?.('娱乐时间：保存了自填地点', { id: venue.id, name: venue.name, editing: at >= 0 });
+    return { ok: true, venue, places: this.#places().length };
+  }
+
+  /** 删掉一个用户自己的地点。预设一律拒绝（想还原用 reset）。 */
+  async #removeVenue(id) {
+    const target = typeof id === 'string' ? id.trim() : '';
+    if (!target) return { ok: false, error: '没给 id' };
+    if (isPresetId(VENUES, target)) {
+      return { ok: false, error: '预设里的地方删不掉；想还原就在编辑表单里点「恢复预设」。' };
+    }
+    if (!target.startsWith(USER_PREFIX)) {
+      return { ok: false, error: '只能删自己加的地方。' };
+    }
+    const list = (this.#userVenues ?? []).filter((v) => v.id !== target);
+    if (list.length === (this.#userVenues ?? []).length) {
+      return { ok: false, error: '没找到这个自填地点' };
+    }
+    await this.#saveVenueFile(list, this.#overrides ?? {});
+    this.#host?.log?.info?.('娱乐时间：删掉自填地点', { id: target });
+    return { ok: true, places: this.#places().length };
+  }
+
+  /** 恢复一处预设：抹掉它的覆盖层（B 阶段「一键恢复」的单处版）。 */
+  async #resetVenue(id) {
+    const target = typeof id === 'string' ? id.trim() : '';
+    if (!target) return { ok: false, error: '没给 id' };
+    if (!isPresetId(VENUES, target)) {
+      return { ok: false, error: '只能恢复预设里的地方。' };
+    }
+    const overrides = { ...(this.#overrides ?? {}) };
+    if (!(target in overrides)) return { ok: true, places: this.#places().length };
+    delete overrides[target];
+    await this.#saveVenueFile(this.#userVenues ?? [], overrides);
+    this.#host?.log?.info?.('娱乐时间：恢复了一处预设', { id: target });
+    return { ok: true, places: this.#places().length };
+  }
+
+  /** 一键恢复全部预设：清空整个覆盖层（自填地点不动）。 */
+  async #resetAllVenues() {
+    const count = Object.keys(this.#overrides ?? {}).length;
+    if (!count) return { ok: true, places: this.#places().length, cleared: 0 };
+    await this.#saveVenueFile(this.#userVenues ?? [], {});
+    this.#host?.log?.info?.('娱乐时间：恢复了全部预设', { cleared: count });
+    return { ok: true, places: this.#places().length, cleared: count };
+  }
+
+  /**
    * 「去哪儿」面板：全部场所 + 此刻的开放状态 + 正在逛的这一趟。
    *
    * 只读：不动状态、不写盘。`now` 由服务端给，别让面板自己算——
@@ -789,7 +983,8 @@ export class FunWorld {
     const tz = this.timezone;
     const st = this.#state ?? newState(dayIn(tz, now));
     const recent = recentPlaceIds(st, 3);
-    const places = VENUES.map((v) => {
+    const all = this.#places();
+    const places = all.map((v) => {
       const state = hoursState(v, nowMin);
       return {
         id: v.id,
@@ -804,10 +999,20 @@ export class FunWorld {
         outfit: v.recommendedOutfit,
         crowd: v.crowd,
         crowdLabel: CROWD_LABEL[v.crowd] ?? '',
-        kindLabel: KIND_LABEL[v.kind] ?? '',
+        kindLabel: KIND_LABEL[v.kind] ?? '自填',
+        // 自填的地点：面板上显示「删除这处」；B 阶段起预设也能编辑。
+        userVenue: String(v.id).startsWith(USER_PREFIX),
+        // 这一处预设被改过（覆盖层非空）：面板上标一下，并提供「恢复预设」。
+        overridden: Boolean(this.#overrides?.[v.id] && Object.keys(this.#overrides[v.id]).length),
         hours: v.hours,
         state,
         stateLabel: STATE_LABEL[state],
+        // 编辑表单要的是场所自己的完整清单；`areas` 是「此刻能逛的」，
+        // 被时段收窄过，不能直接拿去当编辑数据（那样编辑一次会丢掉半天的内容）。
+        allAreas: v.areas,
+        randomEvents: v.randomEvents ?? [],
+        recommendedOutfit: v.recommendedOutfit,
+        food: v.food ? { label: v.food.label, items: v.food.items, verb: v.food.verb } : null,
         areas: areasNow(v, nowMin),
         areaCount: v.areas.length,
         souvenirs: v.souvenirs,
@@ -822,7 +1027,7 @@ export class FunWorld {
         food: hasFood(v) ? { label: v.food.label, items: v.food.items, verb: v.food.verb } : null,
       };
     });
-    // 开着的排前面；面板不截断，十二处都给它，前端自己分组。
+    // 开着的排前面；面板不截断，全部场所都给它，前端自己分组。
     places.sort((a, b) => rankOf(a.state) - rankOf(b.state));
 
     return {
@@ -832,6 +1037,10 @@ export class FunWorld {
       ttlMin: this.#ttlMin(),
       askReport: this.#askReport(),
       on: this.#on(),
+      // 吃喝了去不去鱼的每一天拿味道：面板上显示成开关状态，让主人知道自己是哪种模式。
+      feast: this.#tasteFromFeast(),
+      userVenueCount: places.filter((x) => String(x.id).startsWith(USER_PREFIX)).length,
+      overriddenCount: Object.keys(this.#overrides ?? {}).length,
       openCount: places.filter((x) => x.state !== 'closed').length,
       total: places.length,
       places,
@@ -849,7 +1058,7 @@ export class FunWorld {
         photos: st.session.photos,
         ate: (st.session.ate ?? []).map((x) => ({ item: x.item, verb: x.verb, hm: hmIn(tz, x.at) })),
         events: st.session.events,
-        venueAreaCount: venueById(st.session.placeId)?.areas.length ?? null,
+        venueAreaCount: places.find((v) => v.id === st.session.placeId)?.areas.length ?? null,
       } : null,
     };
   }
@@ -918,9 +1127,15 @@ export class FunWorld {
     this.#host = host;
     this.#ensureConfigSection();
     this.#state = await this.#load();
+    // 用户自填地点 + 预设覆盖层：读失败就当没有，预设照常能逛。
+    const venueFile = await this.#loadVenueFile();
+    this.#userVenues = venueFile.venues;
+    this.#overrides = venueFile.overrides;
     this.#started = true;
     this.#host?.log?.info?.('娱乐时间已启动', {
-      places: VENUES.length,
+      places: this.#places().length,
+      userVenues: this.#userVenues.length,
+      overridden: Object.keys(this.#overrides).length,
       session: this.#state.session?.placeName ?? null,
       trips: this.#state.trips.length,
     });
@@ -933,9 +1148,9 @@ export class FunWorld {
   }
 }
 
-/** 给面板/测试用的场所名清单（正名 + 别名一起）。 */
-export function venueNames() {
-  return VENUES.flatMap((v) => [v.name, ...v.aliases]);
+/** 给面板/测试用的场所名清单（正名 + 别名一起）。可传合并后的表。 */
+export function venueNames(venues = VENUES) {
+  return venues.flatMap((v) => [v.name, ...v.aliases]);
 }
 
 export { KIND_LABEL, VENUES };
