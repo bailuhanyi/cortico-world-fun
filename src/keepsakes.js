@@ -27,20 +27,7 @@
 
 const norm = (v, max) => (typeof v === 'string' ? v.replace(/\s+/g, ' ').trim().slice(0, max) : '');
 
-/**
- * 从一趟里取它的日期。和 `state.js` 的 `tripDay` 同一套规则，
- * 但这里不 import（避免纯数据层互相依赖），保证形状坏掉时返回空串而不是抛。
- */
-function dayOf(trip) {
-  const stored = norm(trip?.leftDay, 10);
-  if (/^\d{4}-\d{2}-\d{2}$/.test(stored)) return stored;
-  try {
-    const d = trip?.leftAt ? new Date(trip.leftAt).toISOString().slice(0, 10) : '';
-    return /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : '';
-  } catch {
-    return '';
-  }
-}
+import { tripDay, tripSummary } from './state.js';
 
 /**
  * 把纪念册里所有趟摊平，按「东西的名字」归集。
@@ -51,7 +38,7 @@ function dayOf(trip) {
  * @param {object[]} trips  `state.trips`（最近的在前）
  * @returns {{ items: object[], byPlace: object[], total: number, uniquePlaces: number }}
  */
-export function collectSouvenirs(trips) {
+export function collectSouvenirs(trips, timezone = 'Asia/Shanghai') {
   const list = Array.isArray(trips) ? trips : [];
   const map = new Map();
 
@@ -59,8 +46,19 @@ export function collectSouvenirs(trips) {
     if (!t || typeof t !== 'object') continue;
     const placeId = norm(t.placeId, 40);
     const placeName = norm(t.placeName, 40) || placeId;
-    const day = dayOf(t);
-    const souvenirs = Array.isArray(t.souvenirs) ? t.souvenirs : [];
+    const day = tripDay(t, timezone);
+    const memory = {
+      day,
+      leftAt: Number(t.leftAt) || 0,
+      company: norm(t.company, 40),
+      note: norm(t.note, 120),
+      summary: tripSummary({
+        placeName,
+        company: norm(t.company, 40),
+        visited: (Array.isArray(t.visited) ? t.visited : []).filter((v) => norm(v?.area, 40)).map((v) => ({ area: norm(v.area, 40) })),
+      }),
+    };
+    const souvenirs = Array.isArray(t.souvenirs) ? [...new Set(t.souvenirs.map((s) => norm(s, 40)).filter(Boolean))] : [];
     for (const raw of souvenirs) {
       const name = norm(raw, 40);
       if (!name) continue;
@@ -77,10 +75,12 @@ export function collectSouvenirs(trips) {
           firstDay: day,
           lastDay: day,
           times: 1,
+          memories: [memory],
         });
         continue;
       }
       cur.times += 1;
+      cur.memories.push(memory);
       if (day && (!cur.firstDay || day < cur.firstDay)) cur.firstDay = day;
       if (day && (!cur.lastDay || day > cur.lastDay)) cur.lastDay = day;
     }
@@ -136,15 +136,15 @@ export function progressFor(place, trips) {
   const bought = new Set();
   const shot = new Set();
   for (const t of mine) {
-    for (const v of t.visited ?? []) {
+    for (const v of Array.isArray(t.visited) ? t.visited : []) {
       const a = norm(v?.area, 40);
       if (a) seenAreas.add(a);
     }
-    for (const s of t.souvenirs ?? []) {
+    for (const s of Array.isArray(t.souvenirs) ? t.souvenirs : []) {
       const x = norm(s, 40);
       if (x) bought.add(x);
     }
-    for (const p of t.photos ?? []) {
+    for (const p of Array.isArray(t.photos) ? t.photos : []) {
       const x = norm(p, 60);
       if (x) shot.add(x);
     }
@@ -155,6 +155,7 @@ export function progressFor(place, trips) {
   const allShots = (Array.isArray(place?.photoSpots) ? place.photoSpots : []).map((a) => norm(a, 60)).filter(Boolean);
 
   const part = (all, seen) => {
+    all = [...new Set(all)];
     const got = all.filter((x) => seen.has(x));
     const left = all.filter((x) => !seen.has(x));
     return {

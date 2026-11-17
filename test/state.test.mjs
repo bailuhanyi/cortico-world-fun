@@ -107,10 +107,12 @@ test('closeSession：收摊那句话、同行的人、本地日期都进纪念�
 test('tripDay：优先用存下的 leftDay，老数据回退到反算', () => {
   const now = at('2026-11-18T00:10:00+08:00');
   assert.equal(tripDay({ leftAt: now, leftDay: '2026-11-18' }), '2026-11-18');
-  // 老数据没有 leftDay：回退到用 leftAt 反算（UTC，会偏一天，但它只是历史记录）
-  assert.equal(tripDay({ leftAt: now }), '2026-11-17');
+  // 旧记录按当前插件时区读取，已有 leftDay 不受读取时区影响。
+  assert.equal(tripDay({ leftAt: now }), '2026-11-18');
+  assert.equal(tripDay({ leftAt: now }, 'UTC'), '2026-11-17');
+  assert.equal(tripDay({ leftAt: now, leftDay: '2026-11-18' }, 'UTC'), '2026-11-18');
   assert.equal(tripDay({}), '');
-  assert.equal(tripDay({ leftDay: 'garbage', leftAt: now }), '2026-11-17');
+  assert.equal(tripDay({ leftDay: 'garbage', leftAt: now }), '2026-11-18');
 });
 
 test('enterVenue：进门建 session；已经在逛就不覆盖', () => {

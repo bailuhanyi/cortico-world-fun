@@ -344,7 +344,7 @@ export function buySouvenir(state, item, nowMs) {
  * `day` 必须由调用方按**本地时区**算好传进来（`dayIn(tz, nowMs)`），
  * 存进 `trip.leftDay`。以前不传，于是所有读纪念册的地方都用 UTC 反算日期，
  * 上海时间早上 8 点前收的摊会被算成前一天。不传就留空，读的一方回退到
- * 「用 leftAt 反算」，行为与旧版一致（不迁移、不报错）。
+ * 按插件当前时区读取 leftAt（不迁移、不改写旧记录）。
  */
 export function closeSession(state, nowMs, note = '', day = '') {
   const s = state.session;
@@ -404,17 +404,15 @@ export function tripSummary(trip) {
 /**
  * 这一趟算哪一天（本地日期）。
  *
- * 优先用收摊时存下的 `leftDay`；老数据没有这个字段，回退到「用 leftAt 反算」，
- * 也就是旧版的行为——**不迁移、不改写老文件**。
- *
- * 回退那条路径仍然按 UTC 算，所以老数据在早上 8 点前收的摊会偏一天。
- * 这是已知的、只影响历史记录的偏差；新收的摊都走 `leftDay`，不会再有。
+ * 优先用收摊时存下的 `leftDay`；旧记录按当前插件时区解释时间戳。
+ * 只在读取时换算，不迁移、不改写旧记录；无法还原旧记录当时未保存的时区。
  */
-export function tripDay(trip) {
+export function tripDay(trip, timezone = 'Asia/Shanghai') {
   const stored = text(trip?.leftDay, 10);
   if (DAY_RE.test(stored)) return stored;
   try {
-    const day = trip?.leftAt ? new Date(trip.leftAt).toISOString().slice(0, 10) : '';
+    if (!trip?.leftAt) return '';
+    const day = dayIn(timezone, trip.leftAt);
     return DAY_RE.test(day) ? day : '';
   } catch {
     return '';

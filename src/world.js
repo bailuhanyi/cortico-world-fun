@@ -461,7 +461,7 @@ export class FunWorld {
     }
 
     // 去过的痕迹：只讲记得住的、只讲这一处的。没来过就一个字都不提。
-    const history = historyFor(this.#state.trips, venue.id, day);
+    const history = historyFor(this.#state.trips, venue.id, day, this.timezone);
     if (history) {
       const memory = memoryLine(history, day);
       const bits = [];
@@ -521,7 +521,7 @@ export class FunWorld {
     const liveAreas = areasNow(venue, nowMin);
     // 小事件里要滤掉「她以前真做过」那些，否则去过几次就成了复读机
     // （上次买了吧唧，这次又抽到「吧唧挑了半天」——那件事这次没发生）。
-    const pastHistory = historyFor(this.#state.trips, venue.id, day);
+    const pastHistory = historyFor(this.#state.trips, venue.id, day, this.timezone);
     const liveEvents = filterRepeatedEvents(eventsNow(venue, nowMin), pastHistory);
     // 少见事件：来过才轮到（内容是按「熟人」写的），而且只是**有机会**。
     // 两池都先滤掉碰过的，再按 `eventPool` 决定这次从哪个池子里抽。
@@ -611,7 +611,7 @@ export class FunWorld {
     // 这一处以前逛过几次：逛的时候提一句，比进门时那句更具体。
     // 只在这一趟里第一次逛到某处时提，免得每次 fun_wander 都重复。
     {
-      const hist = historyFor(this.#state.trips, venue.id, day);
+      const hist = historyFor(this.#state.trips, venue.id, day, this.timezone);
       const before = hist?.areas.find((a) => a.area === picked.area);
       const alreadyThisTrip = session.visited.filter((v) => v.area === picked.area).length > 1;
       if (before && !alreadyThisTrip) {
@@ -721,7 +721,7 @@ export class FunWorld {
     if (trips.length) {
       lines.push('去过的地方：');
       for (const t of trips) {
-        const when = tripDay(t);
+        const when = tripDay(t, this.timezone);
         lines.push(`- ${when} ${tripSummary(t)}`);
         // 她自己收摊时说的那一句：以前只出现在当次回执里，重看纪念册就没了。
         if (t.note) lines.push(`  （你记的：${t.note}）`);
@@ -754,20 +754,24 @@ export class FunWorld {
       }
     }
 
-    const rack = collectSouvenirs(this.#state.trips);
+    const rack = collectSouvenirs(this.#state.trips, this.timezone);
     const trips = this.#state.trips ?? [];
     const target = only ? rack.byPlace.find((p) => p.placeId === only.id) : null;
 
     const lines = [];
     if (only) {
       const prog = progressFor(only, trips);
+      lines.push('进度按当前场所清单统计；移除或改名的旧项目仍保留在回忆中。');
       const group = target;
       lines.push(`${only.name}的架子（去过 ${prog.visits} 次）：`);
       if (group?.items?.length) {
         for (const it of group.items) {
-          const when = it.firstDay ? `${it.firstDay} 第一次拿到` : '';
+          const when = it.firstDay ? `${it.firstDay} 记录中最早拿到` : '';
           const times = it.times > 1 ? `，一共 ${it.times} 件` : '';
           lines.push(`- ${it.name}${when ? `（${when}${times}）` : (times ? `（${times.replace('，', '')}）` : '')}`);
+          for (const m of it.memories) {
+            lines.push(`  ${m.day || '日期不详'}：${m.summary}${m.note ? `；你记的：${m.note}` : ''}`);
+          }
         }
       } else {
         lines.push('（这处还什么都没买过。）');
@@ -787,7 +791,7 @@ export class FunWorld {
       return { text: '架子上还什么都没有——还没买过纪念品。想逛就 fun_start 或 fun_places 看看。' };
     }
 
-    lines.push(`架子上一共 ${rack.items.length} 样东西（${rack.total} 件），来自 ${rack.uniquePlaces} 处地方：`);
+    lines.push(`纪念册保留的最近 40 趟里，架子上一共 ${rack.items.length} 样东西（${rack.total} 件），来自 ${rack.uniquePlaces} 处地方：`);
     for (const group of rack.byPlace) {
       const bits = group.items.map((it) => (it.times > 1 ? `${it.name}×${it.times}` : it.name));
       const when = group.firstDay ? `（最早 ${group.firstDay}）` : '';
@@ -1179,7 +1183,7 @@ export class FunWorld {
         photoSpots: v.photoSpots,
         recent: recent.includes(v.id),
         // 去过几次：面板上标「去过 3 次」比什么都不说有用。
-        visitCount: historyFor(st.trips, v.id, dayIn(tz, now))?.visitCount ?? 0,
+        visitCount: historyFor(st.trips, v.id, dayIn(tz, now), tz)?.visitCount ?? 0,
         // 时段：现在处于哪一段、这一处共有哪几段（面板上做「换时间来是另一副样子」的提示）
         phase: phaseLabelAt(v, nowMin) || null,
         phases: Array.isArray(v.phases) ? v.phases.map((x) => ({ key: x.key, label: x.label, from: x.from, to: x.to })) : [],
@@ -1241,7 +1245,7 @@ export class FunWorld {
       outfit: t.outfit,
       company: t.company || '',
       // 用 trip 里存下的本地日期，别拿 leftAt 去反算（UTC 会把早上 8 点前的摊算成前一天）。
-      day: tripDay(t),
+      day: tripDay(t, this.timezone),
       enteredHm: t.enteredAt ? hmIn(tz, t.enteredAt) : '',
       leftHm: t.leftAt ? hmIn(tz, t.leftAt) : '',
       stayedMin: t.leftAt && t.enteredAt ? Math.max(0, Math.round((t.leftAt - t.enteredAt) / 60000)) : 0,
@@ -1284,7 +1288,7 @@ export class FunWorld {
     const now = this.#now();
     const st = this.#state ?? newState(dayIn(this.timezone, now));
     const trips = st.trips ?? [];
-    const rack = collectSouvenirs(trips);
+    const rack = collectSouvenirs(trips, this.timezone);
     const places = this.#places();
 
     // 每一处都给进度：面板上按「去过但没逛遍」排前面，没去过的排最后。

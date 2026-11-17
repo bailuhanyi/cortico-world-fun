@@ -18,27 +18,7 @@
 
 const norm = (v, max) => (typeof v === 'string' ? v.replace(/\s+/g, ' ').trim().slice(0, max) : '');
 
-const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
-
-/**
- * 这一趟算哪一天。
- *
- * 优先 `leftDay`（收摊时按本地时区算好存下的）；老数据没有，回退到
- * 「用 `leftAt` 反算」——那是 0.1.5 的行为，按 UTC 算，早上 8 点前收的摊会偏一天。
- *
- * 为什么不再统一用 UTC 反算：她在上海，早上 6 点爬完山 7 点再去，
- * 会被告知「你之前来过这里 1 次，上一次是昨天」——其实是同一个早上。
- */
-function tripDay(trip) {
-  const stored = norm(trip?.leftDay, 10);
-  if (DAY_RE.test(stored)) return stored;
-  try {
-    const day = trip?.leftAt ? new Date(trip.leftAt).toISOString().slice(0, 10) : '';
-    return DAY_RE.test(day) ? day : '';
-  } catch {
-    return '';
-  }
-}
+import { tripDay } from './state.js';
 
 /** 某一天（YYYY-MM-DD）到「哪天」的中文说法。`today` 由调用方给，避免这里感知时区。 */
 export function dayPhrase(day, today) {
@@ -67,7 +47,7 @@ export function dayPhrase(day, today) {
  * @param {string} placeId   只看这一处
  * @param {string} today     今天的 YYYY-MM-DD，用来算「昨天/前天」
  */
-export function historyFor(trips, placeId, today = '') {
+export function historyFor(trips, placeId, today = '', timezone = 'Asia/Shanghai') {
   try {
     const list = (Array.isArray(trips) ? trips : []).filter((t) => t && t.placeId === placeId);
     if (!list.length) return null;
@@ -86,7 +66,7 @@ export function historyFor(trips, placeId, today = '') {
       visitCount += 1;
       // 优先收摊时存下的本地日期；老数据回退到用 leftAt 反算。
       // 反算可能是坏的（手改过的 state、旧版本写的）：坏就这一天不知道，但这一趟还得算。
-      const day = tripDay(t);
+      const day = tripDay(t, timezone);
       if (day) {
         if (!firstDay || day < firstDay) firstDay = day;
         if (!lastDay || day > lastDay) lastDay = day;
@@ -196,11 +176,12 @@ export function isRegular(history) {
 export function regularLine(history, placeName = '') {
   if (!isRegular(history)) return '';
   const n = history.visitCount;
-  const who = placeName ? `${placeName}的` : '';
+  const where = placeName || '这里';
+  // 来过不代表点过固定餐食，也不代表有固定店员；只表达对地方的熟悉。
   const lines = [
-    `${who}人对你有印象了——来了 ${n} 次。`,
-    `${who}人认得你了（第 ${n} 次），这回没多问就把你常要的那份记下了。`,
-    `来过 ${n} 次了，${who}人朝你点了一下头。`,
+    `来过 ${n} 次了，${where}哪一处能歇脚，已经不用再找。`,
+    `${where}已经来过 ${n} 次，走到熟悉的地方，脚步自然慢了下来。`,
+    `来过 ${n} 次了，${where}的路已经熟悉，知道接下来会走到哪儿。`,
   ];
   // 按次数取，稳定不随机：同一个次数永远同一句话，免得她以为是随机事件。
   return lines[n % lines.length];

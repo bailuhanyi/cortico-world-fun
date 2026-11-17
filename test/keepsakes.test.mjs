@@ -167,6 +167,39 @@ test('progressFor 用的是自填地点的字段（合并表传进来就行）',
   assert.equal(p.souvenirs.complete, true);
 });
 
+test('纪念品关联每趟同行人和备注，同趟重复名字不重复计数', () => {
+  const old = { ...trip({ day: '2026-11-14', souvenirs: ['吧唧', '吧唧'] }), company: '阿岚', note: '排了很久，但很开心' };
+  const recent = { ...trip({ day: '2026-11-16', souvenirs: ['吧唧'] }), company: '小鱼', note: '又来了一次' };
+  const before = JSON.stringify([recent, old]);
+  const item = collectSouvenirs([recent, old]).items[0];
+  assert.equal(item.times, 2);
+  assert.equal(item.memories.length, 2);
+  assert.equal(item.memories[1].company, '阿岚');
+  assert.equal(item.memories[1].note, '排了很久，但很开心');
+  assert.match(item.memories[1].summary, /跟阿岚一起/);
+  assert.equal(JSON.stringify([recent, old]), before, '归集不改写旧记录');
+});
+
+test('旧记录凌晨日期按指定时区解释，存下的 leftDay 优先', () => {
+  const old = { placeId: 'con', souvenirs: ['吧唧'], leftAt: Date.parse('2026-11-17T06:20:00+08:00') };
+  assert.equal(collectSouvenirs([old], 'Asia/Shanghai').items[0].firstDay, '2026-11-17');
+  assert.equal(collectSouvenirs([old], 'America/New_York').items[0].firstDay, '2026-11-16');
+  assert.equal(collectSouvenirs([{ ...old, leftDay: '2026-11-15' }]).items[0].firstDay, '2026-11-15');
+  assert.equal(collectSouvenirs([{ ...old, leftAt: 'broken' }]).items[0].firstDay, '');
+});
+
+test('编辑清单后按当前精确名字统计，历史物品保留且不模糊认同', () => {
+  const old = trip({ visited: ['旧展台'], souvenirs: ['旧徽章'], photos: ['旧窗边'] });
+  const changed = { id: 'con', areas: ['新展台', '新展台'], souvenirs: ['新徽章'], photoSpots: [] };
+  const p = progressFor(changed, [old]);
+  assert.equal(p.areas.total, 1, '重复清单项不扩大分母');
+  assert.equal(p.areas.done, 0);
+  assert.equal(p.souvenirs.done, 0);
+  assert.equal(collectSouvenirs([old]).items[0].name, '旧徽章');
+  assert.deepEqual(old.visited.map((v) => v.area), ['旧展台']);
+  assert.doesNotThrow(() => progressFor(changed, [{ placeId: 'con', visited: 3, souvenirs: {}, photos: 8 }]));
+});
+
 test('游乐场也能算：确认不是只对漫展有效', () => {
   const p = progressFor(AMUSEMENT, [trip({ placeId: 'amusement', placeName: '游乐场', visited: ['过山车'] })]);
   assert.equal(p.areas.done, 1);

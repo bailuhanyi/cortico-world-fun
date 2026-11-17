@@ -702,6 +702,8 @@ function mountShelf(ctx) {
       stat(data.places, '处地方'),
       stat(data.completePlaces, '处逛遍')));
 
+    body.appendChild(el('div', { class: 'fun-meta', text: '来自纪念册保留的最近 40 趟；展开物品可看对应行程。进度按当前场所清单统计，移除或改名不删除旧回忆。' }));
+
     // 每一处的架子：只列真有东西的，空的不用占版面。
     body.appendChild(el('div', { class: 'fun-sec', text: '按地方归着' }));
     for (const g of data.byPlace) {
@@ -709,12 +711,11 @@ function mountShelf(ctx) {
         el('div', { class: 'fun-trip-head' },
           el('span', { class: 'fun-trip-name', text: g.placeName }),
           el('span', { class: 'fun-trip-when', text: `${g.items.length} 样 · 最早 ${g.firstDay || '—'}` })),
-        el('div', { class: 'fun-chips' },
-          g.items.map((it) => el('span', {
-            class: 'fun-chip',
-            text: it.times > 1 ? `${it.name} ×${it.times}` : it.name,
-            title: it.firstDay ? `${it.firstDay} 第一次拿到` : '',
-          })))));
+        ...g.items.map((it) => el('details', { class: 'fun-meta' },
+          el('summary', { text: `${it.name}${it.times > 1 ? ` ×${it.times}` : ''} · 记录中最早 ${it.firstDay || '日期不详'}` }),
+          ...(it.memories ?? []).map((m) => el('div', { class: 'fun-trip-sum' },
+            el('div', { text: `${m.day || '日期不详'} · ${m.summary}` }),
+            m.note ? el('div', { text: `你记的：${m.note}` }) : null))))));
     }
 
     // 进度：只列去过的。服务端已按「快逛遍的」排好，这里照顺序画。

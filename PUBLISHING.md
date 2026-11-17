@@ -33,11 +33,11 @@ node tools/verify-tarball.mjs    # 按 files 白名单组包、从安装形态�
 node tools/publish-check.mjs     # 市场收录口径（加 --online 额外查 npm 占用）
 ```
 
-`prepublishOnly` 已经把上面这一串（除 `--online`、`verify-tarball` 外）都串起来了，`npm publish` 之前自动跑一遍，任何一处失败就发不出去。
+`prepublishOnly` 已经把上面这一串（除 `verify-tarball` 外）都串起来了，其中 `publish-check` **实际带 `--online`**。`npm publish` 之前会自动跑一遍，任何一处失败就发不出去；`verify-tarball` 需单独执行。
 
-当前状态（0.1.6，**待发**）：**25 项通过、0 失败、1 警告**（没截 `screenshots`）；**193 个单测全绿**
-（venues 13 · state 21 · memories 18 · phases 14 · keepsakes 15 · user-venues 19 · world 65 · panels 28）；
-打包 **18 个文件**、解包约 355KB。
+当前状态（0.1.6，**待发**）：**25 项通过、0 失败、1 警告**（没截 `screenshots`）；**199 个单测全绿**
+（venues 13 · state 21 · memories 20 · phases 14 · keepsakes 18 · user-venues 19 · world 65 · panels 29）；
+打包 **18 个文件**、解包约 367KB。
 
 > 这里曾写「162 项」。那是把 7 个文件的分项加错了一次——逐个数下来是 152，
 > 与 `npm test` 实际跑出的一致。以后改测试数量请以实跑结果为准，别照抄文档。
@@ -48,7 +48,7 @@ node tools/publish-check.mjs     # 市场收录口径（加 --online 额外查 n
 
 `package.json` 顶层已有三行（指向 `bailuhanyi/cortico-world-fun`）。**必须写在顶层**，Action 不读 `cortico` 块。
 
-仓库 `bailuhanyi/cortico-world-fun` **已经建好并推过**（到 0.1.6 批次的提交）。
+仓库 `bailuhanyi/cortico-world-fun` **已经建好并推过**。当前记录：远端 `main` 为 `b652962`，本地为 `babed2b`，本地领先 **8 个提交，尚未 push**；不能把本地 0.1.6 待发状态写成已经同步到远端。
 下面这段是**首次建仓时的历史示例，现在不要再跑**（`git init` / `remote add` 会重复）：
 
 ```powershell
@@ -62,8 +62,7 @@ git remote add origin https://github.com/bailuhanyi/cortico-world-fun.git
 git push -u origin main
 ```
 
-现在发版只需要 `git commit` + `git push`（这台机器 `schannel` 报 `SEC_E_NO_CREDENTIALS`，
-推仓库要在你自己的 PowerShell 里敲）。
+已有提交需在发布交接时同步到远端；先检查仓库状态，不要为这 8 个已有提交重复提交。此前这台机器推送时曾遇到 `schannel` 报 `SEC_E_NO_CREDENTIALS`，这是当时的环境故障，不代表 agent 环境永远无法 push；若仍受阻，可由你在自己的 PowerShell 中推送。
 
 `.gitignore` 已排掉 `fun/`（运行时状态）、`node_modules/`、`*.bak-*`。
 
@@ -77,14 +76,12 @@ npm whoami
 npm config get registry   # 应是 https://registry.npmjs.org/
 ```
 
-**`npm publish` 必须在交互式终端里跑。** 它只在真 TTY 里才弹验证提示，
-在 agent 的非 TTY shell 里直接抛 `EOTP`。**agent 能做的到 `publish-check` 为止**，最后那一下由你在自己的 PowerShell 里敲。
+此前在 agent 的非 TTY shell 中发布曾报 `EOTP`，交互验证未能完成，这是当时的环境与认证方式造成的故障，不代表所有非 TTY 发布都会失败。**本次仍建议由你在自己的真实交互式 PowerShell 终端完成发布与验证提示**；能否在其他环境发布取决于实际认证配置。
 
 - 要么 2FA + `--otp 123456`（6 位数字，30 秒滚一次，人手输）
 - 要么建 granular access token 勾「bypass 2FA」
 
-> ⚠️ npm 的**恢复码**（一长串 64 位 hex）只能用于网页登录，**千万别传给 `--otp`**：会当场消耗一个，
-> 并触发 **72 小时安全封禁**，期间不能发布、不能建 token、无法提前解除。
+> ⚠️ npm 的**恢复码**是账户恢复凭据，**不能作为 `--otp` 使用**；`--otp` 应填写认证器生成的当期验证码。恢复码的用途与安全限制以 npm 当前账户恢复流程为准，不要把此前遇到的限制当成所有账户都会触发的固定规则。
 
 ---
 
@@ -94,14 +91,14 @@ npm config get registry   # 应是 https://registry.npmjs.org/
 npm pack --dry-run
 ```
 
-0.1.5 是 **17 个文件**、解包约 321KB：
+本地待发的 0.1.6 是 **18 个文件**、解包约 367KB，包含 3 个面板、7 个工具：
 
 ```
 package.json  README.md  CHANGELOG.md  PUBLISHING.md  describe.json
 assets/icon.png
-dist/webui.js          # 面板（去哪儿 / 纪念册）
+dist/webui.js          # 3 个面板：去哪儿 / 纪念册 / 纪念品
 src/index.js  src/definition.js  src/config.js  src/venues.js  src/state.js
-src/memories.js  src/phases.js  src/user-venues.js  src/world.js  src/ENV_PROMPT.md
+src/memories.js  src/phases.js  src/keepsakes.js  src/user-venues.js  src/world.js  src/ENV_PROMPT.md
 ```
 
 `test/`、`tools/`、`install.ps1` 都在 `files` 之外，不会发出去——测试、图标生成器、装机脚本是我们的工具，不是用户要的东西。
@@ -115,10 +112,9 @@ src/memories.js  src/phases.js  src/user-venues.js  src/world.js  src/ENV_PROMPT
 npm publish --otp 123456
 ```
 
-**这不是首发**：npm 上已有 `cortico-world-fun`（`latest` 目前是 **0.1.4**），
-这一版发的是 **0.1.5**（0.1.5/0.1.6/0.1.7 是本地批次、从未发过，一次补齐）。
-不需要 `--access public`（那是作用域包 `@you/xxx` 才要）。`npm version patch` 会把
-`package.json` 的版本号改对——**别手改版本号再用 `npm version`，会跳号**。
+**这不是首发**：npm 上 `cortico-world-fun` 的 `latest` 目前是 **0.1.5**，本地 **0.1.6 待发**。
+本次直接发布已经准备好的 0.1.6，**不要再次运行 `npm version patch` 或其他 `npm version` 命令**，否则会跳号。
+不需要 `--access public`（那是作用域包 `@you/xxx` 才要）。将来准备下一版时，先核对本地版本与 npm 已发布版本，再决定是否需要升版；不要手改版本号后又用 `npm version` 重复升版。
 
 发完立刻验：
 
@@ -142,16 +138,11 @@ node tools/verify-published.mjs
 
 ## 5. 让它马上进市场
 
-Action 平时每 30 分钟扫一次，GitHub 定时任务常推迟。想立刻进，去索引仓开一个 `[同步]` issue：
+Action 平时每 30 分钟扫一次，GitHub 定时任务可能推迟。如需请求同步，先查看索引仓**当前的 issue 模板与说明**：
 
-<https://github.com/Pal-AI-Lab/cortico-extensions/issues/new>
+<https://github.com/Pal-AI-Lab/cortico-extensions/issues/new/choose>
 
-```
-标题：[同步] cortico-world-fun
-正文：package: cortico-world-fun
-```
-
-**发完就开一个**，别等 Action 自己那一趟（0.2.0 那次没开，等了几天）。
+旧版本文曾建议标题 `[同步] cortico-world-fun`、正文 `package: cortico-world-fun`，但交接建议中的 sync issue 写法与本文不一致，目前不能确认哪种仍适用。**以市场当前模板为准**，按模板填写包名与所需信息；不要直接照抄旧格式，也不要保证开 issue 后就会立即收录。
 
 ---
 
@@ -163,9 +154,9 @@ Action 平时每 30 分钟扫一次，GitHub 定时任务常推迟。想立刻�
 4. `package.json` 的 `cortico` 块里加 `"screenshots": ["assets/screenshot-1.png"]`
 5. 截图改了就必须**发新版本**——市场按版本扫包
 
-> 0.1.1 起**有面板页了**（`dist/webui.js`，两张：去哪儿 / 纪念册），所以现在能截：
+> 0.1.1 起有面板页；本地 0.1.6 的 `dist/webui.js` 现有 **3 个面板：去哪儿 / 纪念册 / 纪念品**。现在能截：
 > Coo 世界页的「娱乐时间」卡片、**「去哪儿」面板**（二十处 + 自己加的/改过的 + 正在逛那条）、
-> **「纪念册」面板**、配置页（4 项）。
+> **「纪念册」面板**、**「纪念品」面板**、配置页（4 项）。
 
 ---
 
@@ -183,16 +174,16 @@ Action 平时每 30 分钟扫一次，GitHub 定时任务常推迟。想立刻�
 - `local` — 那个词的意思是「在本机跑模型、要算力显存」，本插件一行推理都不跑。**用错会误导用户**。
 - `internal-state` — 它只在自己的 `dataDir/fun/state.json` 里记当前这一趟和纪念册，不碰 Memory，也不记「她是谁」。不像 feast 那样维护她的日程和口味画像。
 - `injection-risk` — 不推任何事件（`describe.events` 是空数组），没有任何正文是别人写的。
-- `high-cost` — 6 个工具，一天用不了几次。
+- `high-cost` — 7 个工具，一天用不了几次。
 
-如果以后加了面板页、或者开始维护跨趟的记忆，`internal-state` 就该照实声明。
+当前已有 3 个面板，并维护纪念册与纪念品等跨趟数据；不能再把「以后加面板或跨趟记忆」写成未来条件。`internal-state` 是否适用应依据市场当前标签定义与实际状态用途复核。
 
 ---
 
 ## 认证（以后再说）
 
-要求全部满足才给盾牌：没有错误标签、版本表现稳定、**World 不直接依赖其他 World**、
-**至少有过一次后续更新**。最后一条意味着至少要发两个版本才能申请。
+认证需按市场当前规则审核，本文列出的条件包括：没有错误标签、版本表现稳定、**World 不直接依赖其他 World**、
+**至少有过一次后续更新**。npm 上已发布的 0.1.5 已不是首版，因此「后续更新」这一项已经满足，**无需等 0.1.6 发布才满足**；这不代表认证一定通过，其他要求与最终审核仍以市场当前规则为准。
 
 本插件在「不依赖其他 World」这条上是干净的：不调别人的工具、不读别人的状态/日程，
 素材库**完全不读**，`scene` 只是条目上的字符串。
@@ -206,11 +197,11 @@ Action 平时每 30 分钟扫一次，GitHub 定时任务常推迟。想立刻�
 ```powershell
 # 1. 改代码
 # 2. 更新 CHANGELOG.md（市场按 ## 标题切段）
-# 3. npm version patch
+# 3. 核对本地与 npm 版本；仅在尚未升版时执行 npm version patch（本次 0.1.6 已备好，跳过）
 # 4. node tools/make-describe.mjs     # 改过 ENV_PROMPT 或工具描述必须重跑
 # 5. node tools/publish-check.mjs --online
 # 6. npm publish --otp 123456
-# 7. 想马上进市场就开 [同步] issue
+# 7. 如需请求市场同步，按市场当前 issue 模板操作（旧 sync 写法存在交接差异）
 ```
 
 改过 `src/ENV_PROMPT.md` 或任何工具描述，**一定要重跑 `make-describe.mjs`**——

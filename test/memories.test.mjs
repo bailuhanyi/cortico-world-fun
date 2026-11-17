@@ -165,6 +165,24 @@ test('pickEvent：优先这趟没碰过的；全碰过了也要给一条，不�
   assert.equal(pickEvent(['a'], ['a'], () => 0), 'a');
 });
 
+test('凌晨旧记录与面板统一按插件时区读取，不改写历史', () => {
+  const old = trip({ left: '2026-11-17T06:20:00+08:00' });
+  const before = JSON.stringify(old);
+  assert.equal(historyFor([old], 'con', '2026-11-17', 'Asia/Shanghai').lastDayPhrase, '今天');
+  assert.equal(historyFor([old], 'con', '2026-11-17', 'America/New_York').lastDay, '2026-11-16');
+  assert.equal(JSON.stringify(old), before);
+});
+
+test('自然场所常客语气不凭空安排店员或固定订单', () => {
+  for (const name of ['江边', '爬山', '公园']) {
+    for (const visitCount of [5, 6, 7]) {
+      const line = regularLine({ visitCount }, name);
+      assert.match(line, new RegExp(name));
+      assert.doesNotMatch(line, /人认得|人朝|常要的|订单|店员/);
+    }
+  }
+});
+
 test('isRegular：5 趟起才算常客', () => {
   assert.equal(REGULAR_VISITS, 5);
   assert.equal(isRegular(null), false);

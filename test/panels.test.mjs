@@ -743,6 +743,23 @@ test('shelf 面板：买过东西之后按地方归着，带件数和最早日�
   assert.ok(root.querySelectorAll('.fun-stat').length >= 3, '顶部要有统计数');
 });
 
+test('shelf 面板：每件物品可展开对应行程、同行人与收摊备注', async () => {
+  const { mount, tool } = await mountPanels();
+  await tool('fun_go')({ place: '漫展', company: '阿岚' });
+  await tool('fun_wander')({ area: '同人展台', buy: '吧唧' });
+  await tool('fun_home')({ note: '排了很久，但很开心' });
+  const root = await mount('shelf');
+  await waitFor(() => root.querySelector('details'), '物品提供原生可开合的详情');
+  const detail = root.querySelector('details');
+  assert.match(detail.textContent, /吧唧/);
+  assert.match(detail.textContent, /阿岚/);
+  assert.match(detail.textContent, /排了很久，但很开心/);
+  assert.match(root.textContent, /最近 40 趟/);
+  const receipt = await tool('fun_shelf')({ place: '漫展' });
+  assert.match(receipt.text, /阿岚/);
+  assert.match(receipt.text, /排了很久，但很开心/);
+});
+
 test('shelf 面板：进度里点出还差哪些没逛', async () => {
   const { mount, tool } = await mountPanels();
   await tool('fun_go')({ place: '漫展' });
