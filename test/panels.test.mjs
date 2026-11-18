@@ -36,10 +36,28 @@ class Node {
     this._listeners = {};
     // 真 DOM 的 <input>/<select> 一律有 value（默认 ''）。桩里不给的话，
     // 面板里 `input.value.trim()` 会炸，而那是面板的正常写法。
-    this.value = '';
+    this._value = '';
+    this.selected = false;
     this.placeholder = '';
     this.disabled = false;
     this.parentNode = null;
+  }
+
+  get value() {
+    if (this.tagName === 'SELECT') {
+      const options = this.querySelectorAll('option');
+      return (options.find((option) => option.selected) ?? (this._noSelection ? null : options[0]))?.value ?? '';
+    }
+    return this._value;
+  }
+
+  set value(value) {
+    this._value = String(value);
+    if (this.tagName === 'SELECT') {
+      for (const option of this.querySelectorAll('option')) option.selected = option.value === this._value;
+      // 浏览器在 value 不匹配任何 option 时保持未选中。
+      this._noSelection = !this.querySelectorAll('option').some((option) => option.selected);
+    }
   }
 
   get textContent() {
@@ -97,6 +115,7 @@ class Node {
     if (k === 'class') this.className = v;
     if (k === 'value') this.value = v;
     if (k === 'placeholder') this.placeholder = v;
+    if (k === 'disabled') this.disabled = true;
   }
 
   getAttribute(k) { return this.attributes[k]; }
@@ -624,6 +643,74 @@ test('places 面板：编辑预设时表单带出原值，且是「恢复预设�
   assert.ok(areaBox.value.includes('同人展台'), '表单要带出预设原值');
 });
 
+test('places 面板：时段预设编辑明确标出通用字段范围，保存后保留阶段描写与可逛清单', async () => {
+  const river = VENUES.find((v) => v.id === 'riverside');
+  for (const [time, phase] of [['06:30', '清早'], ['22:00', '夜里'], ['02:00', null]]) {
+    const { mount, world, invocations } = await mountPanels({ nowMs: Date.parse(`2026-11-15T${time}:00+08:00`) });
+    const root = await mount('places');
+    await waitFor(() => root.querySelectorAll('.fun-card').length === VENUES.length, '画出场所');
+    root.querySelectorAll('.fun-card').find((c) => c.querySelector('.fun-card-name').textContent === '江边').fire('click');
+    await waitFor(() => root.querySelector('.fun-detail-edit'), '展开江边');
+    root.querySelector('.fun-detail-edit').fire('click');
+    const form = root.querySelector('.fun-form');
+    const phaseInfo = form.querySelector('.fun-form-phases');
+    assert.ok(phaseInfo, '时段预设表单要列出阶段信息');
+    assert.ok(phaseInfo.textContent.includes(`现在 ${time}`));
+    assert.ok(phaseInfo.textContent.includes(phase ? `当前阶段：${phase}` : '当前未命中预设时段，使用通用内容'));
+    for (const ph of river.phases) {
+      assert.ok(phaseInfo.textContent.includes(`${ph.label} ${ph.from}–${ph.to}`));
+    }
+    assert.equal(phaseInfo.querySelectorAll('li').length, river.phases.length);
+    assert.ok(phaseInfo.querySelectorAll('li').every((li) => li.textContent.includes('覆盖通用描写（desc）、能逛的（areas）')));
+    const descField = form.querySelectorAll('.fun-field').find((f) => f.textContent.includes('通用描写（desc）'));
+    const areasField = form.querySelectorAll('.fun-field').find((f) => f.textContent.includes('通用可逛清单（areas）'));
+    assert.equal(descField.querySelector('textarea').value, river.desc, '编辑应带出通用描写');
+    assert.equal(areasField.querySelector('textarea').value, river.areas.join('\n'), '编辑应带出完整通用清单');
+    for (const field of [descField, areasField]) {
+      const scope = field.querySelector('.fun-field-scope').textContent;
+      assert.ok(scope.includes('未命中这些时段时才使用这里的内容'));
+      assert.ok(scope.includes('保存不会同步修改时段'));
+    }
+    descField.querySelector('textarea').value = '通用江边：新铺的步道与白栏杆。';
+    areasField.querySelector('textarea').value = '新步道\n新长椅';
+    form.findByText('保存').fire('click');
+    await waitFor(() => invocations.find((x) => x.method === 'save')?.result, '保存通用字段');
+    const save = invocations.find((x) => x.method === 'save');
+    assert.equal(save.result.ok, true, save.result.error);
+    assert.equal('phases' in save.args[0], false, '保存通用字段不提交阶段覆盖');
+    const data = await world.webUi('zh').invoke('places', 'list', []);
+    const saved = data.places.find((p) => p.id === river.id);
+    assert.equal(saved.descAll, '通用江边：新铺的步道与白栏杆。');
+    assert.deepEqual(saved.allAreas, ['新步道', '新长椅']);
+    assert.deepEqual(saved.phases.map(({ key, label, from, to }) => ({ key, label, from, to })),
+      river.phases.map(({ key, label, from, to }) => ({ key, label, from, to })), '保存通用字段保留预设时段边界');
+    if (phase) {
+      const preset = river.phases.find((ph) => ph.label === phase);
+      assert.equal(saved.desc, preset.desc, '通用保存不覆盖阶段描写');
+      assert.deepEqual(saved.areas, preset.areas, '通用保存不覆盖阶段可逛清单');
+    } else {
+      assert.equal(saved.desc, saved.descAll, '未命中阶段时使用保存的通用描写');
+      assert.deepEqual(saved.areas, saved.allAreas);
+    }
+  }
+});
+
+test('places 面板：无时段预设与自填表单不显示时段覆盖提示', async () => {
+  const { mount, world } = await mountPanels();
+  await world.webUi('zh').invoke('places', 'save', [{ name: '我的小院', areas: ['藤椅'] }]);
+  const root = await mount('places');
+  await waitFor(() => root.querySelectorAll('.fun-card').length === VENUES.length + 1, '画出场所');
+  for (const name of ['漫展', '我的小院']) {
+    root.querySelectorAll('.fun-card').find((c) => c.querySelector('.fun-card-name').textContent === name).fire('click');
+    await waitFor(() => root.querySelector('.fun-detail-edit'), '展开详情');
+    root.querySelector('.fun-detail-edit').fire('click');
+    const form = root.querySelector('.fun-form');
+    assert.equal(form.querySelector('.fun-form-phases'), null);
+    assert.equal(form.querySelector('.fun-field-scope'), null);
+    form.findByText('取消').fire('click');
+  }
+});
+
 test('places 面板：改过的预设标「已改」，并能一键恢复全部', async () => {
   const { mount, invocations, world } = await mountPanels();
   // 直接通过服务端改一处预设（改纪念品）
@@ -772,9 +859,167 @@ test('shelf 面板：进度里点出还差哪些没逛', async () => {
   assert.match(root.textContent, /逛过 1\/6/, '要有进度分母');
 });
 
+test('book 面板可珍藏和取消珍藏，重载后仍保留', async () => {
+  const { mount, tool, world } = await mountPanels();
+  await tool('fun_go')({ place: '海洋馆' });
+  await tool('fun_wander')({ area: '鲸豚湾', buy: '鲸鱼挂件' });
+  await tool('fun_home')({ note: '看到鲸影，很安静' });
+  let data = await world.webUi('zh').invoke('book', 'list', []);
+  const trip = data.trips[0];
+  assert.ok(trip.id);
+  const root = await mount('book');
+  await waitFor(() => root.querySelector('.fun-trip-actions')?.querySelectorAll('button').length > 0, '珍藏按钮已挂载');
+  root.querySelector('.fun-trip-actions').querySelector('button').fire('click');
+  await waitFor(() => root.querySelector('.fun-trip-actions')?.querySelector('button')?.textContent === '取消珍藏', '服务端写入珍藏');
+  await world.stop();
+  const restarted = new FunWorld({ cfg: { enabled: true }, dataDir: world.dataDir, timezone: 'Asia/Shanghai' });
+  await restarted.start({ log: { info() {}, warn() {} } });
+  data = await restarted.webUi('zh').invoke('book', 'list', []);
+  assert.equal(data.keepsakeCount, 1);
+  assert.equal(data.trips[0].kept, true);
+  const unkeep = await restarted.webUi('zh').invoke('book', 'favorite', [{ id: trip.id, keep: false }]);
+  assert.equal(unkeep.ok, true);
+  assert.equal((await restarted.webUi('zh').invoke('book', 'list', [])).trips[0].kept, false);
+});
+
 test('shelf 面板：英文界面也有标题', async () => {
   const { decl } = await mountPanels({ language: 'en' });
   assert.equal(decl.panels.find((p) => p.id === 'shelf').title, 'Shelf');
+});
+
+async function mountWishPanel(invokeWish = async () => ({ ok: true })) {
+  const bundle = await import('../dist/webui.js?' + Math.random());
+  const root = new Node('div');
+  const calls = [];
+  const data = { ok: true, total: 0, session: null, wishes: [], places: [
+    { id: 'river', name: '江边', areas: ['步道'], phaseNames: ['清早', '夜里'], souvenirs: ['明信片'] },
+    { id: 'yard', name: '小院', areas: ['藤椅'], phaseNames: [], souvenirs: [] },
+  ] };
+  const mounted = bundle.default.panels.book.mount({ root, async invoke(method, args) {
+    calls.push({ method, args });
+    if (method === 'list') return structuredClone(data);
+    return invokeWish(args[0], data);
+  } });
+  await waitFor(() => root.querySelector('.fun-wish-form'), '心愿表单');
+  const choose = (cls, value) => {
+    const select = root.querySelector(cls);
+    select.value = value;
+    assert.equal(select.value, value, '桩必须能选中真实 option');
+    select.fire('change');
+  };
+  return { root, calls, data, mounted, choose };
+}
+
+test('DOM 桩 select/value 读取真实选项，替换选项不会留下旧值', () => {
+  const select = new Node('select');
+  const option = (value) => { const n = new Node('option'); n.setAttribute('value', value); return n; };
+  select.append(option(''), option('area'));
+  assert.equal(select.value, '');
+  select.value = 'area';
+  assert.equal(select.value, 'area');
+  select.value = '不存在';
+  assert.equal(select.value, '');
+  select.replaceChildren(option('phase'));
+  select.value = 'phase';
+  assert.equal(select.value, 'phase');
+});
+
+test('book 心愿：空册仍可填写，不默认选择；四类目标联动且切换清空目标', async () => {
+  const { root, calls, choose } = await mountWishPanel();
+  assert.match(root.textContent, /纪念册还是空的/);
+  for (const cls of ['.fun-wish-place', '.fun-wish-type', '.fun-wish-target']) assert.equal(root.querySelector(cls).value, '');
+  assert.equal(calls.filter((c) => c.method === 'wish').length, 0);
+  root.findByText('保存心愿').fire();
+  assert.match(root.querySelector('.fun-form-error').textContent, /请选择/);
+  assert.equal(calls.filter((c) => c.method === 'wish').length, 0);
+  choose('.fun-wish-place', 'river');
+  const expected = { area: ['步道'], phase: ['清早', '夜里'], souvenir: ['明信片'], visit: [] };
+  for (const [type, targets] of Object.entries(expected)) {
+    choose('.fun-wish-type', type);
+    const target = root.querySelector('.fun-wish-target');
+    assert.equal(target.value, '');
+    assert.deepEqual(target.querySelectorAll('option').slice(1).map((n) => n.value), targets);
+    if (targets.length) choose('.fun-wish-target', targets[0]);
+    else assert.equal(target.disabled, true);
+  }
+  choose('.fun-wish-type', 'area');
+  choose('.fun-wish-target', '步道');
+  choose('.fun-wish-place', 'yard');
+  assert.equal(root.querySelector('.fun-wish-target').value, '');
+  assert.deepEqual(root.querySelector('.fun-wish-target').querySelectorAll('option').slice(1).map((n) => n.value), ['藤椅']);
+  choose('.fun-wish-type', 'phase');
+  assert.equal(root.querySelector('.fun-wish-target').disabled, true);
+  assert.match(root.querySelector('.fun-wish-target').textContent, /没有可选目标/);
+  assert.equal(calls.filter((c) => c.method === 'wish').length, 0);
+});
+
+test('book 心愿：保存必须点击，进行中拦重复提交；失败保留选择和缘由并可重试', async () => {
+  let resolve;
+  let count = 0;
+  const { root, calls, choose } = await mountWishPanel(async (payload, data) => {
+    count += 1;
+    if (count === 1) return new Promise((r) => { resolve = r; });
+    data.wishes.push({ ...payload, id: 'w1', status: 'active' });
+    return { ok: true };
+  });
+  choose('.fun-wish-place', 'river');
+  choose('.fun-wish-type', 'phase');
+  choose('.fun-wish-target', '夜里');
+  const reason = root.querySelector('.fun-wish-reason');
+  reason.value = '  想看看航灯  ';
+  reason.fire('input');
+  assert.equal(count, 0);
+  const save = root.findByText('保存心愿');
+  save.fire(); save.fire();
+  root.findByText('保存中…').fire();
+  assert.equal(count, 1);
+  assert.equal(root.findByText('保存中…').disabled, true);
+  assert.deepEqual(calls.find((c) => c.method === 'wish').args, [{ action: 'add', placeId: 'river', type: 'phase', target: '夜里', reason: '想看看航灯' }]);
+  resolve({ ok: false, error: '暂时存不下来' });
+  await waitFor(() => root.querySelector('.fun-form-error').textContent.includes('暂时存不下来'), '保存错误');
+  assert.equal(root.querySelector('.fun-wish-target').value, '夜里');
+  assert.equal(root.querySelector('.fun-wish-reason').value, '  想看看航灯  ');
+  root.findByText('保存心愿').fire();
+  await waitFor(() => root.querySelector('.fun-wish'), '保存成功');
+  assert.match(root.querySelector('.fun-wish').textContent, /待实现.*在某个时段去.*夜里.*想看看航灯/);
+  assert.equal(root.querySelector('.fun-wish-place').value, '');
+  assert.equal(root.querySelector('.fun-wish-type').value, '');
+});
+
+test('book 心愿：visit 发送空目标，暂缓/恢复/取消含状态与错误，已实现没有操作', async () => {
+  let resolve;
+  let fail = true;
+  const { root, data, mounted, choose } = await mountWishPanel(async (payload, data) => {
+    if (payload.action === 'add') {
+      data.wishes.push({ ...payload, id: 'w1', status: 'active', reason: '想散步' });
+      return { ok: true };
+    }
+    if (fail) return new Promise((r) => { resolve = r; });
+    data.wishes[0].status = { pause: 'paused', resume: 'active', cancel: 'cancelled' }[payload.action];
+    return { ok: true };
+  });
+  choose('.fun-wish-place', 'river'); choose('.fun-wish-type', 'visit');
+  root.findByText('保存心愿').fire();
+  await waitFor(() => root.findByText('暂缓'), '待实现操作');
+  assert.equal(data.wishes[0].target, '');
+  const pause = root.findByText('暂缓'); pause.fire(); pause.fire();
+  assert.equal(root.findByText('暂缓').disabled, true);
+  resolve({ ok: false, error: '操作被拒绝' });
+  await waitFor(() => root.querySelector('.fun-trip-error'), '列表错误');
+  assert.match(root.querySelector('.fun-trip-error').textContent, /操作被拒绝/);
+  fail = false;
+  root.findByText('暂缓').fire();
+  await waitFor(() => root.findByText('恢复'), '暂缓完成');
+  assert.match(root.querySelector('.fun-wish').textContent, /已暂缓/);
+  root.findByText('恢复').fire();
+  await waitFor(() => root.findByText('暂缓'), '恢复完成');
+  root.findByText('取消').fire();
+  await waitFor(() => root.querySelector('.fun-wish-status').textContent === '已取消', '取消完成');
+  assert.equal(root.querySelector('.fun-wish').querySelectorAll('button').length, 0);
+  data.wishes[0].status = 'completed';
+  await mounted.refresh();
+  assert.match(root.querySelector('.fun-wish').textContent, /已实现/);
+  assert.equal(root.querySelector('.fun-wish').querySelectorAll('button').length, 0);
 });
 
 report();

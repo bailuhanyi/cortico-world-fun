@@ -11,6 +11,20 @@
 
 ---
 
+## 本次发布：0.2.0
+
+**0.2.0 已发布，npm latest 已指向 0.2.0。** 2026-11-18 13:00（Asia/Shanghai）查询 [版本端点](https://registry.npmjs.org/cortico-world-fun/0.2.0) 与 [latest 端点](https://registry.npmjs.org/cortico-world-fun/latest) 均确认该状态。不要重复执行 0.2.0 的 `npm publish`，也不要为本次交接再次升版。
+
+发布前本地测试、项目验证、安装形态验证及打包预览已通过；包为 23 个文件，压缩约 190.2 kB、解包 419,041 字节。当前工作树仍有未提交变更，Coo 实机安装和市场收录状态尚未核实。当前详情见 [HANDOFF.md](<E:/deep seek/fun-world/HANDOFF.md>)。
+
+线上整包验证尚未完成：[verify-published.mjs](<E:/deep seek/fun-world/tools/verify-published.mjs>) 仍写死 6 个工具、2 个面板，当前版本为 11 个工具、3 个面板。先修正过时断言，再执行：
+
+```powershell
+node tools/verify-published.mjs 0.2.0
+```
+
+以下保留发布流程与历史参考；其中“待发”、旧测试数、包大小、提交记录和发布命令均不是本次当前状态或下一步指令。
+
 ## 0. 发版前自查
 
 ```powershell
@@ -113,7 +127,7 @@ npm publish --otp 123456
 ```
 
 **这不是首发**：npm 上 `cortico-world-fun` 的 `latest` 目前是 **0.1.5**，本地 **0.1.6 待发**。
-本次直接发布已经准备好的 0.1.6，**不要再次运行 `npm version patch` 或其他 `npm version` 命令**，否则会跳号。
+本次发布 **0.2.0**，**不要再次运行 `npm version patch` 或其他 `npm version` 命令**，否则会跳号。
 不需要 `--access public`（那是作用域包 `@you/xxx` 才要）。将来准备下一版时，先核对本地版本与 npm 已发布版本，再决定是否需要升版；不要手改版本号后又用 `npm version` 重复升版。
 
 发完立刻验：

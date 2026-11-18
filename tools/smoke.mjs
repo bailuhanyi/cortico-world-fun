@@ -24,7 +24,6 @@ import { join } from 'node:path';
 
 import definition, { funDefinition, FUN_TOOL_DECLS, FunWorld, VENUES } from '../src/index.js';
 import { DEFAULTS } from '../src/config.js';
-import { hasScene } from '../src/venues.js';
 
 const TZ = 'Asia/Shanghai';
 let failures = 0;
@@ -89,7 +88,7 @@ for (const t of world.tools()) {
   ok(t.parameters?.type === 'object', `${t.name} 有 parameters`);
 }
 
-// envPromptVars 两次调用都不抛，且把全部预设场所都带上了
+// 提示词不常驻地点清单，全部预设仍可按需查询。
 let vars;
 try {
   vars = world.envPromptVars();
@@ -99,14 +98,9 @@ try {
   vars = {};
 }
 ok(typeof vars.fun_places_block === 'string', 'fun_places_block 是字符串');
-for (const v of VENUES) ok(vars.fun_places_block.includes(v.name), `场所清单里有 ${v.name}`);
-// 只有素材库里确实有场景的那几处才该点名 scene；其余一处都不能出现，否则等于教她编名字。
-for (const v of VENUES.filter(hasScene)) {
-  ok(vars.fun_places_block.includes(`scene 填「${v.scene}」`), `清单里点名了 ${v.name} 的 scene「${v.scene}」`);
-}
-for (const v of VENUES.filter((x) => !hasScene(x))) {
-  ok(!vars.fun_places_block.includes(`scene 填「${v.name}」`), `${v.name} 没有场景，清单里不该点名 scene`);
-}
+ok(vars.fun_places_block === '', '地点清单不常驻提示词');
+const queriedPlaces = await world.tools().find((t) => t.name === 'fun_places').handler({ all: true });
+for (const v of VENUES) ok(queriedPlaces.text.includes(v.name), `按需查询里有 ${v.name}`);
 
 // 关掉 funOn：不注入
 const offWorld = new FunWorld({ cfg: { enabled: true, funOn: false }, dataDir: dir, timezone: TZ });

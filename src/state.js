@@ -22,6 +22,7 @@
  */
 
 import { VENUES, hoursState, pickSome } from './venues.js';
+import { normalizeWishes } from './wishes.js';
 
 /** 纪念册最多留几趟。 */
 export const MAX_TRIPS = 40;
@@ -70,7 +71,61 @@ export function minutesIn(tz, nowMs) {
 
 /** 当天的新状态。 */
 export function newState(day) {
-  return { day, session: null, trips: [] };
+  return { day, session: null, trips: [], collection: [], keepsakeTrips: [], tripSeq: 0, wishes: [] };
+}
+
+export function newTripId(placeId, enteredAt, leftAt) {
+  return `${text(placeId, 40)}-${Number(enteredAt) || 0}-${Number(leftAt) || 0}`;
+}
+
+function seedCollection(trips, timezone = 'Asia/Shanghai') {
+  const entries = [];
+  for (const trip of Array.isArray(trips) ? trips : []) {
+    const placeId = text(trip?.placeId, 40);
+    const placeName = text(trip?.placeName, 40) || placeId;
+    const day = tripDay(trip, timezone);
+    for (const name of new Set(textList(trip?.souvenirs, 12, 40))) {
+      entries.push({ placeId, placeName, name, day, at: Number(trip.leftAt) || 0, tripId: text(trip.id, 60) });
+    }
+  }
+  return mergeCollection([], entries);
+}
+
+function mergeKeptTrips(kept, recent) {
+  const map = new Map();
+  for (const raw of [...(Array.isArray(kept) ? kept : []), ...(Array.isArray(recent) ? recent.filter((t) => t?.favorite) : [])]) {
+    const key = stableTripId(raw);
+    const trip = normalizeTrip(raw, key);
+    if (trip) map.set(trip.id, trip);
+  }
+  return [...map.values()].sort((a, b) => b.leftAt - a.leftAt);
+}
+
+function stableTripId(raw) {
+  const id = text(raw?.id, 60);
+  return id || newTripId(raw?.placeId, raw?.enteredAt, raw?.leftAt);
+}
+
+function mergeCollection(existing, additions) {
+  const map = new Map();
+  for (const item of [...(Array.isArray(existing) ? existing : []), ...(Array.isArray(additions) ? additions : [])]) {
+    const placeId = text(item?.placeId, 40);
+    const name = text(item?.name, 40);
+    if (!placeId || !name) continue;
+    const key = `${placeId}::${name}`;
+    const day = text(item.day, 10);
+    const at = Number(item.at) || 0;
+    const cur = map.get(key);
+    if (!cur) map.set(key, { key, placeId, placeName: text(item.placeName, 40) || placeId, name, firstDay: text(item.firstDay, 10) || day, lastDay: text(item.lastDay, 10) || day, firstAt: Number(item.firstAt) || at, lastAt: Number(item.lastAt) || at, times: Math.max(1, Number(item.times) || 1), tripIds: Array.isArray(item.tripIds) ? textList(item.tripIds, 100, 60) : (item.tripId ? [text(item.tripId, 60)] : []) });
+    else {
+      cur.times += Math.max(1, Number(item.times) || 1);
+      if (Array.isArray(item.tripIds)) for (const tripId of item.tripIds) if (!cur.tripIds.includes(tripId)) cur.tripIds.push(text(tripId, 60));
+      if (day && (!cur.firstDay || day < cur.firstDay)) { cur.firstDay = day; cur.firstAt = at; }
+      if (day && (!cur.lastDay || day > cur.lastDay)) { cur.lastDay = day; cur.lastAt = at; }
+      if (item.tripId && !cur.tripIds.includes(item.tripId)) cur.tripIds.push(text(item.tripId, 60));
+    }
+  }
+  return [...map.values()].sort((a, b) => b.lastAt - a.lastAt || a.name.localeCompare(b.name));
 }
 
 const text = (v, max) => (typeof v === 'string' ? v.replace(/\s+/g, ' ').trim().slice(0, max) : '');
@@ -117,11 +172,24 @@ function normalizeAte(v) {
   return out;
 }
 
-function normalizeTrip(raw) {
+function normalizeChoices(v) {
+  const arr = Array.isArray(v) ? v : [];
+  return arr.map((x) => ({ event: text(x?.event, 120), option: text(x?.option, 60), result: text(x?.result, 160), at: Number(x?.at) || 0 })).filter((x) => x.event && x.option).slice(0, 20);
+}
+
+function normalizePendingChoice(v) {
+  if (!v || typeof v !== 'object') return null;
+  const options = Array.isArray(v.options) ? v.options.map((x) => ({ id: text(x?.id, 50), label: text(x?.label, 100), result: text(x?.result, 160) })).filter((x) => x.id && x.label).slice(0, 4) : [];
+  const id = text(v.id, 100); const event = text(v.event, 120);
+  return id && event && options.length ? { id, event, area: text(v.area, 40), prompt: text(v.prompt, 160), options } : null;
+}
+
+function normalizeTrip(raw, fallbackId = '') {
   if (!raw || typeof raw !== 'object') return null;
   const placeId = text(raw.placeId, 40);
   if (!placeId) return null;
   return {
+    id: fallbackId || text(raw.id, 60) || newTripId(placeId, raw.enteredAt, raw.leftAt),
     placeId,
     placeName: text(raw.placeName, 40) || placeId,
     scene: text(raw.scene, 40),
@@ -141,11 +209,13 @@ function normalizeTrip(raw) {
     leftDay: DAY_RE.test(text(raw.leftDay, 10)) ? text(raw.leftDay, 10) : '',
     /** 收摊时说的那一句（和 `visited[].note` 不是一回事：那是逛某处时记的）。 */
     note: text(raw.note, 120),
+    favorite: raw.favorite === true,
     visited: normalizeVisited(raw.visited),
     souvenirs: textList(raw.souvenirs, 12, 40),
     photos: textList(raw.photos, 12, 60),
     ate: normalizeAte(raw.ate),
     events: textList(raw.events, 16, 120),
+    choices: normalizeChoices(raw.choices),
   };
 }
 
@@ -156,6 +226,7 @@ function normalizeSession(raw) {
     ...trip,
     id: text(raw.id, 40) || `${trip.placeId}-${trip.enteredAt}`,
     lastAt: Number.isFinite(Number(raw.lastAt)) ? Number(raw.lastAt) : trip.enteredAt,
+    pendingChoice: normalizePendingChoice(raw.pendingChoice),
   };
 }
 
@@ -183,14 +254,31 @@ function normalizeSession(raw) {
  * 纪念册（`trips`）**任何时候都不清**——跨天该清的是「今天正在逛什么」，
  * 不是「她去过哪儿」。这一条是 0.1.5 修的，别改回去。
  */
-export function normalizeState(raw, day, nowMs = 0, ttlMin = DEFAULT_TTL_MIN) {
+export function normalizeState(raw, day, nowMs = 0, ttlMin = DEFAULT_TTL_MIN, timezone = 'Asia/Shanghai') {
   if (!raw || typeof raw !== 'object') return newState(day);
   const session = normalizeSession(raw.session);
   const keep = session && (raw.day === day || sessionAlive(session, nowMs, ttlMin));
+  const rawTrips = Array.isArray(raw.trips) ? raw.trips : [];
+  const used = new Set();
+  const trips = rawTrips.map((t, i) => {
+    const base = stableTripId(t);
+    const id = used.has(base) ? `${base}-legacy-${i}` : base;
+    used.add(base);
+    const normalized = normalizeTrip(t, id);
+    if (normalized && !t?.id) normalized.id = id;
+    return normalized;
+  }).filter(Boolean).slice(0, MAX_TRIPS);
+  const nextTripSeq = Number.isInteger(raw.tripSeq) && raw.tripSeq >= 0
+    ? raw.tripSeq
+    : trips.length + (Array.isArray(raw.keepsakeTrips) ? raw.keepsakeTrips.length : 0);
   return {
     day,
     session: keep ? session : null,
-    trips: (Array.isArray(raw.trips) ? raw.trips : []).map(normalizeTrip).filter(Boolean).slice(0, MAX_TRIPS),
+    trips,
+    collection: Array.isArray(raw.collection) ? mergeCollection(raw.collection, []) : seedCollection(trips, timezone),
+    keepsakeTrips: mergeKeptTrips(raw.keepsakeTrips, trips),
+    tripSeq: nextTripSeq,
+    wishes: normalizeWishes(raw.wishes),
   };
 }
 
@@ -243,6 +331,7 @@ export function enterVenue(state, venue, nowMs, random = Math.random, company = 
     photos: [],
     ate: [],
     events: [],
+    choices: [],
   };
   state.session = session;
   return { session, already: false };
@@ -267,7 +356,7 @@ export function wanderOnce(state, venue, nowMs, random = Math.random, areas = nu
   if (!pool.length) return null;
   const i = Math.floor(random() * pool.length) % pool.length;
   const area = pool[i];
-  const evSource = Array.isArray(events) && events.length ? events : (venue.randomEvents || []);
+  const evSource = Array.isArray(events) ? events : (venue.randomEvents || []);
   const evPool = evSource.filter((e) => !s.events.includes(e));
   const ev = evPool.length
     ? evPool[Math.floor(random() * evPool.length) % evPool.length]
@@ -350,7 +439,10 @@ export function closeSession(state, nowMs, note = '', day = '') {
   const s = state.session;
   if (!s) return null;
   const said = text(note, 120);
+  state.tripSeq = (Number(state.tripSeq) || 0) + 1;
   const trip = {
+    id: `${newTripId(s.placeId, s.enteredAt, nowMs)}-${state.tripSeq}`,
+    favorite: false,
     placeId: s.placeId,
     placeName: s.placeName,
     scene: s.scene,
@@ -362,17 +454,35 @@ export function closeSession(state, nowMs, note = '', day = '') {
     // 收摊这句话以前只出现在回执里，转头就没了：纪念册重看这一趟只剩「逛了哪儿」。
     // 「今天人很多，但很开心」这种话才是她自己的记录，必须存。
     note: said,
+    favorite: false,
     visited: s.visited.map((v) => ({ ...v })),
     souvenirs: [...s.souvenirs],
     photos: [...s.photos],
     ate: (s.ate ?? []).map((x) => ({ ...x })),
     events: [...s.events],
+    choices: normalizeChoices(s.choices),
   };
   state.session = null;
   state.trips.unshift(trip);
+  state.collection = mergeCollection(state.collection, [...new Set(s.souvenirs)].map((name) => ({ placeId: s.placeId, placeName: s.placeName, name, day, at: nowMs, tripId: trip.id })));
+  const savedTrip = state.keepsakeTrips?.find((x) => x.id === trip.id);
+  if (savedTrip) state.keepsakeTrips = state.keepsakeTrips.map((x) => x.id === trip.id ? structuredClone(trip) : x);
   if (state.trips.length > MAX_TRIPS) state.trips.length = MAX_TRIPS;
   const stayedMin = Math.max(0, Math.round((nowMs - s.enteredAt) / 60000));
   return { trip, stayedMin, note: said };
+}
+
+export function favoriteTrip(state, id, keep = true) {
+  const trips = [...(state.trips ?? []), ...(state.keepsakeTrips ?? [])];
+  const trip = trips.find((t) => t.id === id);
+  if (!trip) return { ok: false, error: '找不到这趟行程，请先翻纪念册取得行程 ID。' };
+  state.keepsakeTrips = (state.keepsakeTrips ?? []).filter((t) => t.id !== id);
+  trip.favorite = keep;
+  if (keep) state.keepsakeTrips.unshift(structuredClone(trip));
+  state.keepsakeTrips.sort((a, b) => b.leftAt - a.leftAt);
+  const recent = state.trips?.find((t) => t.id === id);
+  if (recent) recent.favorite = keep;
+  return { ok: true, trip, kept: keep };
 }
 
 /** 这一趟挂太久了没？超过 ttlMin 就该提醒收摊（但绝不替她收）。 */

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import { VENUES } from '../src/venues.js';
 import {
-  buySouvenir, closeSession, dayIn, enterVenue, hmIn, isStale, minutesIn,
+  buySouvenir, closeSession, dayIn, enterVenue, favoriteTrip, hmIn, isStale, minutesIn,
   newState, normalizeState, photoSpotsFor, recentPlaceIds, sessionAlive, souvenirsFor,
   takePhoto, tripDay, tripSummary, venueById, visitedText, wanderOnce,
 } from '../src/state.js';
@@ -11,6 +11,16 @@ import {
 const TZ = 'Asia/Shanghai';
 const at = (s) => Date.parse(s);
 const CON = VENUES.find((v) => v.id === 'con');
+
+test('显式空事件池不回退通用事件，未指定仍用默认池', () => {
+  const state = newState('2026-11-17');
+  enterVenue(state, CON, 1);
+  const empty = wanderOnce(state, CON, 2, () => 0, null, []);
+  assert.equal(empty.event, null);
+  assert.deepEqual(state.session.events, []);
+  const defaults = wanderOnce(state, CON, 3, () => 0);
+  assert.equal(defaults.event, CON.randomEvents[0]);
+});
 
 test('dayIn / hmIn / minutesIn 按时区算', () => {
   const t = at('2026-11-15T14:05:00+08:00');
@@ -246,6 +256,35 @@ test('recentPlaceIds：在逛的地方排最前，去重', () => {
 
   enterVenue(st, CON, base + 4000);
   assert.equal(recentPlaceIds(st)[0], 'con', '正在逛的排最前');
+});
+
+test('旧状态首次升级补建长期收藏；后续不受40趟裁剪影响', () => {
+  const rawTrips = Array.from({ length: 45 }, (_, i) => ({
+    id: `trip-${i}`, placeId: 'aquarium', placeName: '海洋馆', enteredAt: i + 1, leftAt: i + 2,
+    souvenirs: [`纪念品${i}`], visited: [], photos: [], ate: [], events: [],
+  }));
+  const upgraded = normalizeState({ day: '2026-11-15', trips: rawTrips }, '2026-11-15', 0, 90, TZ);
+  assert.equal(upgraded.trips.length, 40);
+  assert.equal(upgraded.collection.length, 40, '升级只从当前仍保留的近期行程补建');
+  const persisted = normalizeState(upgraded, '2026-11-16', 0, 90, TZ);
+  assert.equal(persisted.collection.length, 40);
+});
+
+test('收摊将收藏次数写入独立账本，珍藏行程可取消且不丢记录', () => {
+  const st = newState('2026-11-15');
+  const now = at('2026-11-15T14:00:00+08:00');
+  enterVenue(st, VENUES.find((v) => v.id === 'aquarium'), now);
+  buySouvenir(st, '鲸鱼挂件', now + 1);
+  buySouvenir(st, '鲸鱼挂件', now + 2);
+  const { trip } = closeSession(st, now + 60000, '很开心', '2026-11-15');
+  assert.equal(st.collection[0].times, 1, '同一趟重复操作不重复计收藏');
+  assert.equal(st.collection[0].name, '鲸鱼挂件');
+  const kept = favoriteTrip(st, trip.id, true);
+  assert.equal(kept.ok, true);
+  assert.equal(st.keepsakeTrips.length, 1);
+  assert.equal(favoriteTrip(st, trip.id, false).ok, true);
+  assert.equal(st.keepsakeTrips.length, 0);
+  assert.equal(st.trips.length, 1, '取消珍藏不删近期行程');
 });
 
 test('venueById 找不到返回 null', () => {

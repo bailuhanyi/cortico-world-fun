@@ -1125,10 +1125,9 @@ function rankPlaces(nowMin, avoid = [], places = VENUES) {
     const stateRank = state === 'open' ? 0 : (state === 'closingSoon' ? 1 : 2);
     const avoidRank = avoidSet.has(venue.id) ? 1 : 0;
     const crowdRank = venue.crowd === 'packed' ? 2 : (venue.crowd === 'normal' ? 1 : 0);
-    // 用户自己加的地方排最前：那是他特意写的，不该被「拥挤度」算法挤到
-    // 默认列表后面，否则看起来像没加上。开着/关着仍然在它之后生效。
+    // 营业状态优先；同一状态下，自填地点优先、最近去过的降权，再比较拥挤度。
     const customRank = String(venue.id).startsWith('user-') ? 0 : 1;
-    return { venue, state, rank: [customRank, avoidRank, stateRank, crowdRank, idx] };
+    return { venue, state, rank: [stateRank, customRank, avoidRank, crowdRank, idx] };
   });
   scored.sort((a, b) => {
     for (let i = 0; i < a.rank.length; i += 1) {

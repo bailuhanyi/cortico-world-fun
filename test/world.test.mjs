@@ -52,17 +52,15 @@ test('describe 里 events 是空数组：这个 World 不推事件', () => {
   }
 });
 
-test('七件工具都注册了', () => {
+test('十一件工具都注册了', () => {
   const w = funDefinition.create({ cfg: {}, dataDir: process.cwd(), timezone: TZ });
   const names = w.tools().map((t) => t.name).sort();
-  assert.deepEqual(names, ['fun_go', 'fun_home', 'fun_places', 'fun_shelf', 'fun_start', 'fun_view', 'fun_wander']);
+  assert.deepEqual(names, ['fun_choice', 'fun_go', 'fun_home', 'fun_keepsake', 'fun_places', 'fun_shelf', 'fun_start', 'fun_view', 'fun_wander', 'fun_wish', 'fun_wishes']);
 });
 
-test('envPromptVars 永不抛错；关掉 funOn 时注入空串', async () => {
+test('envPromptVars 不常驻完整地点清单，关闭时同样为空', async () => {
   const b = await boot();
-  const on = b.world.envPromptVars();
-  assert.match(on.fun_places_block, /游乐场/);
-  assert.match(on.fun_places_block, /scene 填「漫展」/);
+  assert.equal(b.world.envPromptVars().fun_places_block, '');
 
   const off = new FunWorld({ cfg: { ...DEFAULTS, funOn: false }, dataDir: b.dir, timezone: TZ });
   await off.start({ log: { info() {}, warn() {} } });
@@ -161,11 +159,15 @@ test('完整一趟：进门 → 逛 → 买 → 拍照 → 收摊，落盘且纪
   const go = await b.tool('fun_go')({ place: '漫展', company: '小鱼' });
   assert.match(go.text, /进了漫展/);
   assert.match(go.text, /跟小鱼一起/);
+  assert.match(go.text, /能逛的：/);
+  assert.match(go.text, /纪念品：[^\n]*吧唧/);
+  assert.match(go.text, /拍照点：海报墙前/);
 
   const w1 = await b.tool('fun_wander')({ area: '同人展台', buy: '吧唧', photo: '海报墙前' });
   assert.match(w1.text, /漫展 · 同人展台/);
   assert.match(w1.text, /买了：吧唧/);
   assert.match(w1.text, /拍了张照：海报墙前/);
+  assert.doesNotMatch(w1.text, /还能买的：|还能拍的：|这儿能吃：/);
 
   b.setNow(at('2026-11-15T15:30:00+08:00'));
   const home = await b.tool('fun_home')({ note: '腿有点酸' });
@@ -272,12 +274,12 @@ test('逛遍所有项目之后再逛：提示差不多逛遍了', async () => {
   assert.doesNotMatch(again.text, /失败/);
 });
 
-test('fun_start：不进门也能看能去哪儿和怎么走', async () => {
+test('fun_start：给出推荐地点而不重复项目清单', async () => {
   const b = await boot();
   const r = await b.tool('fun_start')({});
   assert.match(r.text, /想现在就出门/);
-  assert.match(r.text, /fun_go 进门 → fun_wander/);
-  assert.match(r.text, /feast_life_play/);
+  assert.match(r.text, /fun_go 进门/);
+  assert.doesNotMatch(r.text, /过山车|鲸豚湾|捞金鱼/);
 });
 
 test('fun_view：空册子有话；逛完之后能查回来', async () => {
@@ -310,7 +312,7 @@ test('串味的纪念品/拍照点会被拦下：海洋馆里买不到漫展的�
 test('吃喝：进门就说这儿有什么，逛的时候把味道交回给鱼的每一天', async () => {
   const b = await boot();
   const go = await b.tool('fun_go')({ place: '奶茶店' });
-  assert.match(go.text, /这儿还能喝：珍珠奶茶/);
+  assert.match(go.text, /可喝：珍珠奶茶/);
 
   const w = await b.tool('fun_wander')({ area: '点单的档口', consume: '珍珠奶茶' });
   assert.match(w.text, /喝了：珍珠奶茶/);
@@ -502,7 +504,7 @@ test('去过的痕迹：同一天再来一次，说的是「今天已经来过�
   assert.doesNotMatch(r.text, /上一次是今天/, '别复读');
 });
 
-test('去过的痕迹：逛到某处会说这处之前来过几次', async () => {
+test('游逛只返回本次事实，不重复历史次数', async () => {
   const b = await boot();
   await b.tool('fun_go')({ place: '海洋馆' });
   await b.tool('fun_wander')({ area: '鲸豚湾' });
@@ -511,7 +513,8 @@ test('去过的痕迹：逛到某处会说这处之前来过几次', async () =>
   b.setNow(at('2026-11-16T15:00:00+08:00'));
   await b.tool('fun_go')({ place: '海洋馆' });
   const w = await b.tool('fun_wander')({ area: '鲸豚湾' });
-  assert.match(w.text, /这处你之前来过 1 次/);
+  assert.match(w.text, /海洋馆 · 鲸豚湾/);
+  assert.doesNotMatch(w.text, /这处你之前来过/);
 });
 
 test('去过的痕迹：以前买过的东西，不会再抽到同一件小事件', async () => {
@@ -751,7 +754,7 @@ test('鱼的开关：关掉后只说喝了什么，一个字都不提味道和 f
 test('鱼的开关：关掉也不影响别的回执（进门、收摊照常）', async () => {
   const b = await boot({ cfg: { funTasteFromFeast: false } });
   const go = await b.tool('fun_go')({ place: '奶茶店' });
-  assert.match(go.text, /这儿还能喝：珍珠奶茶/, '能喝什么照常列');
+  assert.match(go.text, /可喝：珍珠奶茶/, '能喝什么照常列');
   await b.tool('fun_wander')({ consume: '珍珠奶茶' });
   const home = await b.tool('fun_home')({});
   assert.match(home.text, /喝了珍珠奶茶/);
@@ -786,7 +789,7 @@ test('跨午夜：夜市逛着过零点，这一趟不能丢', async () => {
   const r = await b.tool('fun_wander')({});
   assert.ok(!/还没进门/.test(r.text), '跨过午夜不该把正在逛的这一趟丢掉');
   assert.match(r.text, /夜市/);
-  assert.match(r.text, /这一趟逛了 2 处/);
+  assert.doesNotMatch(r.text, /这一趟逛了/);
 });
 
 test('fun_wander：填一处这儿没有的地方，不编一个「逛了」', async () => {
@@ -809,13 +812,14 @@ test('fun_wander：时段收窄时说「这会儿还没开」，不是「没有�
   assert.match(r.text, /夜市没有「深夜才有的摊」这处/);
 });
 
-test('收摊那句话进纪念册，fun_view 能再看到', async () => {
+test('fun_view 按需查询仍保留行程 ID 与收摊备注', async () => {
   const b = await boot();
   await b.tool('fun_go')({ place: '漫展' });
   await b.tool('fun_wander')({ area: '同人展台' });
   await b.tool('fun_home')({ note: '今天人很多，但很开心' });
   const view = await b.tool('fun_view')({});
-  assert.match(view.text, /你记的：今天人很多，但很开心/, '重看纪念册要能读回收摊时那句话');
+  assert.match(view.text, /行程 ID：/);
+  assert.match(view.text, /你记的：今天人很多，但很开心/);
 });
 
 test('同行的人进纪念册', async () => {
@@ -863,6 +867,168 @@ test('重启后同一趟还在（同一天）', async () => {
   await world2.start({ log: { info() {}, warn() {} } });
   const again = await world2.tools().find((t) => t.name === 'fun_home').handler({});
   assert.match(again.text, /收摊：这一趟在庙会/);
+});
+
+test('简称购买与拍照按正名落盘，收藏进度和重复判断一致', async () => {
+  const b = await boot();
+  await b.tool('fun_go')({ place: '海洋馆' });
+  const first = await b.tool('fun_wander')({ area: '纪念品店', buy: '鲸鱼', photo: '隧道正中间' });
+  assert.match(first.text, /买了：鲸鱼挂件/);
+  assert.match(first.text, /拍了张照：海底隧道正中间/);
+  const again = await b.tool('fun_wander')({ area: '纪念品店', buy: '鲸鱼挂件', photo: '海底隧道正中间' });
+  assert.match(again.text, /鲸鱼挂件 你之前已经买过了/);
+  assert.match(again.text, /海底隧道正中间 已经拍过了/);
+  await b.tool('fun_home')({});
+  const saved = JSON.parse(await readFile(b.world.stateFile(), 'utf8'));
+  assert.deepEqual(saved.trips[0].souvenirs, ['鲸鱼挂件']);
+  assert.deepEqual(saved.trips[0].photos, ['海底隧道正中间']);
+  const { progressFor } = await import('../src/keepsakes.js');
+  const progress = progressFor(VENUES.find((v) => v.id === 'aquarium'), saved.trips);
+  assert.equal(progress.souvenirs.done, 1);
+  assert.equal(progress.photos.done, 1);
+});
+
+test('名称解析精确优先、唯一简称归一、多义输入不猜', async () => {
+  const { resolveName } = await import('../src/names.js');
+  assert.equal(resolveName(['鲸鱼', '鲸鱼挂件'], '鲸鱼').name, '鲸鱼');
+  assert.equal(resolveName(['鲸鱼挂件'], '鲸鱼').name, '鲸鱼挂件');
+  assert.equal(resolveName(['鲸鱼挂件', '鲸鱼贴纸'], '鲸鱼').name, null);
+  assert.deepEqual(resolveName(['鲸鱼挂件', '鲸鱼贴纸'], '鲸鱼').candidates, ['鲸鱼挂件', '鲸鱼贴纸']);
+  assert.equal(resolveName([], '鲸鱼').name, null);
+});
+
+test('包含匹配不擅自选择多义物品，精确正名仍优先', async () => {
+  const b = await boot();
+  await b.tool('fun_go')({ place: '海洋馆' });
+  const r = await b.tool('fun_wander')({ area: '纪念品店', photo: '前' });
+  assert.match(r.text, /能对应多样/);
+  const saved = JSON.parse(await readFile(b.world.stateFile(), 'utf8'));
+  assert.deepEqual(saved.session.photos, []);
+});
+
+test('吃喝简称统一为清单正名，同一趟不重复记', async () => {
+  const b = await boot();
+  await b.tool('fun_go')({ place: '咖啡店' });
+  const venue = VENUES.find((v) => v.id === 'cafe');
+  const name = venue.food.items[0];
+  await b.tool('fun_wander')({ consume: `一杯${name}` });
+  await b.tool('fun_wander')({ consume: name });
+  const saved = JSON.parse(await readFile(b.world.stateFile(), 'utf8'));
+  assert.deepEqual(saved.session.ate.map((a) => a.item), [name]);
+});
+
+test('自动和指定项目都不复活历史耗尽的事件池', async () => {
+  const { writeFile } = await import('node:fs/promises');
+  const b = await boot();
+  const venue = VENUES.find((v) => v.id === 'aquarium');
+  await b.tool('fun_go')({ place: venue.name });
+  await b.tool('fun_home')({});
+  const saved = JSON.parse(await readFile(b.world.stateFile(), 'utf8'));
+  saved.trips[0].events = [...venue.randomEvents, ...venue.rareEvents];
+  await b.world.stop();
+  await writeFile(b.world.stateFile(), JSON.stringify(saved));
+  const next = await boot({ dir: b.dir });
+  await next.tool('fun_go')({ place: venue.name });
+  const auto = await next.tool('fun_wander')({});
+  const explicit = await next.tool('fun_wander')({ area: '纪念品店' });
+  assert.doesNotMatch(auto.text, /——/);
+  assert.doesNotMatch(explicit.text, /——/);
+  const result = JSON.parse(await readFile(next.world.stateFile(), 'utf8'));
+  assert.deepEqual(result.session.events, []);
+});
+
+test('旋转木马不抽到过山车体验，未购买不生成鲸鱼挂件收获', async () => {
+  const b = await boot({ random: () => 0.12 });
+  await b.tool('fun_go')({ place: '游乐场' });
+  const r = await b.tool('fun_wander')({ area: '旋转木马' });
+  assert.doesNotMatch(r.text, /过山车冲下去/);
+  await b.tool('fun_home')({});
+  await b.tool('fun_go')({ place: '海洋馆' });
+  const shop = await b.tool('fun_wander')({ area: '纪念品店' });
+  assert.doesNotMatch(shop.text, /最后挑了那个鲸鱼挂件/);
+});
+
+test('自动逛只记录一次项目一致事件，本次购买可以满足事件前置条件', async () => {
+  const b = await boot({ random: () => 0 });
+  await b.tool('fun_go')({ place: '游乐场' });
+  await b.tool('fun_wander')({});
+  let saved = JSON.parse(await readFile(b.world.stateFile(), 'utf8'));
+  assert.equal(saved.session.events.length, 1);
+  await b.tool('fun_home')({});
+  await b.tool('fun_go')({ place: '海洋馆' });
+  // 纪念品店剩两个有效事件；0 选中有本次购买作依据的那条。
+  const r = await b.tool('fun_wander')({ area: '纪念品店', buy: '鲸鱼' });
+  assert.match(r.text, /最后挑了那个鲸鱼挂件/);
+  saved = JSON.parse(await readFile(b.world.stateFile(), 'utf8'));
+  assert.equal(saved.session.events.length, 1);
+  assert.deepEqual(saved.session.souvenirs, ['鲸鱼挂件']);
+});
+
+test('珍藏行程独立于40趟上限，取消珍藏不影响长期收藏', async () => {
+  const b = await boot();
+  for (let i = 0; i < 42; i += 1) {
+    await b.tool('fun_go')({ place: '海洋馆' });
+    await b.tool('fun_wander')({ area: '纪念品店', buy: '鲸鱼挂件' });
+    await b.tool('fun_home')({ note: `第${i + 1}趟` });
+  }
+  let saved = JSON.parse(await readFile(b.world.stateFile(), 'utf8'));
+  assert.equal(saved.trips.length, 40);
+  assert.equal(saved.collection.find((x) => x.name === '鲸鱼挂件').times, 42);
+  const old = saved.trips.find((t) => t.note === '第3趟');
+  assert.ok(old, '即将离开近期窗口的行程仍可珍藏');
+  assert.equal((await b.tool('fun_keepsake')({ id: old.id, keep: true })).failed, undefined);
+  for (let i = 0; i < 2; i += 1) {
+    await b.tool('fun_go')({ place: '海洋馆' });
+    await b.tool('fun_home')({});
+  }
+  saved = JSON.parse(await readFile(b.world.stateFile(), 'utf8'));
+  assert.equal(saved.trips.length, 40);
+  assert.ok(saved.keepsakeTrips.some((t) => t.id === old.id));
+  const book = await b.world.webUi('zh').invoke('book', 'list', []);
+  assert.ok(book.trips.some((t) => t.id === old.id && t.kept), `珍藏行程应仍可见：${JSON.stringify({ old: old.id, trips: book.trips.map((t) => ({ id: t.id, kept: t.kept, archived: t.archived })) })}`);
+  const shelf = await b.world.webUi('zh').invoke('shelf', 'list', []);
+  assert.equal(shelf.items.find((x) => x.name === '鲸鱼挂件').times, 42);
+  await b.tool('fun_keepsake')({ id: old.id, keep: false });
+  saved = JSON.parse(await readFile(b.world.stateFile(), 'utf8'));
+  assert.equal(saved.keepsakeTrips.some((t) => t.id === old.id), false);
+  assert.equal(saved.collection.find((x) => x.name === '鲸鱼挂件').times, 42);
+});
+
+test('出游心愿：创建、重启保留、真实进门完成并给推荐理由', async () => {
+  const b = await boot();
+  const added = await b.tool('fun_wish')({ action: 'add', place: '江边', type: 'visit', reason: '想看看晚上的航灯' });
+  assert.equal(added.failed, undefined);
+  assert.match(added.text, /航灯/);
+  const before = await b.tool('fun_places')({ all: true });
+  assert.match(before.text, /江边.*有个心愿：想去江边/);
+  const listed = await b.tool('fun_wishes')({});
+  assert.match(listed.text, /航灯/);
+  const again = await boot({ dir: b.dir });
+  assert.match((await again.tool('fun_wishes')({})).text, /航灯/);
+  const go = await again.tool('fun_go')({ place: '江边' });
+  assert.match(go.text, /完成了心愿/);
+  assert.match((await again.tool('fun_wishes')({})).text, /已完成/);
+});
+
+test('结构化事件选择：逛到事件给选项，选择后解锁下一处并写入行程', async () => {
+  const b = await boot({ random: () => 0 });
+  await b.tool('fun_go')({ place: '海洋馆' });
+  const first = await b.tool('fun_wander')({ area: '海底隧道' });
+  assert.match(first.text, /choiceId/);
+  assert.match(first.text, /optionId/);
+  const saved = JSON.parse(await readFile(join(b.dir, 'fun', 'state.json'), 'utf8'));
+  const pending = saved.session.pendingChoice;
+  assert.ok(pending);
+  const blocked = await b.tool('fun_wander')({});
+  assert.match(blocked.text, /待选择事件/);
+  const picked = await b.tool('fun_choice')({ choiceId: pending.id, optionId: pending.options[0].id });
+  assert.match(picked.text, /你选择了/);
+  const after = JSON.parse(await readFile(join(b.dir, 'fun', 'state.json'), 'utf8'));
+  assert.equal(after.session.pendingChoice, null);
+  assert.equal(after.session.choices.length, 1);
+  await b.tool('fun_home')({});
+  const trip = JSON.parse(await readFile(join(b.dir, 'fun', 'state.json'), 'utf8')).trips[0];
+  assert.equal(trip.choices.length, 1);
 });
 
 test('工具内部抛错也兜住：返回 failed 而不是炸掉整个世界', async () => {

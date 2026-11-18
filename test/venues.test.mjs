@@ -140,6 +140,27 @@ test('suggestPlaces：开着的排前面，刚去过的不删只排后面', () =
   if (conIdx >= 0) assert.notEqual(conIdx, 0, '刚去过的不该排第一');
 });
 
+test('推荐与全列：营业状态优先于自填和最近去过，同状态仍保留原有偏好', () => {
+  const venue = (id, open, close, crowd = 'normal') => ({ id, hours: { open, close }, crowd });
+  const places = [
+    venue('user-closed', '18:00', '22:00', 'quiet'),
+    venue('closed', '18:00', '22:00'),
+    venue('user-soon', '09:00', '12:30', 'quiet'),
+    venue('soon', '09:00', '12:30'),
+    venue('open-recent', '09:00', '18:00', 'quiet'),
+    venue('open-fresh', '09:00', '18:00', 'packed'),
+    venue('user-open-recent', '09:00', '18:00', 'quiet'),
+    venue('user-open-fresh', '09:00', '18:00', 'packed'),
+  ];
+  const avoid = ['open-recent', 'user-open-recent'];
+  const expected = ['user-open-fresh', 'user-open-recent', 'open-fresh', 'open-recent', 'user-soon', 'soon', 'user-closed', 'closed'];
+  const ranked = allPlaces(hmToMin('12:00'), avoid, places);
+  assert.deepEqual(ranked.map((p) => p.venue.id), expected);
+  assert.deepEqual(ranked.map((p) => p.state), ['open', 'open', 'open', 'open', 'closingSoon', 'closingSoon', 'closed', 'closed']);
+  assert.deepEqual(suggestPlaces(hmToMin('12:00'), 4, avoid, places).map((p) => p.venue.id), expected.slice(0, 4),
+    '截取推荐时，关门的自填和未去过的快关门场所不能挤掉仍营业的地点');
+});
+
 test('suggestPlaces 的 count 会被夹在 1–8，坏值回落 4；allPlaces 不截断', () => {
   assert.equal(suggestPlaces(600, 0, []).length, 1);
   assert.equal(suggestPlaces(600, 99, []).length, 8, '上限是 8');

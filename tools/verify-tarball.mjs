@@ -119,8 +119,9 @@ try {
   ok(/scene 填「水族馆」/.test(home.text), '收摊回执带 scene');
   ok(/feast_life_play/.test(home.text), '收摊回执指向 feast_life_play');
   const vars = world.envPromptVars();
-  ok(vars.fun_places_block.includes('游乐场'), 'envPromptVars 正常');
-  ok(/scene 填「漫展」/.test(vars.fun_places_block), '场所清单里点名了 scene');
+  ok(vars.fun_places_block === '', 'envPromptVars 不常驻地点清单');
+  const places = await tool('fun_places')({ all: true });
+  ok(places.text.includes('游乐场') && places.text.includes('海洋馆'), '地点清单可按需查询');
   await world.stop();
 
   console.log('5) 包里的 describe.json 自洽');

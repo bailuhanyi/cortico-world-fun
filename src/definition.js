@@ -8,32 +8,48 @@ import { FUN_TOOL_DECLS, FunWorld } from './world.js';
 /** 自描述里每个工具配一句给人看的话，按工具名。 */
 const TOOL_SUMMARIES = {
   fun_places: {
-    zh: '看今天能去哪儿逛：二十处地方，按开放时段和拥挤度排；也能只看某一类或列全部。',
-    en: 'See where she can go today: twenty places ranked by opening hours and crowd; can filter by kind or list all.',
+    zh: '查询当前地点，按营业状态和拥挤度排序；可筛选或列出全部。',
+    en: 'Query available places ranked by opening hours and crowd; filter by kind or list all.',
   },
   fun_go: {
-    zh: '进门：挑一处地方开始这一趟，回执给进门那一下的样子和能逛什么。',
-    en: 'Walk in: pick a place and start a trip; the receipt describes arriving and what there is to wander.',
+    zh: '进门开始行程，返回当前时段描写和可逛项目。',
+    en: 'Start a trip and return the current-time description and available areas.',
+  },
+  fun_choice: {
+    zh: '处理逛到的结构化事件选择，按回执中的 choiceId 和 optionId 选择。',
+    en: 'Resolve a structured event choice using the choiceId and optionId from the receipt.',
   },
   fun_wander: {
-    zh: '逛一处项目或摊位：给细节和一条随机小事件，顺手能买纪念品、拍张照。',
-    en: 'Wander one spot: details plus a small random event; can buy a souvenir or take a photo.',
+    zh: '逛一个项目，可记录本次购买、拍照或吃喝；待选择事件按回执处理。',
+    en: 'Wander one spot and optionally record a purchase, photo or food; resolve pending choices from the receipt.',
   },
   fun_home: {
-    zh: '收摊：把这一趟收成一句话，递到她嘴边去 feast_life_play 记一笔。',
-    en: 'Close the trip: sums it into one line she can log with feast_life_play.',
+    zh: '结束行程并返回本次摘要与记录提示。',
+    en: 'End the trip and return its summary and logging prompt.',
   },
   fun_start: {
-    zh: '不用等叫醒，现在就想出门时看有哪些地方、怎么走。',
-    en: 'Start on her own, without waiting for a wake-up.',
+    zh: '查看当前推荐地点；详细筛选用 fun_places。',
+    en: 'Show current place recommendations; use fun_places for filters.',
   },
   fun_view: {
-    zh: '纪念册：以前逛过哪些趟、每一趟逛了什么买了什么。',
-    en: 'The trip book: where she has been, what she wandered and bought.',
+    zh: '按需查询近期或珍藏的行程记录。',
+    en: 'Query recent or kept trip records on demand.',
+  },
+  fun_wishes: {
+    zh: '查看明确记下的出游心愿和状态，不催促。',
+    en: 'View outing wishes and their status without reminders.',
+  },
+  fun_wish: {
+    zh: '记录、暂缓、恢复或取消一个出游心愿。',
+    en: 'Add, pause, resume or cancel an outing wish.',
+  },
+  fun_keepsake: {
+    zh: '珍藏或取消珍藏一趟行程，不影响纪念册近期列表和长期收藏。',
+    en: 'Keep or unkeep a trip without changing the recent trip book or permanent collection.',
   },
   fun_shelf: {
-    zh: '纪念品架：攒下来的东西按地方归着，写清在哪买的、哪天，以及这儿还差什么没逛。',
-    en: 'The shelf: what the trips have gathered, grouped by place, with where and when each came from and what is left to wander.',
+    zh: '按地点查询长期纪念品收藏和收集进度。',
+    en: 'Query long-term souvenirs and collection progress by place.',
   },
 };
 

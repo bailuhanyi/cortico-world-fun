@@ -21,6 +21,15 @@ function trip({ placeId = 'con', placeName = '漫展', day = '2026-11-15', visit
   };
 }
 
+test('长期收藏账本脱离近期行程窗口，首次日期和累计次数继续保留', () => {
+  const collection = [{ key: 'con::吧唧', placeId: 'con', placeName: '漫展', name: '吧唧', firstDay: '2026-01-01', lastDay: '2026-11-17', times: 3, tripIds: ['old-1', 'old-2', 'recent-1'] }];
+  const rack = collectSouvenirs([], 'Asia/Shanghai', collection);
+  assert.equal(rack.items.length, 1);
+  assert.equal(rack.items[0].firstDay, '2026-01-01');
+  assert.equal(rack.items[0].times, 3);
+  assert.equal(rack.total, 3);
+});
+
 test('collectSouvenirs：同名东西在不同地方算两件', () => {
   // 游乐场的棉花糖和公园的棉花糖不是一样东西。
   const rack = collectSouvenirs([
