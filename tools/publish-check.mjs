@@ -20,7 +20,6 @@
  * 用法：node tools/publish-check.mjs [--online]
  * 退出码 0 = 可以发；1 = 有硬问题（市场会缺块或被拒）。
  */
-import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -162,12 +161,17 @@ else warn('screenshots', '详情页只有图标和文字；截图要自己截（
 // ---- 10. --online：包名占用 ----
 if (ONLINE) {
   try {
-    execFileSync('npm', ['view', pkg.name, 'version'], { stdio: 'pipe', timeout: 30000 });
-    warn('包名占用', `${pkg.name} 在 npm 上已存在——这是发新版本，不是首发`);
+    const endpoint = `https://registry.npmjs.org/${encodeURIComponent(pkg.name)}`;
+    const response = await fetch(endpoint, { signal: AbortSignal.timeout(30000) });
+    if (response.status === 404) pass('包名可用', `${pkg.name} 在 npm 上还没有，可以首发`);
+    else if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    else {
+      const metadata = await response.json();
+      if (Object.hasOwn(metadata.versions ?? {}, pkg.version)) fail('当前版本未发布', `${pkg.name}@${pkg.version} 已存在，不能重复发布`);
+      else pass('当前版本未发布', `${pkg.version} 可用于新版本；线上 latest 为 ${metadata['dist-tags']?.latest ?? '未知'}`);
+    }
   } catch (err) {
-    const out = `${err.stdout ?? ''}${err.stderr ?? ''}`;
-    if (/E404|404 Not Found/.test(out)) pass('包名可用', `${pkg.name} 在 npm 上还没有，可以首发`);
-    else warn('包名占用查询', `查不到结果（可能没网或没登录）：${out.split('\n')[0]}`);
+    warn('包名占用查询', `未完成线上检查：${err?.message ?? String(err)}`);
   }
 }
 

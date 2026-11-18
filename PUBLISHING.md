@@ -11,19 +11,34 @@
 
 ---
 
-## 本次发布：0.2.0
+## 本次准备发布：0.2.1（尚未发布）
 
-**0.2.0 已发布，npm latest 已指向 0.2.0。** 2026-11-18 13:00（Asia/Shanghai）查询 [版本端点](https://registry.npmjs.org/cortico-world-fun/0.2.0) 与 [latest 端点](https://registry.npmjs.org/cortico-world-fun/latest) 均确认该状态。不要重复执行 0.2.0 的 `npm publish`，也不要为本次交接再次升版。
+2026-11-18（Asia/Shanghai）核对 npm：线上 latest 为 0.2.0，0.2.1 版本端点返回 404。当前本地版本已设为 **0.2.1**，不要再次运行 `npm version patch`。本轮仅准备发布，不执行 npm publish、Git 提交、推送、标签或 Coo 安装。
 
-发布前本地测试、项目验证、安装形态验证及打包预览已通过；包为 23 个文件，压缩约 190.2 kB、解包 419,041 字节。当前工作树仍有未提交变更，Coo 实机安装和市场收录状态尚未核实。当前详情见 [HANDOFF.md](<E:/deep seek/fun-world/HANDOFF.md>)。
+本版为三个面板的 UI 与交互精修：地点快捷筛选、纪念册分类与行程详情、折叠心愿表单、收藏小卡与探索进度、加载重试和失败保留内容。状态格式、工具和提示词不变。
 
-线上整包验证尚未完成：[verify-published.mjs](<E:/deep seek/fun-world/tools/verify-published.mjs>) 仍写死 6 个工具、2 个面板，当前版本为 11 个工具、3 个面板。先修正过时断言，再执行：
+发布前验证已通过：完整 `prepublishOnly`（面板 42/42、世界集成 75/75）、本地安装形态验证。市场检查为 **26 项通过、0 失败、1 警告**：未配置市场截图。线上可用版本检查已改为直接请求 registry，避免 Windows 非交互子进程导致的误报；若目标版本已存在会阻止重复发布。
+
+修正后的 `verify-published.mjs` 已对 npm 上的 **0.2.0** 完成真实整包验收：下载、解包、三方面工具名称对账、三个面板取数与客户端 ID 对账、海洋馆进门/游逛/购买/收摊及纪念册记录均通过。此结果不代表 0.2.1 已上线；0.2.1 需发布后单独验包。
+
+仍待实机确认：Coo 内的视觉验收与市场截图。此前 Edge 截图进程受权限限制，不能把 DOM 测试当成实机视觉验收。工作树中的修改尚未提交，本地验证日志及 `.tmp` 不应加入提交或发布包。
+
+准备流程：
 
 ```powershell
-node tools/verify-published.mjs 0.2.0
+npm run prepublishOnly
+node tools/verify-tarball.mjs
+npm pack --dry-run
 ```
 
-以下保留发布流程与历史参考；其中“待发”、旧测试数、包大小、提交记录和发布命令均不是本次当前状态或下一步指令。
+用户确认正式发布后，在已认证的终端执行 `npm publish` 并按实际提示完成认证；不要把恢复码作为 OTP，也不要在对话或日志中粘贴令牌。发布后执行：
+
+```powershell
+node tools/verify-published.mjs 0.2.1
+npm view cortico-world-fun dist-tags
+```
+
+下文均为历史流程参考，旧版本、旧提交和旧数量不作为本轮状态。
 
 ## 0. 发版前自查
 

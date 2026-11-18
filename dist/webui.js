@@ -12,9 +12,10 @@
  * 颜色走宿主主题的自定义属性（--surface/--foreground/--border/--accent…），
  * 自定义属性会继承进 shadow root，所以明暗两套主题都不用自己写。
  *
- * 两个面板：
+ * 三个面板：
  *   places —— 二十处地方（以及自己加的、改过的）此刻的状态，以及她正在逛的这一趟
- *   book   —— 纪念册：去过的每一趟
+ *   book   —— 纪念册：去过的每一趟与出游心愿
+ *   shelf  —— 纪念品架：长期收藏与探索进度
  */
 
 const CSS = `
@@ -119,6 +120,45 @@ const CSS = `
 .fun-stat span{font-size:11.5px;color:var(--f-dim)}
 .fun-empty{padding:22px 12px;text-align:center;color:var(--f-dim);font-size:12.5px}
 .fun-err{border:1px solid #d9534f;border-radius:var(--radius-sm,6px);padding:10px 12px;color:#d9534f;background:color-mix(in srgb,#d9534f 10%,transparent);font-size:12.5px}
+/* 轻手账：跟随宿主主题，只用少量色彩区分内容层次。 */
+.fun{font-size:14px;line-height:1.65;padding:8px 4px 24px;--f-round:12px}
+.fun button,.fun input,.fun select{min-height:34px}
+.fun button:focus-visible,.fun input:focus-visible,.fun select:focus-visible,.fun textarea:focus-visible,.fun summary:focus-visible{outline:2px solid var(--f-accent);outline-offset:3px}
+.fun button:disabled{cursor:default;opacity:.6}
+.fun .fun-btn-primary{background:var(--f-accent);border-color:var(--f-accent);color:var(--accent-foreground,#fff)}
+.fun-heading{margin-bottom:16px;padding:4px 0 12px;border-bottom:1px solid var(--f-line)}
+.fun-heading h2{font-size:20px;line-height:1.4;margin:0 0 4px;letter-spacing:.03em}
+.fun-heading p{margin:0;color:var(--f-dim);font-size:12.5px}
+.fun-live,.fun-trip,.fun-stats,.fun-form{border-radius:var(--f-round);padding:14px 16px}
+.fun-live{background:linear-gradient(120deg,color-mix(in srgb,var(--f-accent) 8%,var(--f-card)),var(--f-card));margin-bottom:16px}
+.fun-live h3{font-size:16px}
+.fun-grid{grid-template-columns:repeat(auto-fill,minmax(min(232px,100%),1fr));gap:12px}
+.fun-card{padding:14px;border-radius:var(--f-round);min-height:136px;background:linear-gradient(180deg,color-mix(in srgb,var(--f-accent) 4%,var(--f-card)),var(--f-card) 65%)}
+.fun-card-name{font-size:15px}.fun-card-head{flex-wrap:wrap}.fun-card-desc{line-height:1.7;margin-top:8px}
+.fun-detail{padding:16px;border-radius:0 0 var(--f-round) var(--f-round)}
+.fun-card-active{border-bottom-left-radius:0;border-bottom-right-radius:0;background:color-mix(in srgb,var(--f-accent) 7%,var(--f-card))}
+.fun-tabs,.fun-filters{display:flex;gap:7px;flex-wrap:wrap;margin:12px 0 16px}
+.fun-tabs button,.fun-filters button{border-radius:999px;padding:5px 13px;background:transparent}
+.fun-tabs button[aria-pressed="true"],.fun-filters button[aria-pressed="true"]{border-color:var(--f-accent);color:var(--f-ink);background:color-mix(in srgb,var(--f-accent) 12%,var(--f-card));font-weight:600}
+.fun-stats{gap:18px;background:var(--f-soft);border:none}.fun-stat b{font-size:21px}.fun-stat span{font-size:12px}
+.fun-trip-head{flex-wrap:wrap}.fun-trip-name{font-size:14px}.fun-trip-when{white-space:normal}
+.fun-date{margin:20px 0 10px;font-size:12px;color:var(--f-dim);font-weight:600;display:flex;align-items:center;gap:10px}
+.fun-date:after{content:'';height:1px;background:var(--f-line);flex:1}
+.fun-ticket{position:relative;border-left:3px solid color-mix(in srgb,var(--f-accent) 55%,var(--f-line));margin-bottom:12px}
+.fun-trip-detail{border-top:1px dashed var(--f-line);margin-top:12px;padding-top:4px}
+.fun-trip-detail .fun-sec{margin-top:10px}.fun-trip-detail p{margin:4px 0;font-size:13px;white-space:pre-wrap;overflow-wrap:anywhere}
+.fun-wish-history{margin-top:14px}.fun-wish-history>summary{cursor:pointer;padding:8px 0;color:var(--f-dim)}
+.fun-shelf-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(180px,100%),1fr));gap:10px;margin-top:12px}
+.fun-keepsake{border:1px solid var(--f-line);border-radius:10px;padding:12px;background:var(--f-soft);min-width:0}
+.fun-keepsake>summary{cursor:pointer;line-height:1.7;overflow-wrap:anywhere}.fun-keepsake>summary strong{display:block;color:var(--f-ink);font-weight:600}
+.fun-keepsake .fun-trip-sum{border-top:1px dashed var(--f-line);margin-top:9px;padding-top:9px}
+.fun-progress{display:block;width:100%;height:7px;margin:10px 0;accent-color:var(--f-accent);border:0;border-radius:8px;overflow:hidden;background:var(--f-line)}
+.fun-progress::-webkit-progress-bar{background:var(--f-line);border-radius:8px}.fun-progress::-webkit-progress-value{background:var(--f-accent);border-radius:8px}.fun-progress::-moz-progress-bar{background:var(--f-accent);border-radius:8px}
+.fun-feedback:empty{display:none}.fun-feedback{margin:10px 0}.fun-feedback .fun-err{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.fun-loading{padding:18px;color:var(--f-dim);font-size:13px}.fun-empty{border:1px dashed var(--f-line);border-radius:var(--f-round);margin:10px 0;background:var(--f-soft)}
+@media(max-width:420px){.fun{padding-inline:0}.fun-live,.fun-trip,.fun-form{padding:12px}.fun-stats{gap:12px}.fun-detail-cols,.fun-form-grid{grid-template-columns:1fr}.fun-detail-top{flex-wrap:wrap}.fun-trip-actions{flex-wrap:wrap}}
+@media(prefers-reduced-motion:reduce){.fun *{transition:none!important;scroll-behavior:auto!important}}
+
 `;
 
 /** 小工具：建元素 + 设属性，省掉一屏 createElement。 */
@@ -157,8 +197,20 @@ function shell(root) {
   return box;
 }
 
-function errorCard(err) {
-  return el('div', { class: 'fun-err', text: `面板加载失败：${err?.message ?? String(err)}` });
+function errorCard(err, retry, retained = false) {
+  return el('div', { class: 'fun-err', role: 'alert' },
+    el('span', { text: retained ? `刷新失败，保留上次内容：${err?.message ?? String(err)}` : `面板加载失败：${err?.message ?? String(err)}` }),
+    retry ? el('button', { type: 'button', onclick: () => { void retry(); } }, '重试') : null);
+}
+
+function heading(title, subtitle) {
+  return el('header', { class: 'fun-heading' }, el('h2', { text: title }), el('p', { text: subtitle }));
+}
+
+function feedback(box) {
+  const node = el('div', { class: 'fun-feedback' });
+  box.appendChild(node);
+  return node;
 }
 
 // ---------------------------------------------------------------------------
@@ -173,12 +225,15 @@ function mountPlaces(ctx) {
   box.appendChild(body);
 
   let keyword = '';
+  let quickFilter = '全部';
   let expanded = null;
   /** null = 没在编辑；{ mode: 'new' | 'edit', venue } = 打开表单。 */
   let editing = null;
   let formError = '';
   /** 表单打开期间收到的最新数据，等关掉表单再补画，免得把用户填的内容冲掉。 */
   let currentData = null;
+  const status = feedback(box);
+  body.appendChild(el('div', { class: 'fun-loading', role: 'status', text: '正在看看有哪些地方开着…' }));
 
   const render = (data) => {
     // 表单相关声明要放在最前：点「添加地点」时 render 会重跑，
@@ -188,7 +243,8 @@ function mountPlaces(ctx) {
     const fields = {};
     const lines = (v) => (Array.isArray(v) ? v.join('\n') : '');
     const parseLines = (s) => String(s ?? '').split(/[\n,，、]/).map((x) => x.trim()).filter(Boolean);
-    body.replaceChildren();
+    currentData = data;
+    body.replaceChildren(heading('去哪儿', '挑一处喜欢的地方，慢慢逛。'));
 
     // ---- 正在逛的那一趟 ----
     if (data.session) {
@@ -234,7 +290,6 @@ function mountPlaces(ctx) {
       renderList();
     });
     const addBtn = el('button', {
-      class: 'fun-btn-primary',
       type: 'button',
       onclick: () => {
         editing = { mode: 'new', venue: null };
@@ -258,7 +313,6 @@ function mountPlaces(ctx) {
     // 一键恢复全部预设：只在真有覆盖层时给，免得平时多一个没用的按钮。
     if (data.overriddenCount) {
       body.appendChild(el('button', {
-        class: 'fun-btn-primary',
         type: 'button',
         style: { marginBottom: '10px' },
         onclick: async () => {
@@ -277,6 +331,18 @@ function mountPlaces(ctx) {
     // ---- 编辑表单（打开时在最上面） ----
     if (editing) body.appendChild(venueForm());
 
+    const filterBar = el('div', { class: 'fun-filters', role: 'group', 'aria-label': '地点快捷筛选' });
+    const filterButtons = [];
+    for (const label of ['全部', '现在开着', '室内', '户外', '夜游', '我的地点']) {
+      const button = el('button', { type: 'button', 'aria-pressed': String(quickFilter === label), onclick: () => {
+        quickFilter = label;
+        for (const item of filterButtons) item.button.setAttribute('aria-pressed', String(item.label === label));
+        renderList();
+      } }, label);
+      filterButtons.push({ label, button });
+      filterBar.appendChild(button);
+    }
+    body.appendChild(filterBar);
     const listBox = el('div');
     body.appendChild(listBox);
 
@@ -289,11 +355,20 @@ function mountPlaces(ctx) {
     function renderList() {
       listBox.replaceChildren();
       const kw = keyword.trim().toLowerCase();
+      const filtered = data.places.filter((p) => {
+        const tags = p.tags ?? [];
+        if (quickFilter === '现在开着') return p.state !== 'closed';
+        if (quickFilter === '我的地点') return p.userVenue;
+        if (quickFilter === '室内') return tags.some((tag) => tag.includes('室内'));
+        if (quickFilter === '户外') return tags.some((tag) => /户外|室外/.test(tag));
+        if (quickFilter === '夜游') return tags.some((tag) => /夜/.test(tag));
+        return true;
+      });
       const matched = kw
-        ? data.places.filter((p) => p.name.toLowerCase().includes(kw)
+        ? filtered.filter((p) => p.name.toLowerCase().includes(kw)
           || p.aliases.some((a) => a.toLowerCase().includes(kw))
           || p.tags.some((t) => t.toLowerCase().includes(kw)))
-        : data.places;
+        : filtered;
 
       const open = matched.filter((p) => p.state !== 'closed');
       const closed = matched.filter((p) => p.state === 'closed');
@@ -312,10 +387,10 @@ function mountPlaces(ctx) {
         listBox.appendChild(el('div', { class: 'fun-sec', text: title }));
         listBox.appendChild(el('div', { class: 'fun-grid' }, items.map(cell)));
       };
-      section(kw ? `匹配到 ${matched.length} 处` : `开着的（${open.length}）`, open);
+      section(kw || quickFilter !== '全部' ? `筛选结果 · 开着的（${open.length}）` : `开着的（${open.length}）`, open);
       section('已经关了', closed);
       if (!matched.length) {
-        listBox.appendChild(el('div', { class: 'fun-empty', text: `没有匹配「${keyword}」的地方。` }));
+        listBox.appendChild(el('div', { class: 'fun-empty', text: kw ? `没有匹配「${keyword}」的地方，试试其他筛选。` : '这个筛选下还没有地方，换一项看看。' }));
       }
     }
 
@@ -375,7 +450,7 @@ function mountPlaces(ctx) {
         const target = active?.parentNode ?? active;
         // 真 DOM 有 scrollIntoView；测试桩没有，判一下再用。
         if (target && typeof target.scrollIntoView === 'function') {
-          target.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+          target.scrollIntoView({ block: 'nearest', behavior: 'auto' });
         }
       }
     }
@@ -603,12 +678,11 @@ function mountPlaces(ctx) {
       if (!data?.ok) throw new Error(data?.error ?? '返回不正常');
       // 正在填表单时别重画——一分钟的自动刷新会把用户刚填的一整页冲掉。
       if (editing) { currentData = data; return; }
+      status.replaceChildren();
       render(data);
     } catch (err) {
-      root.replaceChildren();
-      ensureStyle(root);
-      const box2 = shell(root);
-      box2.appendChild(errorCard(err));
+      if (!currentData) body.replaceChildren();
+      status.replaceChildren(errorCard(err, load, Boolean(currentData)));
     }
   };
 
@@ -628,7 +702,11 @@ function mountBook(ctx) {
   const box = shell(root);
   const body = el('div');
   box.appendChild(body);
-  let keepsakesOnly = false;
+  let bookTab = 'all';
+  let wishFormOpen = false;
+  const expandedTrips = new Set();
+  const status = feedback(box);
+  body.appendChild(el('div', { class: 'fun-loading', role: 'status', text: '正在翻开纪念册…' }));
   const pending = new Set();
   const errors = new Map();
   let currentData = null;
@@ -642,7 +720,9 @@ function mountBook(ctx) {
     const wishes = data.wishes ?? [];
     const adding = wishPending.has('add');
     const section = el('section', { class: 'fun-wishes', 'aria-label': '出游心愿' });
-    section.appendChild(el('div', { class: 'fun-sec', text: '出游心愿' }));
+    section.appendChild(el('div', { class: 'fun-bar' },
+      el('span', { class: 'fun-sec', text: '出游心愿' }),
+      el('button', { type: 'button', 'aria-expanded': String(wishFormOpen), disabled: adding ? 'disabled' : null, onclick: () => { wishFormOpen = !wishFormOpen; render(currentData); } }, wishFormOpen ? '收起表单' : '记个心愿')));
     const field = (label, input) => el('label', { class: 'fun-field' },
       el('span', { class: 'fun-field-label', text: label }), input);
     const select = (className, placeholder, options, value) => {
@@ -697,13 +777,16 @@ function mountBook(ctx) {
       wishDraft = { placeId: payload.placeId, type: payload.type, target: payload.target, reason: reasonInput.value };
       await changeWish('add', payload, data);
     };
-    section.appendChild(el('div', { class: 'fun-form fun-wish-form' },
+    if (wishFormOpen) section.appendChild(el('div', { class: 'fun-form fun-wish-form' },
       el('div', { class: 'fun-form-note', text: '由你选择想去的地方，按保存才记下心愿；心愿不保证立即出发。' }),
       el('div', { class: 'fun-form-grid' }, field('地点', placeInput), field('心愿类型', typeInput), field('目标', targetInput)),
       field('缘由（可选）', reasonInput), errorNode,
       el('button', { class: 'fun-btn-primary', type: 'button', disabled: adding ? 'disabled' : null, onclick: save }, adding ? '保存中…' : '保存心愿')));
     if (!wishes.length) section.appendChild(el('div', { class: 'fun-note', text: '还没有出游心愿，想好了再记下。' }));
     const statusNames = { active: '待实现', paused: '已暂缓', completed: '已实现', cancelled: '已取消' };
+    const history = el('details', { class: 'fun-wish-history',
+      open: wishes.some((w) => w.status !== 'active' && (wishErrors.has(`wish:${w.id}`) || wishPending.has(`wish:${w.id}`))) ? 'open' : null,
+    }, el('summary', { text: `已实现、暂缓与取消（${wishes.filter((w) => w.status !== 'active').length}）` }));
     for (const wish of wishes) {
       const key = `wish:${wish.id}`;
       const busy = wishPending.has(key);
@@ -717,13 +800,14 @@ function mountBook(ctx) {
       }
       if (busy) actions.appendChild(el('span', { class: 'fun-dim', text: '保存中…' }));
       if (wishErrors.has(key)) actions.appendChild(el('span', { class: 'fun-trip-error', role: 'alert', text: wishErrors.get(key) }));
-      section.appendChild(el('div', { class: 'fun-wish fun-trip' },
+      (state === 'active' ? section : history).appendChild(el('div', { class: 'fun-wish fun-trip' },
         el('div', { class: 'fun-trip-head' },
           el('span', { class: 'fun-trip-name', text: wish.placeName ?? places.find((p) => p.id === wish.placeId)?.name ?? wish.placeId }),
           el('span', { class: 'fun-wish-status fun-dim', text: statusNames[state] ?? state ?? '状态未知' })),
         el('div', { class: 'fun-trip-sum', text: `${wishTypes[wish.type] ?? wish.type}${wish.target ? ` · ${wish.target}` : ''}` }),
         wish.reason ? el('div', { class: 'fun-wish-note fun-note', text: `缘由：${wish.reason}` }) : null, actions));
     }
+    if (wishes.some((w) => w.status !== 'active')) section.appendChild(history);
     body.appendChild(section);
   };
 
@@ -737,10 +821,11 @@ function mountBook(ctx) {
       const result = await ctx.invoke('wish', [payload]);
       if (!result?.ok) throw new Error(result?.error ?? '心愿保存失败');
       saved = true;
-      if (key === 'add') wishDraft = { placeId: '', type: '', target: '', reason: '' };
+      if (key === 'add') { wishDraft = { placeId: '', type: '', target: '', reason: '' }; wishFormOpen = false; }
       await load(true);
     } catch (error) {
       wishErrors.set(key, `${saved ? '已保存，但列表刷新失败：' : ''}${error?.message ?? String(error)}`);
+      if (key === 'add') wishFormOpen = true;
     } finally {
       wishPending.delete(key);
       render(currentData ?? data);
@@ -749,70 +834,78 @@ function mountBook(ctx) {
 
   const render = (data) => {
     currentData = data;
-    body.replaceChildren();
-    renderWishes(data);
-    if (!data.total && !data.session && !(data.keepsakeCount > 0)) {
+    body.replaceChildren(heading('纪念册', '把走过的地方，收成可以回看的小回忆。'));
+    if (data.session) body.appendChild(el('div', { class: 'fun-live' },
+      el('h3', { text: '正在逛 · ' + data.session.placeName }), el('div', { class: 'fun-trip-sum', text: data.session.summary })));
+    else if (data.trips?.length) body.appendChild(el('div', { class: 'fun-live' },
+      el('div', { class: 'fun-meta', text: '最近一趟 · ' + data.trips[0].day }),
+      el('h3', { text: data.trips[0].placeName }), el('div', { class: 'fun-trip-sum', text: data.trips[0].summary })));
+
+    const tabs = el('nav', { class: 'fun-tabs', 'aria-label': '纪念册分类' });
+    for (const [id, label] of [['all', '全部行程'], ['kept', '珍藏'], ['wishes', '心愿']]) tabs.appendChild(el('button', {
+      type: 'button', 'aria-pressed': String(bookTab === id), onclick: () => { bookTab = id; render(currentData); },
+    }, label));
+    body.appendChild(tabs);
+    if (bookTab === 'wishes') { renderWishes(data); return; }
+    if (!data.total && !(data.keepsakeCount > 0)) {
       body.appendChild(el('div', { class: 'fun-empty', text: '纪念册还是空的——她收一次摊，这里就有一趟。' }));
       return;
     }
-
     body.appendChild(el('div', { class: 'fun-stats' },
-      stat(data.totalRecent ?? data.total, '近期行程'),
-      stat(data.keepsakeCount ?? 0, '珍藏'),
-      stat(data.visitedAreaCount, '处逛过'),
-      stat(data.souvenirCount, '件纪念品'),
-      stat(data.photoCount, '张照片')));
-
-    if (data.mostVisited.length) {
-      body.appendChild(el('div', { class: 'fun-sec', text: '常去的' }));
-      body.appendChild(el('div', { class: 'fun-chips' },
-        data.mostVisited.slice(0, 8).map((m) => el('span', { class: 'fun-chip', text: `${m.name} ×${m.times}` }))));
-    }
-
-    if (data.session) {
-      body.appendChild(el('div', { class: 'fun-sec', text: '正在逛' }));
-      body.appendChild(el('div', { class: 'fun-trip' },
-        el('div', { class: 'fun-trip-sum', text: data.session.summary })));
-    }
-
-    body.appendChild(el('div', { class: 'fun-bar' },
-      el('button', { class: 'fun-toggle', type: 'button', 'aria-pressed': keepsakesOnly ? 'true' : 'false', onclick: () => { keepsakesOnly = !keepsakesOnly; render(data); } }, keepsakesOnly ? '全部行程' : '仅看珍藏')));
-    const trips = keepsakesOnly ? data.trips.filter((t) => t.kept) : data.trips;
-    body.appendChild(el('div', { class: 'fun-sec', text: keepsakesOnly ? `珍藏行程（${trips.length}）` : `近期与珍藏行程（${data.totalRecent ?? data.total}）` }));
+      stat(data.totalRecent ?? data.total, '近期行程'), stat(data.keepsakeCount ?? 0, '珍藏'),
+      stat(data.visitedAreaCount, '处逛过'), stat(data.souvenirCount, '件纪念品'), stat(data.photoCount, '张照片')));
+    if (data.mostVisited?.length) body.appendChild(el('details', { class: 'fun-wish-history' },
+      el('summary', { text: '常去的' }), el('div', { class: 'fun-chips' }, data.mostVisited.slice(0, 8).map((m) => el('span', { class: 'fun-chip', text: `${m.name} ×${m.times}` })))));
+    const trips = bookTab === 'kept' ? data.trips.filter((t) => t.kept) : data.trips;
+    let previousDay = null;
     for (const t of trips) {
+      if (t.day !== previousDay) { body.appendChild(el('div', { class: 'fun-date', text: t.day || '日期不详' })); previousDay = t.day; }
       const err = errors.get(t.id);
+      const open = expandedTrips.has(t.id);
       const toggleKeep = async () => {
         if (pending.has(t.id)) return;
-        pending.add(t.id);
-        errors.delete(t.id);
-        render(data);
+        pending.add(t.id); errors.delete(t.id); render(data);
         try {
           const result = await ctx.invoke('favorite', [{ id: t.id, keep: !t.kept }]);
           if (!result?.ok) throw new Error(result?.error ?? '珍藏状态保存失败');
-          await load();
-        } catch (error) {
-          errors.set(t.id, error?.message ?? String(error));
-          render(data);
-        } finally {
-          pending.delete(t.id);
-          render(currentData ?? data);
-        }
+          await load(true);
+        } catch (error) { errors.set(t.id, error?.message ?? String(error)); }
+        finally { pending.delete(t.id); render(currentData ?? data); }
       };
-      body.appendChild(el('div', { class: 'fun-trip' },
-        el('div', { class: 'fun-trip-head' },
-          el('span', { class: 'fun-trip-name', text: t.placeName }),
-          el('span', { class: 'fun-trip-when', text: `${t.day} ${t.enteredHm}–${t.leftHm}${t.stayedMin ? ` · ${t.stayedMin} 分钟` : ''}` })),
+      const card = el('article', { class: 'fun-trip fun-ticket' },
+        el('div', { class: 'fun-trip-head' }, el('span', { class: 'fun-trip-name', text: t.placeName }),
+          el('span', { class: 'fun-trip-when', text: t.enteredHm + '–' + t.leftHm + (t.stayedMin ? ' · ' + t.stayedMin + ' 分钟' : '') })),
         el('div', { class: 'fun-trip-sum', text: t.summary }),
-        (t.events.length || t.scene)
-          ? el('div', { class: 'fun-trip-extras' },
-            t.events.length ? el('div', { text: t.events.slice(0, 2).join(' / ') }) : null,
-            t.scene ? el('div', { text: `生图 scene：${t.scene}${t.outfit ? ` · outfits：${t.outfit}` : ''}` }) : null)
-          : null,
         el('div', { class: 'fun-trip-actions' },
+          el('button', { type: 'button', 'aria-expanded': String(open), onclick: () => {
+            if (open) expandedTrips.delete(t.id); else expandedTrips.add(t.id);
+            render(currentData);
+            const focus = body.querySelectorAll('.fun-detail-toggle');
+            [...focus].find((node) => node.getAttribute('data-trip-id') === t.id)?.focus();
+          }, class: 'fun-detail-toggle', 'data-trip-id': t.id }, open ? '收起详情' : '查看详情'),
           el('button', { type: 'button', disabled: pending.has(t.id) ? 'disabled' : null, onclick: toggleKeep }, pending.has(t.id) ? '保存中…' : (t.kept ? '取消珍藏' : '珍藏')),
-          err ? el('span', { class: 'fun-trip-error', role: 'alert', text: err }) : null)));
+          err ? el('span', { class: 'fun-trip-error', role: 'alert', text: err }) : null));
+      if (open) {
+        const detail = el('section', { class: 'fun-trip-detail', 'aria-label': t.placeName + '行程详情' });
+        const part = (title, values) => {
+          if (!values.length) return;
+          detail.appendChild(el('div', { class: 'fun-sec', text: title }));
+          detail.appendChild(el('ul', { class: 'fun-list' }, values.map((text) => el('li', { text }))));
+        };
+        if (t.company) detail.appendChild(el('p', { text: '同行 · ' + t.company }));
+        part('沿途逛过', t.visited ?? []);
+        part('遇见的小事', t.events ?? []);
+        part('当时的选择', (t.choices ?? []).map((c) => c.event + ' · ' + c.result));
+        part('带回的纪念品', t.souvenirs ?? []);
+        part('拍照记录', t.photos ?? []);
+        part('吃喝记录', (t.ate ?? []).map((x) => x.verb + '了 ' + x.item));
+        if (t.note) detail.appendChild(el('p', { text: '收摊备注 · ' + t.note }));
+        if (t.scene) detail.appendChild(el('p', { class: 'fun-dim', text: '生图 scene：' + t.scene + (t.outfit ? ' · outfits：' + t.outfit : '') }));
+        card.appendChild(detail);
+      }
+      body.appendChild(card);
     }
-    if (keepsakesOnly && !trips.length) body.appendChild(el('div', { class: 'fun-empty', text: '还没有珍藏的行程。' }));
+    if (bookTab === 'kept' && !trips.length) body.appendChild(el('div', { class: 'fun-empty', text: '还没有珍藏的行程。' }));
   };
 
   const stat = (n, label) => el('div', { class: 'fun-stat' },
@@ -822,10 +915,12 @@ function mountBook(ctx) {
     try {
       const data = await ctx.invoke('list');
       if (!data?.ok) throw new Error(data?.error ?? '返回不正常');
+      status.replaceChildren();
       render(data);
     } catch (err) {
       if (propagate) throw err;
-      body.replaceChildren(errorCard(err));
+      if (!currentData) body.replaceChildren();
+      status.replaceChildren(errorCard(err, load, Boolean(currentData)));
     }
   };
 
@@ -845,6 +940,9 @@ function mountShelf(ctx) {
   const box = shell(root);
   const body = el('div');
   box.appendChild(body);
+  const status = feedback(box);
+  let currentData = null;
+  body.appendChild(el('div', { class: 'fun-loading', role: 'status', text: '正在整理纪念品架…' }));
 
   const stat = (n, label) => el('div', { class: 'fun-stat' },
     el('b', { text: String(n) }), el('span', { text: label }));
@@ -852,10 +950,10 @@ function mountShelf(ctx) {
   const pct = (part) => `${part.done}/${part.total}`;
 
   const render = (data) => {
-    body.replaceChildren();
+    currentData = data;
+    body.replaceChildren(heading('纪念品架', '每一件小东西，都有带它回来的那一天。'));
     if (!data.total) {
       body.appendChild(el('div', { class: 'fun-empty', text: '架子上还什么都没有——她买过纪念品，这里就有了。' }));
-      return;
     }
 
     body.appendChild(el('div', { class: 'fun-stats' },
@@ -866,20 +964,20 @@ function mountShelf(ctx) {
 
     body.appendChild(el('div', { class: 'fun-meta', text: '收藏账本长期保留；详细行程可查看最近 40 趟与珍藏行程。进度按当前场所清单统计，移除或改名不删除旧回忆。' }));
 
-    body.appendChild(el('div', { class: 'fun-meta', text: '收藏账本长期保留；详细行程可查看最近 40 趟与珍藏行程。进度按当前场所清单统计，移除或改名不删除旧回忆。' }));
-
     // 每一处的架子：只列真有东西的，空的不用占版面。
-    body.appendChild(el('div', { class: 'fun-sec', text: '按地方归着' }));
+    if (data.byPlace.length) body.appendChild(el('div', { class: 'fun-sec', text: '按地方归着' }));
     for (const g of data.byPlace) {
       body.appendChild(el('div', { class: 'fun-trip' },
         el('div', { class: 'fun-trip-head' },
           el('span', { class: 'fun-trip-name', text: g.placeName }),
           el('span', { class: 'fun-trip-when', text: `${g.items.length} 样 · 最早 ${g.firstDay || '—'}` })),
-        ...g.items.map((it) => el('details', { class: 'fun-meta' },
-          el('summary', { text: `${it.name}${it.times > 1 ? ` ×${it.times}` : ''} · 记录中最早 ${it.firstDay || '日期不详'}` }),
+        el('div', { class: 'fun-shelf-grid' }, g.items.map((it) => el('details', { class: 'fun-keepsake' },
+          el('summary', null, el('strong', { text: `${it.name}${it.times > 1 ? ` ×${it.times}` : ''}` }),
+            el('span', { class: 'fun-dim', text: `记录中最早 ${it.firstDay || '日期不详'}` })),
+          it.archivedCount ? el('div', { class: 'fun-note', text: `${it.archivedCount} 次收藏仅保留账本，详细行程已不在近期记录中。` }) : null,
           ...(it.memories ?? []).map((m) => el('div', { class: 'fun-trip-sum' },
             el('div', { text: `${m.day || '日期不详'} · ${m.summary}` }),
-            m.note ? el('div', { text: `你记的：${m.note}` }) : null))))));
+            m.note ? el('div', { text: `你记的：${m.note}` }) : null)))))));
     }
 
     // 进度：只列去过的。服务端已按「快逛遍的」排好，这里照顺序画。
@@ -892,6 +990,7 @@ function mountShelf(ctx) {
           el('div', { class: 'fun-trip-head' },
             el('span', { class: 'fun-trip-name', text: p.placeName }),
             el('span', { class: 'fun-trip-when', text: `去过 ${p.visits} 次 · ${p.percent}%` })),
+          el('progress', { class: 'fun-progress', max: '100', value: String(p.percent), 'aria-label': `${p.placeName}探索进度 ${p.percent}%` }),
           el('div', { class: 'fun-meta', text: `逛过 ${pct(p.areas)}${p.souvenirs.total ? ` · 纪念品 ${pct(p.souvenirs)}` : ''}${p.photos.total ? ` · 拍过 ${pct(p.photos)}` : ''}` }),
           left
             ? el('div', { class: 'fun-trip-sum', text: `还差：${p.areas.left.slice(0, 6).join('、')}${left > 6 ? ` 等 ${left} 处` : ''}` })
@@ -904,12 +1003,11 @@ function mountShelf(ctx) {
     try {
       const data = await ctx.invoke('list');
       if (!data?.ok) throw new Error(data?.error ?? '返回不正常');
+      status.replaceChildren();
       render(data);
     } catch (err) {
-      root.replaceChildren();
-      ensureStyle(root);
-      const box2 = shell(root);
-      box2.appendChild(errorCard(err));
+      if (!currentData) body.replaceChildren();
+      status.replaceChildren(errorCard(err, load, Boolean(currentData)));
     }
   };
 

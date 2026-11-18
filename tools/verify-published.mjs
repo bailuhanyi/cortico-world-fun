@@ -64,6 +64,18 @@ const ok = (cond, what, extra = '') => {
   else { failures += 1; console.log(`  FAIL ${what}${extra ? ` -> ${extra}` : ''}`); }
 };
 
+function checkNames(entries, key, label) {
+  const names = Array.isArray(entries) ? entries.map((entry) => entry?.[key]) : [];
+  const valid = names.length > 0 && names.every((name) => typeof name === 'string' && name.trim().length > 0);
+  const unique = new Set(names).size === names.length;
+  ok(valid && unique, `${label}非空且不重复`, JSON.stringify(names));
+  return valid && unique ? names.sort() : null;
+}
+
+function sameNames(left, right) {
+  return left !== null && right !== null && JSON.stringify(left) === JSON.stringify(right);
+}
+
 const tarballUrl = `https://registry.npmjs.org/${NAME}/-/${NAME}-${version}.tgz`;
 console.log(`验证 npm 上的 ${NAME}@${version}`);
 console.log(`  ${tarballUrl}`);
@@ -137,40 +149,70 @@ try {
   const dataDir = join(work, 'data');
   const world = def.create({ cfg: def.defaults(), dataDir, timezone: 'Asia/Shanghai', persist: () => {} });
   await world.start({ log: { info() {}, warn() {}, error() {} } });
-  const tool = (n) => world.tools().find((t) => t.name === n).handler;
-  ok(world.tools().length === 6, '六个工具都在');
+  const marketDescribe = JSON.parse(await readFile(join(pkgDir, 'describe.json'), 'utf8'));
+  const tools = world.tools();
+  const marketNames = checkNames(marketDescribe.tools, 'name', 'describe.json 工具名称');
+  const definitionNames = checkNames(def.describe?.tools, 'name', 'WorldDefinition 工具名称');
+  const runtimeNames = checkNames(tools, 'name', '运行时工具名称');
+  ok(sameNames(marketNames, definitionNames), 'describe.json 与 WorldDefinition 工具名称一致',
+    `describe.json=${JSON.stringify(marketNames)}，WorldDefinition=${JSON.stringify(definitionNames)}`);
+  ok(sameNames(definitionNames, runtimeNames), 'WorldDefinition 与运行时工具名称一致',
+    `WorldDefinition=${JSON.stringify(definitionNames)}，运行时=${JSON.stringify(runtimeNames)}`);
 
+  const tool = (name) => {
+    const handler = tools.find((entry) => entry.name === name)?.handler;
+    if (typeof handler !== 'function') throw new Error(`工具 ${name} 缺少 handler`);
+    return handler;
+  };
   const go = await tool('fun_go')({ place: '海洋馆' });
-  ok(/进了海洋馆/.test(go.text), '进门正常');
-  await tool('fun_wander')({ area: '海底隧道', buy: '鲸鱼挂件' });
+  ok(!go.failed && /进了海洋馆/.test(go.text), '进门正常', go.text);
+  const wander = await tool('fun_wander')({ area: '海底隧道', buy: '鲸鱼挂件' });
+  ok(!wander.failed, '游逛工具执行成功', wander.text);
+  // 待选择事件只拦下一次游逛，仍可直接收摊。
   const home = await tool('fun_home')({});
-  ok(/scene 填「水族馆」/.test(home.text), '收摊回执带 scene');
+  ok(!home.failed && /scene 填「水族馆」/.test(home.text), '收摊回执带 scene', home.text);
 
   console.log('7) 面板数据面能跑（服务端那半边）');
   const ui = world.webUi('zh');
-  ok(ui.panels?.length === 2, `声明了 2 个面板（实际 ${ui.panels?.length}）`);
-  const places = await ui.invoke('places', 'list', []);
-  ok(places.ok === true, 'places 面板取数成功');
+  const declared = checkNames(ui.panels, 'id', '服务端面板 ID');
+  const lists = new Map();
+  for (const id of declared ?? []) {
+    const { getMethods } = ui.panels.find((panel) => panel.id === id);
+    const hasList = Array.isArray(getMethods) && getMethods.includes('list');
+    ok(hasList, `${id} 在 getMethods 中声明 list`);
+    if (!hasList) continue;
+    try {
+      const result = await ui.invoke(id, 'list', []);
+      ok(result?.ok === true, `${id} 面板取数成功`, result?.error);
+      lists.set(id, result);
+    } catch (error) {
+      ok(false, `${id} 面板取数成功`, error?.message ?? String(error));
+    }
+  }
+  const places = lists.get('places');
   // 绑包里那份预设库，别写死数字：0.1.4 从 12 处加到 20 处时，写死的 12 让验包一直红。
   // dataDir 是临时空目录，纯预设、没有用户自填，total 应当正好等于预设数。
   const presetCount = Array.isArray(mod.VENUES) ? mod.VENUES.length : null;
   ok(presetCount !== null, '包里导出了 VENUES（能拿到预设场所数）');
-  ok(presetCount !== null && places.total === presetCount,
-    `${presetCount ?? '?'} 处预设场所（实际 ${places.total}）`);
-  const book = await ui.invoke('book', 'list', []);
-  ok(book.ok === true, 'book 面板取数成功');
-  ok(book.total === 1, `纪念册里有一趟（实际 ${book.total}）`);
+  ok(presetCount !== null && places?.total === presetCount,
+    `${presetCount ?? '?'} 处预设场所（实际 ${places?.total}）`);
+  const book = lists.get('book');
+  ok(book?.total === 1, `纪念册里有一趟（实际 ${book?.total}）`);
+  ok(book?.trips?.[0]?.visited?.includes('海底隧道'), '纪念册记下游逛项目');
+  ok(book?.trips?.[0]?.souvenirs?.includes('鲸鱼挂件'), '纪念册记下所买纪念品');
   await world.stop();
 
   console.log('8) 面板 bundle 能对上线上的服务端');
   if (clientRel && existsSync(join(pkgDir, clientRel))) {
     const bundle = await import(pathToFileURL(join(pkgDir, clientRel)).href);
-    const declared = ui.panels.map((p) => p.id).sort();
-    const exported = Object.keys(bundle.default.panels).sort();
-    ok(JSON.stringify(exported) === JSON.stringify(declared),
-      `客户端导出 ${exported.join('、')} 与服务端声明 ${declared.join('、')} 对得上`);
-    for (const id of declared) {
-      ok(typeof bundle.default.panels[id].mount === 'function', `${id} 有 mount`);
+    const panels = bundle.default?.panels;
+    const exported = panels && typeof panels === 'object' && !Array.isArray(panels)
+      ? Object.keys(panels).sort()
+      : null;
+    ok(sameNames(exported, declared), '客户端导出与服务端声明的面板 ID 一致',
+      `客户端=${JSON.stringify(exported)}，服务端=${JSON.stringify(declared)}`);
+    for (const id of declared ?? []) {
+      ok(typeof panels?.[id]?.mount === 'function', `${id} 有 mount`);
     }
   }
 } catch (err) {
