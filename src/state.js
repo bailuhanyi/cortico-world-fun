@@ -5,7 +5,7 @@
  *
  * 状态形状（落 `<dataDir>/fun/state.json`）：
  * {
- *   day: '2026-11-15',            // 本地日期，跨天就整份重来
+ *   day: '2026-11-15',            // 本地日期
  *   session: null | {             // 正在逛的这一趟；null = 没在逛
  *     id, placeId, placeName, scene, outfit,
  *     enteredAt, lastAt,          // ms
@@ -14,6 +14,7 @@
  *     photos: [string],
  *     events: [string],
  *   },
+ *   draft: null,                  // 跨天超时、等待处理的行程
  *   trips: [{ placeId, placeName, scene, outfit, enteredAt, leftAt, visited, souvenirs, photos, events }],
  * }
  *
@@ -23,6 +24,9 @@
 
 import { VENUES, hoursState, pickSome } from './venues.js';
 import { normalizeWishes } from './wishes.js';
+import { normalizeStoryProgress } from './story-packs.js';
+import { normalizeExploration, recordExploration } from './exploration.js';
+import { normalizeTimeline, normalizeRoute, normalizeRoutes, addMoment, timelineFor } from './journeys.js';
 
 /** 纪念册最多留几趟。 */
 export const MAX_TRIPS = 40;
@@ -71,7 +75,7 @@ export function minutesIn(tz, nowMs) {
 
 /** 当天的新状态。 */
 export function newState(day) {
-  return { day, session: null, trips: [], collection: [], keepsakeTrips: [], tripSeq: 0, wishes: [] };
+  return { day, session: null, draft: null, route: null, routes: [], routeSeq: 0, exploration: [], trips: [], collection: [], keepsakeTrips: [], tripSeq: 0, wishes: [] };
 }
 
 export function newTripId(placeId, enteredAt, leftAt) {
@@ -85,7 +89,7 @@ function seedCollection(trips, timezone = 'Asia/Shanghai') {
     const placeName = text(trip?.placeName, 40) || placeId;
     const day = tripDay(trip, timezone);
     for (const name of new Set(textList(trip?.souvenirs, 12, 40))) {
-      entries.push({ placeId, placeName, name, day, at: Number(trip.leftAt) || 0, tripId: text(trip.id, 60) });
+      entries.push({ placeId, placeName, name, day, at: Number(trip.leftAt) || 0, tripId: text(trip.id, 100) });
     }
   }
   return mergeCollection([], entries);
@@ -102,7 +106,7 @@ function mergeKeptTrips(kept, recent) {
 }
 
 function stableTripId(raw) {
-  const id = text(raw?.id, 60);
+  const id = text(raw?.id, 100);
   return id || newTripId(raw?.placeId, raw?.enteredAt, raw?.leftAt);
 }
 
@@ -116,13 +120,13 @@ function mergeCollection(existing, additions) {
     const day = text(item.day, 10);
     const at = Number(item.at) || 0;
     const cur = map.get(key);
-    if (!cur) map.set(key, { key, placeId, placeName: text(item.placeName, 40) || placeId, name, firstDay: text(item.firstDay, 10) || day, lastDay: text(item.lastDay, 10) || day, firstAt: Number(item.firstAt) || at, lastAt: Number(item.lastAt) || at, times: Math.max(1, Number(item.times) || 1), tripIds: Array.isArray(item.tripIds) ? textList(item.tripIds, 100, 60) : (item.tripId ? [text(item.tripId, 60)] : []) });
+    if (!cur) map.set(key, { key, placeId, placeName: text(item.placeName, 40) || placeId, name, firstDay: text(item.firstDay, 10) || day, lastDay: text(item.lastDay, 10) || day, firstAt: Number(item.firstAt) || at, lastAt: Number(item.lastAt) || at, times: Math.max(1, Number(item.times) || 1), tripIds: Array.isArray(item.tripIds) ? textList(item.tripIds, 100, 100) : (item.tripId ? [text(item.tripId, 100)] : []) });
     else {
       cur.times += Math.max(1, Number(item.times) || 1);
-      if (Array.isArray(item.tripIds)) for (const tripId of item.tripIds) if (!cur.tripIds.includes(tripId)) cur.tripIds.push(text(tripId, 60));
+      if (Array.isArray(item.tripIds)) for (const tripId of item.tripIds) if (!cur.tripIds.includes(tripId)) cur.tripIds.push(text(tripId, 100));
       if (day && (!cur.firstDay || day < cur.firstDay)) { cur.firstDay = day; cur.firstAt = at; }
       if (day && (!cur.lastDay || day > cur.lastDay)) { cur.lastDay = day; cur.lastAt = at; }
-      if (item.tripId && !cur.tripIds.includes(item.tripId)) cur.tripIds.push(text(item.tripId, 60));
+      if (item.tripId && !cur.tripIds.includes(item.tripId)) cur.tripIds.push(text(item.tripId, 100));
     }
   }
   return [...map.values()].sort((a, b) => b.lastAt - a.lastAt || a.name.localeCompare(b.name));
@@ -189,8 +193,9 @@ function normalizeTrip(raw, fallbackId = '') {
   const placeId = text(raw.placeId, 40);
   if (!placeId) return null;
   return {
-    id: fallbackId || text(raw.id, 60) || newTripId(placeId, raw.enteredAt, raw.leftAt),
+    id: fallbackId || text(raw.id, 100) || newTripId(placeId, raw.enteredAt, raw.leftAt),
     placeId,
+    sequence: Number.isSafeInteger(raw.sequence) && raw.sequence > 0 ? raw.sequence : 0,
     placeName: text(raw.placeName, 40) || placeId,
     scene: text(raw.scene, 40),
     outfit: text(raw.outfit, 40),
@@ -198,6 +203,14 @@ function normalizeTrip(raw, fallbackId = '') {
     company: text(raw.company, 40),
     enteredAt: Number.isFinite(Number(raw.enteredAt)) ? Number(raw.enteredAt) : 0,
     leftAt: Number.isFinite(Number(raw.leftAt)) ? Number(raw.leftAt) : 0,
+    pausedMs: Number.isFinite(raw.pausedMs) ? Math.max(0, raw.pausedMs) : 0,
+    routeId: text(raw.routeId, 100),
+    routeOrder: [1, 2].includes(raw.routeOrder) ? raw.routeOrder : 0,
+    phases: [...new Set(textList(raw.phases, 20, 40))],
+    branchSeen: [...new Set(textList(raw.branchSeen, 40, 100))],
+    storyProgress: normalizeStoryProgress(raw.storyProgress),
+    timelineTruncated: raw.timelineTruncated === true || (Array.isArray(raw.timeline) && raw.timeline.length > 240),
+    timeline: normalizeTimeline(raw.timeline?.length ? raw.timeline : timelineFor({ ...raw, placeName: text(raw.placeName, 40) || placeId })),
     /**
      * 收摊那天的**本地**日期（YYYY-MM-DD）。
      *
@@ -224,40 +237,27 @@ function normalizeSession(raw) {
   if (!trip) return null;
   return {
     ...trip,
-    id: text(raw.id, 40) || `${trip.placeId}-${trip.enteredAt}`,
+    id: text(raw.id, 100) || `${trip.placeId}-${trip.enteredAt}`,
     lastAt: Number.isFinite(Number(raw.lastAt)) ? Number(raw.lastAt) : trip.enteredAt,
     pendingChoice: normalizePendingChoice(raw.pendingChoice),
   };
 }
 
-/**
- * 把磁盘上的旧状态补齐成当前形状（不信任文件内容）。
- *
- * ## 跨天为什么不再无脑清 session
- *
- * 0.1.5 及以前：`raw.day !== day` 就直接 `session = null`。这看起来合理
- * （「昨天没逛完就是不逛完了」），实际会踩一条真会发生的路：
- *
- *   夜市 17:30–01:00、KTV 18:00–02:00。23:50 进夜市逛着，过了午夜再
- *   `fun_wander`，回执就是「你还没进门呢」——她正在逛的那一趟凭空消失，
- *   而那个地方本来就没打烊。
- *
- * 现在的判据是两条取或：
- *
- *   1. **还是同一天** → 留着。同一天里挂久了不算「没逛完」，`fun_wander`
- *      会提一句「挂得有点久了」，但绝不替她把这一趟收掉（这是 0.1.4 的行为，
- *      不能因为修跨午夜就一起改坏）。
- *   2. **跨了天，但上一次动在 TTL 之内** → 留着。这就是夜市/KTV 那条路。
- *
- * 跨了天、又挂过 TTL 的才丢（「逛到一半去睡觉，第二天回来发现不算了」）。
- *
- * 纪念册（`trips`）**任何时候都不清**——跨天该清的是「今天正在逛什么」，
- * 不是「她去过哪儿」。这一条是 0.1.5 修的，别改回去。
- */
+/** 只读区分正在逛和跨天超时的未完行程。 */
+export function outingStatus(state, day, nowMs, ttlMin, timezone = 'Asia/Shanghai') {
+  const session = state?.session ?? null;
+  const lastAt = session?.lastAt || session?.enteredAt;
+  const expired = session && !sessionAlive(session, nowMs, ttlMin)
+    && (lastAt ? dayIn(timezone, lastAt) : state.day) !== day;
+  return { session: expired ? null : session, draft: expired ? session : (state?.draft ?? null) };
+}
+
+/** 兼容旧状态，跨天超时只暂停行程，仍保留已发生的事。 */
 export function normalizeState(raw, day, nowMs = 0, ttlMin = DEFAULT_TTL_MIN, timezone = 'Asia/Shanghai') {
   if (!raw || typeof raw !== 'object') return newState(day);
-  const session = normalizeSession(raw.session);
-  const keep = session && (raw.day === day || sessionAlive(session, nowMs, ttlMin));
+  const { session, draft } = outingStatus({
+    day: raw.day, session: normalizeSession(raw.session), draft: normalizeSession(raw.draft),
+  }, day, nowMs, ttlMin, timezone);
   const rawTrips = Array.isArray(raw.trips) ? raw.trips : [];
   const used = new Set();
   const trips = rawTrips.map((t, i) => {
@@ -268,18 +268,35 @@ export function normalizeState(raw, day, nowMs = 0, ttlMin = DEFAULT_TTL_MIN, ti
     if (normalized && !t?.id) normalized.id = id;
     return normalized;
   }).filter(Boolean).slice(0, MAX_TRIPS);
-  const nextTripSeq = Number.isInteger(raw.tripSeq) && raw.tripSeq >= 0
+  const routes = normalizeRoutes([...(Array.isArray(raw.routes) ? raw.routes : []), raw.route]);
+  const candidate = normalizeRoute(raw.route);
+  const route = raw.route === undefined
+    ? [...routes].reverse().find((r) => ['planned', 'active', 'between'].includes(r.status)) ?? null
+    : candidate && ['planned', 'active', 'between'].includes(candidate.status) ? candidate : null;
+  const exploration = normalizeExploration(raw.exploration, [...trips, ...mergeKeptTrips(raw.keepsakeTrips, trips)], timezone);
+  const priorTripSeq = Number.isInteger(raw.tripSeq) && raw.tripSeq >= 0
     ? raw.tripSeq
     : trips.length + (Array.isArray(raw.keepsakeTrips) ? raw.keepsakeTrips.length : 0);
+  const nextTripSeq = Math.max(priorTripSeq, exploration.reduce((n, row) => Math.max(n, row.lastSequence || 0), 0), trips.reduce((n, trip) => Math.max(n, trip.sequence || 0), 0));
   return {
     day,
-    session: keep ? session : null,
+    session,
+    draft,
     trips,
     collection: Array.isArray(raw.collection) ? mergeCollection(raw.collection, []) : seedCollection(trips, timezone),
     keepsakeTrips: mergeKeptTrips(raw.keepsakeTrips, trips),
     tripSeq: nextTripSeq,
+    routeSeq: Math.max(0, Math.floor(Number(raw.routeSeq) || 0)),
+    route,
+    routes: routes.filter((r) => r.id === route?.id || r.id === session?.routeId || r.id === draft?.routeId || [...trips, ...mergeKeptTrips(raw.keepsakeTrips, trips)].some((t) => t.routeId === r.id)),
+    exploration,
     wishes: normalizeWishes(raw.wishes),
   };
+}
+
+/** 逗留时间不包含上次活动到恢复之间的暂停。 */
+export function outingMinutes(outing, endAt) {
+  return Math.max(0, Math.round((endAt - outing.enteredAt - (outing.pausedMs ?? 0)) / 60000));
 }
 
 /** 和 config.js 的 `funSessionTTLMin` 默认值保持一致（纯函数不 import 配置，防循环依赖）。 */
@@ -332,6 +349,10 @@ export function enterVenue(state, venue, nowMs, random = Math.random, company = 
     ate: [],
     events: [],
     choices: [],
+    phases: [],
+    branchSeen: [],
+    storyProgress: [],
+    timeline: [],
   };
   state.session = session;
   return { session, already: false };
@@ -435,7 +456,7 @@ export function buySouvenir(state, item, nowMs) {
  * 上海时间早上 8 点前收的摊会被算成前一天。不传就留空，读的一方回退到
  * 按插件当前时区读取 leftAt（不迁移、不改写旧记录）。
  */
-export function closeSession(state, nowMs, note = '', day = '') {
+export function closeSession(state, nowMs, note = '', day = '', timezone = 'Asia/Shanghai') {
   const s = state.session;
   if (!s) return null;
   const said = text(note, 120);
@@ -443,6 +464,7 @@ export function closeSession(state, nowMs, note = '', day = '') {
   const trip = {
     id: `${newTripId(s.placeId, s.enteredAt, nowMs)}-${state.tripSeq}`,
     favorite: false,
+    sequence: state.tripSeq,
     placeId: s.placeId,
     placeName: s.placeName,
     scene: s.scene,
@@ -450,6 +472,14 @@ export function closeSession(state, nowMs, note = '', day = '') {
     company: text(s.company, 40),
     enteredAt: s.enteredAt,
     leftAt: nowMs,
+    pausedMs: s.pausedMs ?? 0,
+    routeId: text(s.routeId, 100),
+    routeOrder: [1, 2].includes(s.routeOrder) ? s.routeOrder : 0,
+    phases: [...(s.phases ?? [])],
+    branchSeen: [...(s.branchSeen ?? [])],
+    storyProgress: normalizeStoryProgress(s.storyProgress),
+    timelineTruncated: s.timelineTruncated === true || (s.timeline?.length ?? 0) >= 240,
+    timeline: normalizeTimeline(s.timeline),
     leftDay: DAY_RE.test(text(day, 10)) ? text(day, 10) : '',
     // 收摊这句话以前只出现在回执里，转头就没了：纪念册重看这一趟只剩「逛了哪儿」。
     // 「今天人很多，但很开心」这种话才是她自己的记录，必须存。
@@ -462,13 +492,15 @@ export function closeSession(state, nowMs, note = '', day = '') {
     events: [...s.events],
     choices: normalizeChoices(s.choices),
   };
+  addMoment(trip, 'close', said ? '收摊 · ' + said : '收摊', nowMs);
   state.session = null;
+  state.exploration = recordExploration(state.exploration, trip, timezone);
   state.trips.unshift(trip);
   state.collection = mergeCollection(state.collection, [...new Set(s.souvenirs)].map((name) => ({ placeId: s.placeId, placeName: s.placeName, name, day, at: nowMs, tripId: trip.id })));
   const savedTrip = state.keepsakeTrips?.find((x) => x.id === trip.id);
   if (savedTrip) state.keepsakeTrips = state.keepsakeTrips.map((x) => x.id === trip.id ? structuredClone(trip) : x);
   if (state.trips.length > MAX_TRIPS) state.trips.length = MAX_TRIPS;
-  const stayedMin = Math.max(0, Math.round((nowMs - s.enteredAt) / 60000));
+  const stayedMin = outingMinutes(s, nowMs);
   return { trip, stayedMin, note: said };
 }
 

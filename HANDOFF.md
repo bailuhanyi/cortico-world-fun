@@ -1,224 +1,113 @@
-# 娱乐时间插件 0.2.0 交接文档
+# 娱乐时间 0.3.0 交接文档
 
-- 更新时间：2026-11-18 13:00（Asia/Shanghai）
-- 工作目录：`E:\deep seek\fun-world`
-- 包名：`cortico-world-fun`
-- 本地版本：`0.2.1`（发布准备，尚未发布）
-- 运行要求：Node `>=22`、ESM；Coo World API `6`
+更新日期：2026-11-19，时区 Asia/Shanghai。本文是当前接手入口；旧交接与发布流程已原样保存在 [docs/history](docs/history)，不要用旧测试数、旧版本和旧待办覆盖本文。
 
-## 2026-11-18 0.2.1 发布准备（最新状态）
+## 当前结论
 
-- 用户要求准备发布。本地版本从 0.2.0 升至 **0.2.1**，已补充 CHANGELOG 与 README；本轮未运行 npm publish，不提交、不推送、不安装 Coo。
-- npm 实时核对：latest 返回 0.2.0，0.2.1 端点返回 404；发布检查也确认目标版本未占用。该状态仅代表本轮核对时刻。
-- `publish-check.mjs --online` 改为直接请求 registry，不再通过捕获 npm 子进程输出查询；检查目标版本是否已发布，避免重复发布。校验结果为 **26 项通过、0 失败、1 警告（无市场截图）**。
-- `verify-published.mjs` 已移除 6 工具/2 面板旧断言，改为包内 describe、definition 与运行时工具名称对账，检测重复及空名称，并逐个检查面板 list 与 bundle ID/mount。
-- **线上 0.2.0 整包验收现已通过**：下载/解包 23 个条目、工具名称、20 处预设、三个面板取数、完整海洋馆出游及纪念册持久记录均通过。下文“尚未完成线上整包验证”的历史记录已被本条更新。
-- 0.2.1 完整 `prepublishOnly` 与本地 `verify-tarball` 通过，面板 **42/42**，世界集成 **75/75**。包版本准备不等于线上发布，不将本地测试写成 Coo 视觉验收。
-- 已生成本地待发布包 `.tmp/cortico-world-fun-0.2.1.tgz`：23 个文件、压缩 194,000 字节、解包 432,186 字节；SHA-1 `6c3b96e8ff805e6a4dc4f829eaf5cdc3e880af3f`。已核对版本、更新日志、UI 内容及排除清单，未混入测试、工具、运行时数据或本地日志。此摘要对应本轮打包产物，后续修改包内文件需重新打包。
-- 尚未完成：Coo 视觉验收、市场截图、Git 发布提交/同步、正式 npm 发布以及 0.2.1 上线后整包验证。正式发布前重新确认目标版本未被占用。
+- 项目目录：`E:\deep seek\fun-world`；包名 `cortico-world-fun`，显示名「娱乐时间」，作者沿用包元数据中的「青」。
+- 本地待发版本：**0.3.0**。本轮从已发布的 0.2.1 升至功能版本 0.3.0，不要再次运行 `npm version`。
+- 2026-11-19 21:52（Asia/Shanghai）查询 npm：`latest` 为 **0.2.1**，0.3.0 不存在。查询记录位于 `.tmp/release-0.3.0/registry-check.json`；发布前须再次核对。
+- 用户已追加授权**本地 Git 提交**；本次提交收纳 0.3.0 功能、测试与交接说明。npm 发布由用户自行执行；本轮不推送远端、不打标签，也不安装或重启 Coo。实机视觉验收和市场截图仍未完成。
+- 运行要求：Node >=22、ESM、Coo World API 6。运行时 **14 个工具、4 个面板、0 个主动事件、1 份环境提示词**。
 
-## 2026-11-18 UI 精修补记（本地未发布）
+## 用户已确定的方向
 
-本节记录本次修改，优先于下文旧快照中的工作树状态。检查时本地 `main` 的 HEAD 已为 `d72de5f`（0.2.0 功能提交），不是旧快照中的 `074bc35`；本次未 fetch，不据此推断远端状态。
+1. 用户自填剧情为主，预设只提供少量示例。本版附三个独立原创、可逐个停用的示例。
+2. 尽量不借鉴其他 Coo 插件。本轮独立实现，没有复制或接入其他 Coo 插件的运行逻辑；没有新增外部扩展依赖。
+3. 正常升级不覆盖用户地点、故事和启停设置。重复导入同 ID 必须明确确认；新增预设重名时保留已存用户内容优先。
+4. 自填地点没有专属剧情也能普通游逛、遇到自填小事、购买和拍照。地点/项目失效时只暂停关联剧情，不要求补齐所有剧情。
+5. 小镇地图未做。以后如做，应是稳定地点 ID 加可选布局的视图，未放置地点保留列表；不得把坐标变成出游前置条件。这里是设计约束，不是地图验收结论。
 
-- 修改 `dist/webui.js`：统一轻手账风格、字号/留白/圆角、键盘焦点及窄屏布局，继续使用宿主主题变量。
-- 地点增加「全部 / 现在开着 / 室内 / 户外 / 夜游 / 我的地点」单选快捷筛选，与搜索取交集；管理按钮降低视觉强调。室内/户外/夜游按现有地点标签筛选，不猜测用户未填写的属性。
-- 纪念册先展示当前或最近一趟；增加「全部行程 / 珍藏 / 心愿」切换，行程按日期分组。原有「常去的」保留为折叠区域。
-- 心愿新增表单默认折叠，点击「记个心愿」展开，保存成功后收起；非活动心愿折叠收纳，有操作错误时显示对应反馈。
-- 每趟增加「查看详情 / 收起详情」，展示已有路线、全部事件、选择结果、纪念品、拍照、吃喝、同行人、收摊备注与有事实来源的 scene/outfits。没有新增备注编辑、图片导出或新玩法。
-- 纪念品架改为收藏小卡，增加原生探索进度条、旧详情缺失提示，去除重复说明；没有纪念品时仍显示已去地点的探索进度。
-- 三个面板增加初始加载提示与失败重试；刷新失败时保留上次成功内容。
-- 沿用既有服务端接口，没有改动状态格式、提示词、工具声明或包版本。
-- 验证：`node --check dist/webui.js`、全量 `npm test`（世界集成 75/75、面板 42/42）、`npm run verify`、`node tools/verify-tarball.mjs`、`git diff --check` 通过。差异检查只有 CRLF 提示。
-- 本地 Edge 截图进程遇到访问拒绝，未取得渲染截图；尚未在 Coo 中安装、重启或进行实机视觉验收。本地预览夹具位于被忽略的 `.tmp`，不会进入发布包。
-- 未提交、推送、打标签或发布；现有 `verification-token.log` 未改动。发布前需另定新版本并完成验收，不能覆盖已发布的 0.2.0。
-- Hindsight 检索、页面列表和 initiative 记录均因 `127.0.0.1:9077` 连接拒绝而失败，不能声称已写入远端记忆。
+## 本版已完成
 
-## 1. 当前结论（13:00 历史快照，UI 更新见上节）
+- **行程恢复**：同日挂久仍可继续，跨午夜在 TTL 内保留；跨天超时变为未完草稿，可明确续逛或按最后活动记录收摊。暂停时长不计入逗留，重复提交和关停写盘竞争已处理。
+- **推荐**：营业状态优先，按当前时段可逛项目生成；包含心愿、重游理由及下一个可实现心愿时段，不主动催促。
+- **长期探索**：独立保存到访、项目、拍照、小事与时段，不随近期 40 趟裁剪。新记录以单调序号去重，旧 ID 保留作迁移来源，不猜补已被旧版删掉的经历。
+- **剧情与路线**：真实选择影响后续事件；两站出门分站存档、按同一出门分组，下一站、换站和取消后续均需明确动作，不自动移动。
+- **用户剧情包**：简易表单以及高级 JSON 模板、校验、只读预览、导入导出和启停管理。纯数据 version 1，校验大小、引用、可达性与无循环；最多 20 个自定义包、每包 32 KB/16 节点。已给出的选择使用持久快照，改版后本趟不偷偷重演。
+- **手账界面**：四个面板包括地点剧情包；二十处原创 SVG 插画、纪念品物件图标、推荐层级、组合检索、关联回看、两站分组和沿途时间线。旧时间缺失明确显示未知；长时间线保留进门与最新尾部，并标明省略。保留主题、窄屏、键盘及减少动态效果支持。
 
-**0.2.0 已发布到 npm，`latest` 已指向 0.2.0。** 本次交接现场查询以下两个端点均返回 HTTP 200、版本 0.2.0：
-
-- [npm 0.2.0 元数据](https://registry.npmjs.org/cortico-world-fun/0.2.0)
-- [npm latest 元数据](https://registry.npmjs.org/cortico-world-fun/latest)
-
-上一轮发布准备时曾查到 0.2.0 为 404；那是发布前状态，已被本次查询结果更新。**不要重复发布 0.2.0，也不要为了完成这次交接再次升版。**
-
-已完成 Token 与上下文优化、版本定为 0.2.0、更新日志整理和发布前验证。当前还有未提交的源码、测试、文档及新文件；不能把“npm 已发布”理解成“Git 已提交并同步”。
-
-本会话没有执行 Coo 安装或重启验收。Coo 当前是否已安装 0.2.0、扩展市场是否已收录，均未核实。线上包的完整下载、解包、运行验收也尚未完成，相关脚本存在旧断言，见下一节。
-
-## 2. 接手后优先处理
-
-1. 修正 [verify-published.mjs](<E:/deep seek/fun-world/tools/verify-published.mjs>) 的过时检查，再运行线上包验证。当前第 141 行写死“6 个工具”，第 151 行写死“2 个面板”；0.2.0 实际是 **11 个工具、3 个面板**。这两条会对当前版本误报。应核对工具名称、包内描述与运行时声明，以及客户端/服务端面板 ID 的一致性，不要只依赖旧的固定数量。
-2. 修正后执行 `node tools/verify-published.mjs 0.2.0`，确认线上包可下载、面板文件存在、从安装形态能够跑完出游。当前只有 npm 元数据核实及发布前的本地安装形态验证通过，不能写成线上整包验收已通过。
-3. 核对工作树并整理 0.2.0 的 Git 提交、推送及标签。当前发布包的 `gitHead` 仍指向 0.1.6 的提交，新增功能在未提交工作树里。提交前逐项审查文件，不要直接把本地日志一起提交。
-4. 如需 Coo 实机验收，先确认本机安装版本；本地安装前阅读 [安装脚本](<E:/deep seek/fun-world/install.ps1>)，先执行 `-DryRun`，再按需关闭 Coo、安装并重启验收。npm 发布与本地安装是两项独立状态。
-5. 核对扩展市场收录情况。市场截图尚未配置；这在发布检查中是非阻断警告。如后续需要截图或其他包内内容变更，应另行准备新版本。
-
-本轮只更新交接与发布状态说明，没有改动上述线上验包脚本，也没有执行发布、Git 提交或部署。
-
-## 3. 发布包与 Git 状态
-
-### npm 产物
-
-- 已发布版本：`cortico-world-fun@0.2.0`。
-- [发布 tarball](https://registry.npmjs.org/cortico-world-fun/-/cortico-world-fun-0.2.0.tgz)。
-- 文件数：23。
-- 解包大小：419,041 字节（npm 显示约 419.0 kB）。
-- 发布前 `npm pack --dry-run` 显示压缩约 190.2 kB。
-- npm `dist.shasum`：`821c5bd39b2f0cd2aae6e4a8c8709d58a4202e54`，与本会话发布前打包预览记录一致。
-- npm `gitHead`：`074bc353c04844101663fc5a46b3408b0a48edff`。它不能代表未提交工作树里的全部 0.2.0 变更。
-- 包含 11 个工具、0 个主动推送事件、1 份环境提示词；3 个面板 ID 为 `places`、`book`、`shelf`。
-- 发布白名单包含源码、面板 bundle、图标、描述文件和发布文档；不包含测试、工具脚本、安装脚本、运行时数据或本交接文件。
-
-### 本地 Git 快照
-
-- 分支：`main`；跟踪分支：`origin/main`。
-- HEAD：`074bc35`，提交说明“娱乐时间 0.1.6：关联纪念品行程、统一历史日期与发布收尾”。
-- origin：[bailuhanyi/cortico-world-fun](https://github.com/bailuhanyi/cortico-world-fun.git)。
-- 本次没有 fetch 或查询远端 HEAD；`git status` 中的跟踪信息不证明远端实时状态。
-- 已修改文件涉及更新日志、发布说明、README、包描述、面板 bundle、包版本、提示词、World/状态/收藏/地点代码、相关测试及验证脚本。
-- 未跟踪的新源码：[aquarium.js](<E:/deep seek/fun-world/src/aquarium.js>)、[choices.js](<E:/deep seek/fun-world/src/choices.js>)、[events.js](<E:/deep seek/fun-world/src/events.js>)、[names.js](<E:/deep seek/fun-world/src/names.js>)、[wishes.js](<E:/deep seek/fun-world/src/wishes.js>)。
-- 对应新测试：[aquarium.test.mjs](<E:/deep seek/fun-world/test/aquarium.test.mjs>)、[choices.test.mjs](<E:/deep seek/fun-world/test/choices.test.mjs>)、[events.test.mjs](<E:/deep seek/fun-world/test/events.test.mjs>)、[wishes.test.mjs](<E:/deep seek/fun-world/test/wishes.test.mjs>)。
-- 本交接文件及 [verification-token.log](<E:/deep seek/fun-world/verification-token.log>) 也未跟踪；后者是本地验证产物，不是发布必需文件。
-
-保留已有工作树，不要 `git reset --hard`、清理未跟踪源码或用旧版本覆盖当前实现。
-
-## 4. 本轮 Token 与上下文优化的最终行为
-
-原计划已经实施，下面记录最终实现，不再保留“尚未开始”的旧计划。
-
-- [ENV_PROMPT.md](<E:/deep seek/fun-world/src/ENV_PROMPT.md>) 已精简，目前为 1,410 字节 UTF-8；保留出游流程、精确名称约束、选择 ID、心愿非催促语义、图片/食物事实红线、日程联动及预设只能恢复的规则。未做模型 tokenizer 测量，不把字符或字节变化当作精确 Token 节省率。
-- `envPromptVars()` 返回 `{ fun_places_block: '' }`，不再常驻注入地点名称、别名及 scene。模板中的占位符保留并替换为空，地点由 `fun_places` 按需查询。
-- 工具描述已压缩，“地点名列在环境提示词里”的旧说法已移除；[definition.js](<E:/deep seek/fun-world/src/definition.js>) 的摘要同步更新，[describe.json](<E:/deep seek/fun-world/describe.json>) 已重新生成。
-- `fun_places` 继续按当前营业状态等规则返回推荐，支持 `all` 和 `kind`，可显示当前可实现心愿的缘由。
-- `fun_go` 集中给出当前时段可逛项目、完整纪念品与拍照点清单、餐食品类；保留当前地点相关历史及尚未逛过的项目提示。
-- `fun_wander` 给出本次区域、事件、实际买/拍/吃结果、错误反馈、完成的心愿和必要提醒；保留 `choiceId` 与选项 ID。不再每次重列整套候选、历史到访次数和整趟已逛清单。吃喝联动提示在实际有吃喝回执时提供。
-- `fun_start` 缩短为推荐地点及简短下一步提示，不展开各地点项目清单。
-- `fun_view` 保留按需查询的行程 ID、同行人和收摊备注；`fun_shelf` 与 `fun_wishes` 仍是收藏和心愿查询入口。
-- `fun_home` 保持本次摘要、准确的 scene/outfits 指引和日程提示，不展开全部旧行程。
-
-优化只减少进入模型上下文的文字。本地事件过滤、名称归一、心愿判定、收藏账本、选择持久化和旧状态兼容均保留。
-
-## 5. 0.2.0 功能与状态模型
-
-### 工具与出游流程
-
-基本流程：`fun_places → fun_go → fun_wander → fun_home`。待选择事件先用 `fun_choice` 处理，再继续游逛。
-
-| 工具 | 用途 |
-| --- | --- |
-| `fun_places` | 动态地点查询、分类筛选和全部地点清单 |
-| `fun_go` | 进门开始行程，提供当前地点清单 |
-| `fun_wander` | 逛一个项目，可记录购买、拍照和吃喝 |
-| `fun_choice` | 按回执 ID 处理待选择事件 |
-| `fun_home` | 收摊、保存行程并返回本次摘要 |
-| `fun_start` | 出门前查看推荐 |
-| `fun_view` | 按需查看近期及珍藏行程 |
-| `fun_wishes` | 查看心愿和状态 |
-| `fun_wish` | 新增、暂缓、恢复或取消心愿 |
-| `fun_keepsake` | 珍藏或取消珍藏已结束行程 |
-| `fun_shelf` | 长期收藏与进度查询 |
-
-### 地点和事件
-
-- 内置 20 个地点，支持别名、自填地点和预设覆盖层。
-- 营业状态优先排序；同状态下保留自填优先、近期到访降权等规则，可实现心愿也参与推荐。
-- 时段可改变描写、开放项目和事件池。
-- 自动逛与指定项目使用一致的事件筛选：先确定项目和有效收获，再按事实前置条件选事件。
-- 显式空池不回退通用事件；历史候选耗尽时允许没有事件。
-- 海洋馆 6 个区域有专属空间与事件细节。
-- 购买、拍照、吃喝先精确匹配；唯一简称归为正名，多义输入列候选，不猜测，不模糊迁移旧记录。
-
-### 持久化
-
-默认数据位置：
+## 数据与兼容性
 
 ```text
 <dataDir>/fun/state.json
 <dataDir>/fun/venues.json
+<dataDir>/fun/stories.json
 ```
 
-核心状态：
+- `state.json`：session/draft、近期 trips、珍藏、长期收藏、探索、心愿和两站路线。每趟另存逐项时间线、选择和剧情进度；归一化兼容旧字段。
+- `venues.json`：自填地点与预设稀疏覆盖层；地点显示名可改，关联使用 ID。
+- `stories.json`：用户剧情与启停设置，位于数据目录，不是插件源码。启动只读；清空出游记录不删除地点或故事。
+- 坏故事文件不阻止普通出游；后续明确写入前先保留 `.bak`，写入失败不提交新设置。
+- 旧详情只保留最近 40 趟与显式珍藏。升级只能从仍保留的来源补建长期账本；不要编造已丢失的历史。
+- 实机升级前先退出 Coo 并备份三份用户数据；回退时应结合数据备份，不假定旧代码会保留所有新字段。
 
-| 字段 | 作用 |
-| --- | --- |
-| `session` | 当前行程及待选择事件、选择记录 |
-| `trips` | 最近 40 趟详细行程 |
-| `collection` | 独立长期纪念品账本：地点、首次日期、累计次数、关联行程 |
-| `keepsakeTrips` | 用户明确珍藏的完整行程，不受 40 趟窗口限制 |
-| `wishes` | 出游心愿及状态 |
+## 代码入口
 
-旧状态由 `normalizeState()` / `normalizeSession()` 兼容。长期收藏可从仍保留的旧行程初始化；旧版本已裁掉的历史无法恢复，不猜补。没有 `leftDay` 的旧记录按插件时区读取时间戳，不改写历史。
+| 入口 | 作用 |
+|---|---|
+| [world.js](src/world.js) | 工具、回执、面板数据与串行持久化 |
+| [state.js](src/state.js) / [journeys.js](src/journeys.js) | 状态兼容、路线、逐项时间线与关停行为 |
+| [exploration.js](src/exploration.js) / [keepsakes.js](src/keepsakes.js) | 长期探索、收藏与进度 |
+| [story-packs.js](src/story-packs.js) | 剧情包结构校验、条件、游标和选项快照 |
+| [story-library.js](src/story-library.js) / [story-examples.js](src/story-examples.js) | 用户内容读写与少量预设示例 |
+| [branches.js](src/branches.js) | 既有小事件的选择后续 |
+| [webui.js](dist/webui.js) / [stories.js](dist/stories.js) / [artwork.js](dist/artwork.js) | 四个面板、故事编辑器、原创插画 |
+| [definition.js](src/definition.js) / [ENV_PROMPT.md](src/ENV_PROMPT.md) | World 元信息与常驻提示词 |
+| [describe.json](describe.json) | 生成产物；改工具或提示词后重跑生成脚本 |
 
-心愿支持地点、项目、时段、纪念品四类，状态为 `active / paused / completed / cancelled`；最多 100 条，活动及暂缓心愿去重。只由真实动作完成，不自动催促，不用旧行程倒推完成。
+维护约束：不读别的 World 状态、日程或素材库，不调用别的 World 作为内部运行依赖；联动仍由提示词与用户配置完成。食物只记真实品类，不编外部味道或不存在的 scene。`create()` 保持纯，环境提示词不常驻灌入全部地点和剧情。源码变动后不要删掉既有状态兼容、只读预览或显式覆盖保护。
 
-结构化选择目前用于鲸影经过海底隧道、水母缸停留、企鹅喂食等少量事件。游逛回执给 `choiceId`、选项 ID 和标签；调用 `fun_choice({ choiceId, optionId })` 后返回结果。`pendingChoice` 和 `choices` 可在重启后恢复，收摊保存选择记录；不会凭空生成纪念品。
+## 版本与验证状态
 
-## 6. 验证记录与复查命令
-
-### 已有证据
-
-| 检查 | 结果与范围 |
-| --- | --- |
-| `npm test` | 前一实施阶段全部通过；世界集成 75/75、面板 36/36 |
-| `npm run verify` | 前一阶段最终退出码 0；包含提示词、隔离、冒烟与描述一致性检查 |
-| `node tools/make-describe.mjs --check` | 本次交接再次运行通过：11 个工具、0 个事件 |
-| `git diff --check` | 前一阶段通过；CRLF 提示是行尾警告，不是测试失败 |
-| `node tools/verify-tarball.mjs` | 0.2.0 发布准备阶段通过；按白名单复制成安装目录后真实跑通 |
-| `node tools/publish-check.mjs --online` | 发布前 25 项通过、0 失败、2 警告：未配截图、线上查询无结果 |
-| `npm pack --dry-run` | 发布前通过：23 个文件，约 190.2 kB 压缩、419.0 kB 解包 |
-| npm 0.2.0 / latest 查询 | 本次交接均为 200，版本 0.2.0，弥补此前线上查询未得到结果的问题 |
-| `node tools/verify-published.mjs 0.2.0` | 尚未完成；先修正旧的 6 工具/2 面板断言 |
-
-本次写交接没有重新跑全部测试。不要把发布前本地验证或元数据查询写成 Coo 实机验收、线上 tarball 运行验收。
-
-需要复查时，在仓库目录执行：
+本轮在 0.3.0 元数据与发布说明整理后重新执行完整 prepublishOnly：315 项测试通过；市场检查 26 项通过、0 失败、1 警告（缺市场截图）。npm run verify、白名单安装形态验证、实际 .tgz 解包与运行验证、差异格式检查均通过。实际包内 14 个工具和 4 个面板取数、客户端导出一致；没有据此声称实机视觉验收通过。
 
 ```powershell
-npm test
+npm run prepublishOnly
 npm run verify
-node tools/make-describe.mjs --check
 node tools/verify-tarball.mjs
 git diff --check
 ```
 
-线上验包脚本修正后：
+- `verify-tarball.mjs` 验白名单复制出来的安装形态。
+- `verify-published.mjs --file <tgz>` 验**实际 npm 压缩包**，不会把本地包说成线上已发布。
+- `verify-published.mjs 0.3.0` 是正式上传之后的线上整包验证，本轮不把它记为已完成。
+- 缺市场截图是已知警告；功能测试与 DOM 测试不等于 Coo 实机视觉验收。
 
-```powershell
-node tools/verify-published.mjs 0.2.0
+## Git 与待发布产物
+
+- 分支 `main`，本轮开始时 HEAD 为 `72fca3d`，提交说明为「娱乐时间 0.2.1：面板手账风格、行程详情与发布验证完善」。
+- 0.3.0 的功能、测试、工具和文档已纳入本次本地提交，实际提交 ID 以 `git log -1 --oneline` 为准。上述 `72fca3d` 仅为提交前基线。没有 fetch 或 push，不据本地跟踪信息推断远端实时状态。
+- 仓库远端沿用包元数据中的 `bailuhanyi/cortico-world-fun`。本地提交与远端同步是独立状态；本轮只提交，不自动推送。
+- 本地验证日志、运行时夹具、缓存和 `.tmp` 不提交。尤其不要把本地验证日志随 `git add -A` 一起加入；应逐项审查。
+
+预期产物目录：
+
+```text
+.tmp/release-0.3.0/cortico-world-fun-0.3.0.tgz
+.tmp/release-0.3.0/artifact.json
+.tmp/release-0.3.0/registry-check.json
 ```
 
-测试脚本逐文件运行；不要改成受限环境下 `node --test` 汇总执行。[smoke.mjs](<E:/deep seek/fun-world/tools/smoke.mjs>) 与 [verify-tarball.mjs](<E:/deep seek/fun-world/tools/verify-tarball.mjs>) 已将常驻地点断言同步为“环境列表为空、工具仍可按需查询”。
+实际产物已生成并解包验证：32 个文件，压缩 238,718 字节，解包 572,631 字节。除 npm 处理的 package.json 外，包内文件字节与当前源文件逐一一致；npm 报告的大小、SHA-1 与 SHA-512 integrity 与实际 .tgz 一致。
 
-此前 npm 打包预览需要写工作区外的用户缓存，被沙箱拒绝后经一次权限批准重试成功。后续遇到同类拒绝，应按实际权限处理，不代表包构建有错，也不要绕过沙箱。
+```text
+SHA-256 eabf3b5645b5745e970d2d6a34459df4eccb596b25487d43b8aeefa38fd6b509
+SHA-1   458aa78e23a0e698b665c7dd54275fb441de7006
+```
 
-## 7. 代码入口与约束
+实际包内 gitHead：未写入。包保持发布准备时的原字节与摘要；本轮源码提交 ID 另见 `git log -1`，不把旧基线当作 0.3.0 提交。包内发布说明是打包时的准备快照，最新本地 Git 状态以本文为准。registry 最后复核：2026-11-19T14:16:20.417Z（UTC），latest=0.2.1，0.3.0 仍未发布。
 
-| 文件 | 作用 |
-| --- | --- |
-| [world.js](<E:/deep seek/fun-world/src/world.js>) | 工具声明与处理、回执、面板数据、状态持久化入口 |
-| [state.js](<E:/deep seek/fun-world/src/state.js>) | 归一化、进门/游逛/购买/收摊、行程与收藏写入 |
-| [venues.js](<E:/deep seek/fun-world/src/venues.js>) / [user-venues.js](<E:/deep seek/fun-world/src/user-venues.js>) | 内置地点、自填地点与预设覆盖层 |
-| [events.js](<E:/deep seek/fun-world/src/events.js>) / [phases.js](<E:/deep seek/fun-world/src/phases.js>) | 事件前置条件、区域过滤、时段配置 |
-| [memories.js](<E:/deep seek/fun-world/src/memories.js>) | 历史记忆、重复过滤、事件抽取 |
-| [keepsakes.js](<E:/deep seek/fun-world/src/keepsakes.js>) / [names.js](<E:/deep seek/fun-world/src/names.js>) | 收藏与进度、精确名称归一 |
-| [wishes.js](<E:/deep seek/fun-world/src/wishes.js>) / [choices.js](<E:/deep seek/fun-world/src/choices.js>) | 心愿与结构化选择纯函数 |
-| [aquarium.js](<E:/deep seek/fun-world/src/aquarium.js>) | 海洋馆专属描写 |
-| [webui.js](<E:/deep seek/fun-world/dist/webui.js>) | 3 个面板的客户端 bundle |
-| [ENV_PROMPT.md](<E:/deep seek/fun-world/src/ENV_PROMPT.md>) / [definition.js](<E:/deep seek/fun-world/src/definition.js>) | 运行时提示词、World 元信息与工具摘要 |
-| [describe.json](<E:/deep seek/fun-world/describe.json>) | 生成产物，工具与环境提示词的市场描述 |
+完整清单与摘要见产物目录中的 artifact.json。旧 0.2.1 包和摘要不可沿用。本文不在 npm 包内，更新交接不会改变压缩包；若修改包内文件，必须重新打包和验摘要。
 
-维护约束：
+## 下一步
 
-- 提示词或工具描述改动后，运行 `node tools/make-describe.mjs`，不要手工长期维护生成产物。
-- 面板 bundle 改动后，至少运行 `node --check dist/webui.js` 和 `npm test`。
-- 不新增其他 World 的运行时依赖，不读取其状态、日程或素材库。联动靠提示词和用户配置。
-- 食物仅记录品类；未经外部实际吃喝，不编味道。scene/outfits 必须有事实来源，不编素材库没有的名称。
-- `create()` 保持纯；`envPromptVars()` 不抛错；旧状态兼容和真实动作判定不因省 Token 被删除。
+1. 按 [PUBLISHING.md](PUBLISHING.md) 核对本轮实际待发布包、验证结果及摘要。
+2. 完成 Coo 实机验收，按需补真实市场截图；补包内内容后重新打包。
+3. 本地源码提交按用户授权完成；远端推送尚未执行，如需同步再单独操作，不混入本地验证数据。
+4. 用户决定正式发布后，核对 0.3.0 仍未占用，再上传已验过的包并完成认证。
+5. 发布后验证线上版本、下载包与四个面板，再按市场当前说明请求同步。没有正式执行前，不把 npm、GitHub、市场、Coo 安装混成一个「已发布」状态。
 
-## 8. 文档与环境说明
+## 环境说明
 
-- [CHANGELOG.md](<E:/deep seek/fun-world/CHANGELOG.md>) 已有 `## 0.2.0`，包含 Token 优化、心愿、选择、长期收藏和事实校验改动；旧版本段落是历史说明，不代表当前行为。
-- [PUBLISHING.md](<E:/deep seek/fun-world/PUBLISHING.md>) 本次更新顶部状态为已发布；其后保留的旧版本测试数、包大小和提交记录仍只供历史参考，以本交接的当前快照为准。该更正只在本地工作树；已发布的 0.2.0 包仍携带发布前文档，不会因本地编辑而改变。
-- Hindsight 在本次交接时连接 `127.0.0.1:9077` 被拒绝，未取得页面内容。之前也出现过缺少 API key 的 401；不能声称本轮已保存远端记忆。当前交接依据实际文件、Git 状态、此前执行记录和 npm 实时元数据。
+本轮 Hindsight 搜索和页面列表仍因本地记忆服务连接拒绝而不可用；没有声称写入远端记忆。交接依据本地源码、Git 状态、实际测试和官方 npm registry 响应。

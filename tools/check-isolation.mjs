@@ -67,7 +67,8 @@ for (const f of files) {
 }
 
 console.log('3) 只 import node: 内置或本包内的文件');
-const ALLOWED = new Set(['node:fs', 'node:fs/promises', 'node:path', 'node:url', 'node:zlib', 'node:os']);
+// crypto 仅用于本地剧情版本指纹和坏文件备份名，不引入扩展依赖。
+const ALLOWED = new Set(['node:fs', 'node:fs/promises', 'node:path', 'node:url', 'node:zlib', 'node:os', 'node:crypto']);
 for (const f of files) {
   if (!/\.(js|mjs)$/.test(f)) continue;
   const code = stripComments(readFileSync(f, 'utf8'));

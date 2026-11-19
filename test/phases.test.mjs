@@ -5,8 +5,67 @@ import {
   areasNow, checkPhases, descNow, eventsNow, hmToMin, phaseAt, phaseContains, phaseLabelAt,
 } from '../src/phases.js';
 import { VENUES, hoursState } from '../src/venues.js';
+import { recommendVenue } from '../src/recommendations.js';
 
 const byId = (id) => VENUES.find((v) => v.id === id);
+
+test('recommendVenue exposes only open project areas and adds revisit prompts from recorded visits', () => {
+  const park = byId('park');
+  const open = recommendVenue(park, hmToMin('18:00'), [], {
+    visitCount: 1,
+    areas: [{ area: '大草坪', times: 1 }, { area: '湖边长椅', times: 1 }],
+  });
+  assert.equal(open.phase, '傍晚');
+  assert.deepEqual(open.areas, ['大草坪', '湖边长椅', '小桥上', '儿童游乐区']);
+  assert.equal(open.revisitReason, '还没去过：小桥上、儿童游乐区。');
+  assert.equal(open.wishReason, '');
+  assert.equal(open.upcomingWish, null);
+
+  const closed = recommendVenue(park, hmToMin('22:00'), [], { visitCount: 1, areas: [] });
+  assert.equal(closed.phase, '');
+  assert.deepEqual(closed.areas, []);
+  assert.equal(closed.revisitReason, '');
+});
+
+test('recommendVenue uses the current feasible wish and the existing Chinese reason format', () => {
+  const park = byId('park');
+  const result = recommendVenue(park, hmToMin('18:00'), [
+    { status: 'paused', placeId: 'park', type: 'visit', target: '', placeName: '公园' },
+    { status: 'active', placeId: 'park', type: 'area', target: '儿童游乐区', placeName: '公园', reason: '想看孩子玩' },
+  ], null);
+  assert.equal(result.wishReason, '有个心愿：想看看儿童游乐区（想看孩子玩）');
+  assert.equal(result.upcomingWish, null);
+});
+
+test('recommendVenue finds next eligible time across phase and overnight boundaries', () => {
+  const market = byId('market');
+  const activeWish = { status: 'active', placeId: 'market', placeName: '夜市', type: 'area', target: '糖水铺', reason: '' };
+  const fromAfternoon = recommendVenue(market, hmToMin('16:00'), [activeWish], null);
+  assert.equal(fromAfternoon.upcomingWish.minutesAway, 240);
+  assert.equal(fromAfternoon.upcomingWish.text, '有个心愿：想看看糖水铺；今天 20:00');
+
+  const lateWish = { ...activeWish, target: '街尾的台阶' };
+  const overnight = recommendVenue(market, hmToMin('00:30'), [lateWish], null);
+  assert.equal(overnight.phase, '快收了');
+  assert.equal(overnight.wishReason, '有个心愿：想看看街尾的台阶');
+  assert.equal(overnight.upcomingWish, null);
+});
+
+test('recommendVenue phases can point to tomorrow and honors overridden hours', () => {
+  const park = byId('park');
+  const phaseWish = { status: 'active', placeId: 'park', placeName: '公园', type: 'phase', target: '清早', reason: '' };
+  const result = recommendVenue(park, hmToMin('22:00'), [phaseWish], null);
+  assert.deepEqual(result.areas, []);
+  assert.equal(result.upcomingWish.minutesAway, 8 * 60);
+  assert.equal(result.upcomingWish.text, '有个心愿：想看看清早；明天 06:00');
+  assert.equal(recommendVenue(park, hmToMin('22:00'), [], null).upcomingWish, null);
+
+  const overridden = { ...park, hours: { open: '12:00', close: '18:00' } };
+  const daytimeWish = { ...phaseWish, target: '白天' };
+  const delayed = recommendVenue(overridden, hmToMin('07:00'), [daytimeWish], null);
+  assert.equal(delayed.upcomingWish.minutesAway, 5 * 60);
+  assert.equal(delayed.upcomingWish.text, '有个心愿：想看看白天；今天 12:00');
+});
 
 test('phaseContains：普通段（to > from）', () => {
   const p = { from: '09:00', to: '12:00' };

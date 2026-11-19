@@ -70,11 +70,17 @@ test('normalizeState：跨午夜但还没挂太久，这一趟要保住', () => 
   assert.equal(next.session.placeName, '夜市');
 });
 
-test('normalizeState：挂过 TTL 的那一趟仍然丢掉', () => {
+test('normalizeState：跨天超时保留为未完行程，重复读取不会重新激活', () => {
   const entered = at('2026-11-17T23:50:00+08:00');
-  const now = at('2026-11-18T04:00:00+08:00');      // 4 小时 10 分后，超过 90 分钟 TTL
+  const midnight = at('2026-11-18T00:05:00+08:00');
+  const late = at('2026-11-18T04:00:00+08:00');
   const raw = { day: '2026-11-17', session: { placeId: 'nightmarket', placeName: '夜市', enteredAt: entered, lastAt: entered }, trips: [] };
-  assert.equal(normalizeState(raw, '2026-11-18', now, 90).session, null, '挂太久该丢');
+  const shortlyAfterMidnight = normalizeState(raw, '2026-11-18', midnight, 90);
+  const next = normalizeState(shortlyAfterMidnight, '2026-11-18', late, 90);
+  assert.equal(next.session, null);
+  assert.equal(next.draft.placeName, '夜市');
+  assert.deepEqual(next.trips, []);
+  assert.deepEqual(normalizeState(next, '2026-11-19', late, 90).draft, next.draft);
 });
 
 test('normalizeState：时钟往回调过也不踢人', () => {

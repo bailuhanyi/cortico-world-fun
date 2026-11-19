@@ -16,8 +16,12 @@ const TOOL_SUMMARIES = {
     en: 'Start a trip and return the current-time description and available areas.',
   },
   fun_choice: {
-    zh: '处理逛到的结构化事件选择，按回执中的 choiceId 和 optionId 选择。',
-    en: 'Resolve a structured event choice using the choiceId and optionId from the receipt.',
+    zh: '处理待选择事件，可按回执选择或略过。',
+    en: 'Resolve or skip a pending event choice.',
+  },
+  fun_resume: {
+    zh: '继续一趟未逛完的行程。',
+    en: 'Resume an unfinished outing.',
   },
   fun_wander: {
     zh: '逛一个项目，可记录本次购买、拍照或吃喝；待选择事件按回执处理。',
@@ -31,9 +35,13 @@ const TOOL_SUMMARIES = {
     zh: '查看当前推荐地点；详细筛选用 fun_places。',
     en: 'Show current place recommendations; use fun_places for filters.',
   },
+  fun_route: {
+    zh: '规划和管理最多两站的出门路线，明确前往下一站或提前结束。',
+    en: 'Plan and manage a two-stop outing, explicitly move on or end early.',
+  },
   fun_view: {
-    zh: '按需查询近期或珍藏的行程记录。',
-    en: 'Query recent or kept trip records on demand.',
+    zh: '查看正在逛、未逛完或已收摊的行程。',
+    en: 'View active, unfinished, or finished outings.',
   },
   fun_wishes: {
     zh: '查看明确记下的出游心愿和状态，不催促。',
@@ -46,6 +54,10 @@ const TOOL_SUMMARIES = {
   fun_keepsake: {
     zh: '珍藏或取消珍藏一趟行程，不影响纪念册近期列表和长期收藏。',
     en: 'Keep or unkeep a trip without changing the recent trip book or permanent collection.',
+  },
+  fun_story: {
+    zh: '管理、校验与预览本地地点剧情包，支持自填地点。',
+    en: 'Manage, validate, and preview local story packs, including custom places.',
   },
   fun_shelf: {
     zh: '按地点查询长期纪念品收藏和收集进度。',

@@ -193,7 +193,7 @@ const run = `${process.pid}-${Date.now().toString(36)}`;
 async function mountPanels({ language = 'zh', failList = false, cfg = {}, nowMs, random = () => 0.42 } = {}) {
   // 每个用例一个独立目录：共用的话，上一趟的 session 会漏到下一个用例里。
   const dataDir = await mkdtemp(join(tmpdir(), `fun-panels-${run}-${seq += 1}-`));
-  const now = nowMs ?? Date.parse('2026-11-15T14:00:00+08:00');
+  let now = nowMs ?? Date.parse('2026-11-15T14:00:00+08:00');
   const world = new FunWorld({
     cfg: { ...DEFAULTS, enabled: true, ...cfg },
     dataDir,
@@ -240,7 +240,7 @@ async function mountPanels({ language = 'zh', failList = false, cfg = {}, nowMs,
     return root;
   }
 
-  return { world, bundle, decl, mount, refresh: () => mounted.refresh(), root, invocations, intervals: intervalBox.list, dataDir, tool: (n) => world.tools().find((t) => t.name === n).handler };
+  return { world, bundle, decl, mount, setNow: (value) => { now = value; }, refresh: () => mounted.refresh(), root, invocations, intervals: intervalBox.list, dataDir, tool: (n) => world.tools().find((t) => t.name === n).handler };
 }
 
 // ---------------------------------------------------------------------------
@@ -260,17 +260,229 @@ test('bundle 形状对：面板 id 与服务端声明一一对上，mount 都是
 });
 
 test('服务端面板声明带 getMethods，且声明的方法真的能调', async () => {
-  const { decl } = await mountPanels();
-  // 三张面板：去哪儿 / 纪念册 / 纪念品架（0.1.6 加的）。
-  assert.deepEqual(decl.panels.map((p) => p.id), ['places', 'book', 'shelf']);
+  const { decl, tool } = await mountPanels();
+  await tool('fun_go')({ place: '海洋馆' });
+  await tool('fun_wander')({ area: '纪念品店', buy: '鲸鱼挂件' });
+  await tool('fun_home')({});
+  const trip = (await decl.invoke('book', 'list', [])).trips[0];
+  const storyList = await decl.invoke('stories', 'list', []);
+  assert.equal(storyList.ok, true, storyList.error);
+  const builtin = storyList.packs.find((pack) => pack.builtin);
+  assert.ok(builtin, '至少有一个内置故事包用于只读预览和导出');
+  const template = await decl.invoke('stories', 'template', [{ placeId: builtin.placeId }]);
+  assert.equal(template.ok, true, template.error);
+  assert.deepEqual(decl.panels.map((p) => p.id), ['places', 'book', 'shelf', 'stories']);
   for (const p of decl.panels) {
     assert.ok(p.title && p.description, `${p.id} 缺标题或说明`);
     assert.ok(Array.isArray(p.getMethods) && p.getMethods.length, `${p.id} 没声明 getMethods`);
+    if (p.id === 'stories') {
+      assert.deepEqual(p.getMethods, ['list', 'template', 'validate', 'preview', 'export']);
+      assert.deepEqual(p.methods, ['import', 'enable', 'disable', 'remove']);
+    }
     for (const m of p.getMethods) {
-      const r = await decl.invoke(p.id, m, []);
+      let args = [];
+      if (m === 'history') args = [{ placeId: 'aquarium' }];
+      else if (m === 'trip') args = [{ id: trip.id }];
+      else if (p.id === 'stories' && m === 'template') args = [{ placeId: builtin.placeId }];
+      else if (p.id === 'stories' && m === 'validate') args = [{ json: template.json }];
+      else if (p.id === 'stories' && (m === 'preview' || m === 'export')) args = [{ id: builtin.id }];
+      const r = await decl.invoke(p.id, m, args);
       assert.equal(r.ok, true, `${p.id}.${m} 失败了：${r.error}`);
     }
   }
+});
+
+async function mountStoriesView(decl) {
+  const bundle = await import('../dist/webui.js?' + Math.random());
+  const root = new Node('div');
+  const invocations = [];
+  const ctx = { root, signal: { aborted: false }, async invoke(method, args = []) {
+    const call = { method, args };
+    invocations.push(call);
+    call.result = await decl.invoke('stories', method, args);
+    return call.result;
+  } };
+  const mounted = bundle.default.panels.stories.mount(ctx);
+  await waitFor(() => invocations.some((call) => call.method === 'list' && call.result), '故事包列表加载');
+  return { root, invocations, mounted };
+}
+
+test('stories 校验与预览只读；畸形 JSON 和无效包可见且不保存', async () => {
+  const { decl, dataDir, tool } = await mountPanels();
+  await tool('fun_go')({ place: '公园' });
+  await tool('fun_home')({});
+  const stateBefore = await readFile(join(dataDir, 'fun', 'state.json'), 'utf8');
+  const { root, invocations } = await mountStoriesView(decl);
+  const initial = await decl.invoke('stories', 'list', []);
+  const advanced = root.querySelector('.fun-story-advanced');
+  const editor = advanced.querySelector('.fun-story-json');
+  const location = advanced.querySelector('.fun-story-place');
+  location.value = initial.places[0].id;
+  root.findByText('填入模板').fire();
+  await waitFor(() => editor.value.includes(initial.places[0].id), '模板填入 JSON');
+  const template = JSON.parse(editor.value);
+  const before = (await decl.invoke('stories', 'list', [])).packs.map((pack) => pack.id).sort();
+
+  root.findByText('校验 JSON').fire();
+  await waitFor(() => invocations.filter((call) => call.method === 'validate').length === 1, '校验请求');
+  await waitFor(() => root.textContent.includes('校验通过'), '校验成功状态');
+  root.findByText('预览草稿').fire();
+  await waitFor(() => root.querySelector('.fun-story-graph'), '只读故事图');
+  assert.deepEqual((await decl.invoke('stories', 'list', [])).packs.map((pack) => pack.id).sort(), before,
+    '模板、校验、预览不应该保存故事包');
+  assert.equal(template.placeId, initial.places[0].id, '模板应绑定选中的真实地点');
+
+  editor.value = '{'; editor.fire('input');
+  root.findByText('校验 JSON').fire();
+  await waitFor(() => root.textContent.includes('JSON 格式不正确'), '畸形 JSON 错误');
+  assert.deepEqual((await decl.invoke('stories', 'list', [])).packs.map((pack) => pack.id).sort(), before);
+
+  editor.value = JSON.stringify({ version: 1, id: 'user-invalid', title: '', placeId: initial.places[0].id, start: 'start', nodes: [] });
+  editor.fire('input');
+  root.findByText('导入故事包').fire();
+  await waitFor(() => root.textContent.includes('导入失败'), '无效包导入错误');
+  assert.deepEqual((await decl.invoke('stories', 'list', [])).packs.map((pack) => pack.id).sort(), before,
+    '无效包不得写入');
+  assert.equal(await readFile(join(dataDir, 'fun', 'state.json'), 'utf8'), stateBefore, '校验预览不得推进真实行程或修改历史');
+  assert.deepEqual(invocations.filter((call) => call.method === 'import').map((call) => call.result.ok), [false],
+    '校验与预览没有偷偷 import；唯一导入是明确点击的无效包');
+});
+
+test('stories 简单表单支持自填地点，显式保存/停用/启用/确认移除', async () => {
+  const { decl } = await mountPanels();
+  const venue = await decl.invoke('places', 'save', [{ name: '自己的小院', areas: ['花圃', '廊下'] }]);
+  assert.equal(venue.ok, true, venue.error);
+  const { root, invocations } = await mountStoriesView(decl);
+  const field = (name) => root.querySelector(`.fun-story-author-${name}`);
+  assert.match(field('id').value, /^user-[a-z0-9_-]{1,19}$/);
+  assert.equal(field('event').value, '', '简单表单的故事内容由用户自己填写');
+  const customTemplatePlace = root.querySelector('.fun-story-place'); customTemplatePlace.value = venue.venue.id;
+  root.findByText('填入模板').fire();
+  await waitFor(() => root.querySelector('.fun-story-json').value.includes(venue.venue.id), '自填地点模板');
+  assert.equal(JSON.parse(root.querySelector('.fun-story-json').value).placeId, venue.venue.id);
+  const storyCard = (id) => root.querySelectorAll('.fun-story-pack').find((node) => node.getAttribute('data-pack-id') === id);
+  const place = field('place'); place.value = venue.venue.id; place.fire('change');
+  const area = field('area'); area.value = '花圃';
+  const values = {
+    id: 'user-garden-story', title: '院子里的小风', event: '花叶间传来轻轻的沙沙声', prompt: '想怎么继续？',
+    'a-label': '停下来听', 'a-result': '决定多听一会儿', 'a-event': '风慢慢停了', 'a-area': '花圃',
+    'b-label': '去廊下看看', 'b-result': '决定走去廊下', 'b-event': '廊下挂着一串风铃', 'b-area': '廊下',
+  };
+  for (const [name, value] of Object.entries(values)) field(name).value = value;
+  assert.ok([...place.querySelectorAll('option')].some((option) => option.value === venue.venue.id));
+  assert.ok([...field('a-area').querySelectorAll('option')].some((option) => option.value === '廊下'), '自填地点的真实区域可选');
+  assert.equal((await decl.invoke('stories', 'list', [])).packs.some((pack) => pack.id === values.id), false,
+    '编辑表单本身不保存');
+
+  root.findByText('保存新故事包').fire();
+  await waitFor(() => storyCard(values.id), '保存自填地点故事');
+  const card = storyCard(values.id);
+  assert.match(card.textContent, /自己的小院/);
+  assert.match(card.textContent, /3 个节点/);
+  const exported = await decl.invoke('stories', 'export', [{ id: values.id }]);
+  const saved = JSON.parse(exported.json);
+  assert.equal(saved.placeId, venue.venue.id);
+  assert.deepEqual(saved.nodes.map((node) => node.area), ['花圃', '花圃', '廊下']);
+  assert.ok(invocations.some((call) => call.method === 'import'), '保存操作调用 import');
+
+  card.findByText('停用').fire();
+  await waitFor(() => storyCard(values.id)?.textContent.includes('已停用'), '停用故事');
+  storyCard(values.id).findByText('启用').fire();
+  await waitFor(() => storyCard(values.id)?.textContent.includes('已启用'), '重新启用故事');
+  storyCard(values.id).findByText('移除').fire();
+  assert.ok(root.textContent.includes('确认移除'), '移除前需要显式确认');
+  root.findByText('确认移除').fire();
+  await waitFor(() => !storyCard(values.id), '确认移除故事定义');
+  assert.equal((await decl.invoke('stories', 'list', [])).packs.some((pack) => pack.id === values.id), false);
+  assert.deepEqual(invocations.filter((call) => ['import', 'disable', 'enable', 'remove'].includes(call.method)).map((call) => call.method),
+    ['import', 'disable', 'enable', 'remove']);
+});
+
+
+test('stories 高级 JSON 显式覆盖；导出只读并保留草稿，内置包不能移除', async () => {
+  const { decl } = await mountPanels();
+  const { root, invocations } = await mountStoriesView(decl);
+  const template = await decl.invoke('stories', 'template', []);
+  const pack = { ...JSON.parse(template.json), id: 'user-json-story', title: '自己的故事' };
+  const draft = root.querySelector('.fun-story-json');
+  const overwrite = root.querySelector('.fun-story-overwrite');
+  const card = () => root.querySelectorAll('.fun-story-pack').find((node) => node.getAttribute('data-pack-id') === pack.id);
+  draft.value = JSON.stringify(pack); draft.fire('input');
+  assert.equal(Boolean(overwrite.checked), false, '覆盖默认不勾选');
+  root.findByText('导入故事包').fire();
+  await waitFor(card, '导入 JSON 故事');
+  pack.title = '更新自己的故事'; draft.value = JSON.stringify(pack); draft.fire('input');
+  root.findByText('导入故事包').fire();
+  await waitFor(() => root.textContent.includes('已有同 ID'), '拒绝默认覆盖');
+  let exported = await decl.invoke('stories', 'export', [{ id: pack.id }]);
+  assert.equal(JSON.parse(exported.json).title, '自己的故事');
+  assert.equal(invocations.filter((call) => call.method === 'import').at(-1).args[0].replace, undefined);
+
+  overwrite.checked = true;
+  root.findByText('导入故事包').fire();
+  await waitFor(() => card()?.textContent.includes(pack.title), '明确勾选后覆盖');
+  assert.equal(invocations.filter((call) => call.method === 'import').at(-1).args[0].replace, true);
+  assert.equal(overwrite.checked, false, '成功后取消覆盖勾选');
+  const retained = draft.value;
+  card().findByText('导出 JSON').fire();
+  await waitFor(() => card().querySelector('.fun-story-export'), '只读导出 JSON');
+  const output = card().querySelector('.fun-story-export');
+  assert.equal(JSON.parse(output.value).title, pack.title);
+  assert.notEqual(output.getAttribute('readonly'), undefined);
+  assert.equal(draft.value, retained, '导出不替换编辑中的 JSON');
+  const list = await decl.invoke('stories', 'list', []);
+  const builtinId = list.packs.find((item) => item.builtin).id;
+  const builtin = root.querySelectorAll('.fun-story-pack').find((node) => node.getAttribute('data-pack-id') === builtinId);
+  assert.equal(builtin.findByText('移除'), null);
+  assert.ok(builtin.findByText('停用'), '内置包允许停用');
+});
+
+const storyViewData = () => ({ ok: true, packs: [{ id: 'user-offline', title: '暂存故事', description: '留待地点恢复', placeId: 'user-gone', placeName: '',
+  enabled: true, builtin: false, available: false, warnings: ['地点已移除；区域「木桥」不可用'], revision: 'rev-1', nodeCount: 1 }],
+  places: [{ id: 'user-yard', name: '自己的院子', areas: ['树下', '门口'] }], warnings: [] });
+
+test('stories 列表 ok:false 可重试；缺失地点或区域标暂不可用且给出原因', async () => {
+  let ready = false;
+  const { root, invocations, mounted } = await mountStoriesView({ invoke: async () => ready ? storyViewData() : { ok: false, error: '故事文件暂不可读' } });
+  assert.ok(root.textContent.includes('故事文件暂不可读'));
+  const draft = root.querySelector('.fun-story-json'); draft.value = '尚未完成的草稿'; draft.focus();
+  ready = true; root.findByText('重试').fire();
+  await waitFor(() => root.querySelector('.fun-story-pack'), '重试加载故事');
+  assert.match(root.querySelector('.fun-story-pack').textContent, /暂不可用.*地点已移除/);
+  assert.equal(root.querySelector('.fun-story-json'), draft);
+  assert.equal(draft.value, '尚未完成的草稿'); assert.equal(document.activeElement, draft);
+  await mounted.refresh();
+  assert.equal(root.querySelector('.fun-story-json'), draft);
+  assert.deepEqual(invocations.map((call) => call.method), ['list', 'list', 'list']);
+});
+
+test('stories pending 与刷新保留同一 textarea、光标内容；节点只按文本显示', async () => {
+  let resolveTemplate;
+  let templateCalls = 0;
+  const { root, invocations, mounted } = await mountStoriesView({ invoke: async (_panel, method, args) => {
+    if (method === 'list') return storyViewData();
+    if (method === 'template') { templateCalls += 1; assert.deepEqual(args, [{ placeId: 'user-yard' }]); return new Promise((resolve) => { resolveTemplate = resolve; }); }
+    if (method === 'preview') return { ok: true, eligible: false, title: '预览', nodes: [{ id: 'only', area: '树下', event: '<img src=x onerror=alert(1)>', when: {}, next: '', choices: [{ id: 'a', label: '看一看', next: 'end' }] }], warnings: [] };
+    throw new Error('Unexpected ' + method);
+  } });
+  const place = root.querySelector('.fun-story-place'); place.value = 'user-yard';
+  const draft = root.querySelector('.fun-story-json'); draft.value = '最初草稿'; draft.focus();
+  root.findByText('填入模板').fire(); root.findByText('填入模板').fire();
+  assert.equal(templateCalls, 1, 'pending 按钮不能重复提交');
+  draft.value = '请求期间继续写的内容'; draft.selectionStart = 3; draft.selectionEnd = 5; draft.fire('input');
+  await mounted.refresh();
+  assert.equal(root.querySelector('.fun-story-json'), draft);
+  assert.equal(draft.value, '请求期间继续写的内容');
+  assert.equal(draft.selectionStart, 3); assert.equal(draft.selectionEnd, 5);
+  resolveTemplate({ ok: true, json: '{"template":true}' });
+  await waitFor(() => root.textContent.includes('草稿已修改'), '模板响应保留新草稿');
+  assert.equal(draft.value, '请求期间继续写的内容'); assert.equal(document.activeElement, draft);
+  root.findByText('预览草稿').fire();
+  await waitFor(() => root.querySelector('.fun-story-graph'), '纯文本节点图');
+  assert.match(root.querySelector('.fun-story-graph').textContent, /<img src=x onerror=alert\(1\)>/);
+  assert.equal(root.querySelector('.fun-story-graph').querySelector('img'), null);
+  assert.equal(root.querySelector('.fun-story-graph').querySelectorAll('button').length, 0, '图中分支是说明文字而非游戏选择按钮');
+  assert.deepEqual(invocations.map((call) => call.method), ['list', 'template', 'list', 'preview']);
 });
 
 test('places 面板真挂：画出了全部场所、标了开没开、有一趟正在逛', async () => {
@@ -1209,6 +1421,301 @@ test('book 心愿：visit 发送空目标，暂缓/恢复/取消含状态与错�
   await mounted.refresh();
   assert.match(root.querySelector('.fun-wish').textContent, /已实现/);
   assert.equal(root.querySelector('.fun-wish').querySelectorAll('button').length, 0);
+});
+
+test('places 面板：未完行程可续逛，待选事件展示选项且不替她选', async () => {
+  const b = await mountPanels({ random: () => 0 });
+  await b.tool('fun_go')({ place: '海洋馆' });
+  await b.tool('fun_wander')({ area: '海底隧道' });
+  b.setNow(Date.parse('2026-11-16T10:00:00+08:00'));
+  const root = await b.mount('places');
+  await waitFor(() => root.querySelector('.fun-draft'), '未完行程出现');
+  assert.match(root.querySelector('.fun-draft').textContent, /海底隧道/);
+  assert.equal(root.querySelector('.fun-choice').querySelectorAll('button').length, 0);
+  const button = root.findByText('继续逛');
+  button.fire(); button.fire();
+  await waitFor(() => root.querySelector('.fun-live')?.textContent.includes('正在海洋馆逛'), '恢复成功');
+  assert.equal(root.querySelector('.fun-draft'), null);
+  assert.match(root.querySelector('.fun-choice').textContent, /等它再游回来/);
+  assert.equal(b.invocations.filter((x) => x.method === 'resume').length, 1);
+  assert.equal(b.invocations.filter((x) => x.method === 'choice').length, 0);
+});
+
+test('places 面板：按已有记录收摊后更新画面和纪念册', async () => {
+  const b = await mountPanels();
+  await b.tool('fun_go')({ place: '漫展' });
+  await b.tool('fun_wander')({ area: '同人展台' });
+  b.setNow(Date.parse('2026-11-16T10:00:00+08:00'));
+  const root = await b.mount('places');
+  const button = await waitFor(() => root.findByText('按已有记录收摊'), '收摊入口');
+  button.fire();
+  await waitFor(() => root.querySelector('.fun-outing-result')?.textContent.includes('收摊'), '收摊反馈');
+  assert.equal(root.querySelector('.fun-draft'), null);
+  assert.equal((await b.decl.invoke('book', 'list', [])).trips.length, 1);
+});
+
+test('places 面板：展示可实现心愿、重游理由和下一合适时段', async () => {
+  const b = await mountPanels({ nowMs: Date.parse('2026-11-15T17:30:00+08:00') });
+  await b.tool('fun_go')({ place: '夜市' });
+  await b.tool('fun_wander')({});
+  await b.tool('fun_home')({});
+  const night = VENUES.find((v) => v.name === '夜市');
+  await b.tool('fun_wish')({ action: 'add', place: '夜市', type: 'phase', target: night.phases[1].label });
+  await b.tool('fun_wish')({ action: 'add', place: '公园', type: 'visit' });
+  const root = await b.mount('places');
+  await waitFor(() => root.querySelector('.fun-upcoming-wish'), '下一合适时段');
+  assert.ok(root.querySelector('.fun-upcoming-wish').textContent.includes(night.phases[1].from));
+  assert.match(root.textContent, /有个心愿：想去公园/);
+  assert.match(root.textContent, /还没去过/);
+});
+
+test('places 面板：续逛失败保留草稿，重试后只恢复一次', async () => {
+  const b = await mountPanels();
+  await b.tool('fun_go')({ place: '漫展' });
+  b.setNow(Date.parse('2026-11-16T10:00:00+08:00'));
+  const original = b.decl.invoke;
+  let fails = true;
+  b.decl.invoke = (panel, method, args) => method === 'resume' && fails
+    ? Promise.resolve({ ok: false, error: '暂时无法保存行程' }) : original(panel, method, args);
+  const root = await b.mount('places');
+  (await waitFor(() => root.findByText('继续逛'), '续逛入口')).fire();
+  await waitFor(() => root.querySelector('.fun-outing-result')?.textContent.includes('暂时无法保存行程'), '显示保存错误');
+  assert.ok(root.querySelector('.fun-draft'));
+  assert.equal(root.findByText('继续逛').disabled, false);
+  fails = false;
+  root.findByText('继续逛').fire();
+  await waitFor(() => root.querySelector('.fun-live')?.textContent.includes('正在漫展逛'), '重试成功');
+  assert.equal(root.querySelector('.fun-draft'), null);
+});
+
+// Focused view-contract fixtures let the UI test new read-only APIs independently
+// of backend deployment order. Real-world integration tests above stay in place.
+async function mountView(panel, data, handlers = {}) {
+  const bundle = await import('../dist/webui.js?' + Math.random());
+  const root = new Node('div');
+  const calls = [];
+  const mounted = bundle.default.panels[panel].mount({ root, signal: { aborted: false },
+    interval() { return { dispose() {} }; }, timeout() { return { dispose() {} }; },
+    async invoke(method, args = []) {
+      calls.push({ method, args });
+      if (handlers[method]) return handlers[method](args);
+      if (method === 'list') return structuredClone(data);
+      throw new Error('Unexpected UI invocation: ' + method);
+    } });
+  await waitFor(() => root.querySelector('.fun-heading'), panel + ' fixture');
+  return { root, calls, mounted };
+}
+const tripFixture = (overrides = {}) => ({ id: 'trip-1', placeId: 'park', placeName: '公园', day: '2026-11-15',
+  enteredHm: '14:00', leftHm: '15:00', stayedMin: 60, summary: '沿着湖边慢慢逛', company: '', note: '',
+  visited: ['湖边'], events: [], choices: [], souvenirs: [], photos: [], ate: [], timeline: [], routeId: '', routeOrder: 0, ...overrides });
+const albumFixture = (trips, routes = []) => ({ ok: true, total: trips.length, totalRecent: trips.length,
+  keepsakeCount: trips.filter((trip) => trip.kept).length, visitedAreaCount: 1, souvenirCount: 0, photoCount: 0,
+  trips, routes, places: [], wishes: [] });
+
+test('原创 SVG：二十处各有不同本地线稿，自填地点用通用图且没有外部素材请求', async () => {
+  const { venueArtwork, souvenirArtwork } = await import('../dist/artwork.js');
+  const drawings = VENUES.map((place) => venueArtwork(place.id));
+  assert.equal(new Set(drawings).size, 20);
+  for (const drawing of [...drawings, venueArtwork('custom-place'), souvenirArtwork('未知物品')]) {
+    assert.match(drawing, /<svg/);
+    assert.match(drawing, /aria-hidden="true"/);
+    assert.match(drawing, /focusable="false"/);
+    assert.doesNotMatch(drawing, /<image|<script|href=|url\(|<foreignObject|https?:\/\/(?!www\.w3\.org\/2000\/svg)/);
+  }
+  assert.notEqual(venueArtwork('custom-place'), venueArtwork('park'));
+});
+
+test('places 推荐：只用服务端开放 ID，当前行程在前、推荐其次、全部搜索与管理随后', async () => {
+  const fixture = await mountPanels();
+  const data = await fixture.decl.invoke('places', 'list', []);
+  const open = data.places.filter((place) => place.state !== 'closed').slice(0, 3);
+  const closed = data.places.find((place) => place.state === 'closed');
+  data.recommendationIds = [open[0].id, 'missing-id', closed.id, open[1].id, open[0].id];
+  data.route = { id: 'route-live', status: 'between', stops: open.slice(0, 2).map((place) => ({ placeId: place.id, placeName: place.name })), tripIds: [] };
+  const { root, calls, mounted } = await mountView('places', data);
+  assert.equal(root.querySelectorAll('.fun-card').length, VENUES.length, '完整地点列表仍在');
+  assert.deepEqual(root.querySelectorAll('.fun-recommend-name').map((node) => node.textContent), open.slice(0, 2).map((place) => place.name));
+  const walk = [...root.walk()];
+  assert.ok(walk.indexOf(root.querySelector('.fun-live')) < walk.indexOf(root.querySelector('.fun-recommendations')));
+  assert.ok(walk.indexOf(root.querySelector('.fun-recommendations')) < walk.indexOf(root.querySelector('.fun-search')));
+  assert.ok(walk.indexOf(root.querySelector('.fun-grid')) < walk.indexOf(root.querySelector('.fun-management')));
+  assert.match(root.querySelector('.fun-route').textContent, /站间歇脚/);
+  assert.equal(root.querySelector('.fun-management').getAttribute('open'), undefined);
+  assert.ok(root.findByText('＋ 添加地点'), '原地点管理入口保留');
+  const recommended = root.querySelector('.fun-recommend-card');
+  recommended.fire('keydown', { key: 'Enter', preventDefault() {} });
+  assert.ok(root.querySelector('.fun-detail').textContent.includes(open[0].name));
+  assert.equal(root.querySelectorAll('.fun-detail').length, 1);
+  assert.equal(calls.filter((call) => call.method !== 'list').length, 0, '看推荐不会替她出发或选择');
+  assert.ok(root.querySelectorAll('.fun-art').every((node) => node.getAttribute('aria-hidden') === 'true'));
+  data.route.status = 'planned'; await mounted.refresh();
+  assert.match(root.querySelector('.fun-route').textContent, /待出发/);
+});
+
+test('places 搜索与自动刷新保留输入焦点；没有推荐数据时不自行挑选', async () => {
+  const fixture = await mountPanels();
+  const data = await fixture.decl.invoke('places', 'list', []);
+  delete data.recommendationIds;
+  const { root, mounted } = await mountView('places', data);
+  assert.equal(root.querySelectorAll('.fun-recommend-card').length, 0);
+  const input = root.querySelector('.fun-search'); input.focus(); input.value = '室内'; input.fire('input');
+  assert.equal(root.querySelector('.fun-search'), input);
+  assert.equal(document.activeElement, input);
+  await mounted.refresh();
+  assert.equal(root.querySelector('.fun-search').value, '室内');
+  assert.equal(document.activeElement, root.querySelector('.fun-search'));
+});
+
+test('纪念品图标：票根、钥匙扣、书签等分类清楚，未知物品只加装饰性通用图', async () => {
+  const { souvenirCategory, souvenirArtwork } = await import('../dist/artwork.js');
+  const categories = [['旋转木马票根', 'ticket'], ['钥匙扣', 'keychain'], ['鲸鱼挂件', 'keychain'], ['银杏书签', 'bookmark'],
+    ['江边明信片', 'postcard'], ['企鹅贴纸', 'sticker'], ['一枚纪念币', 'coin'], ['玻璃杯', 'cup'], ['水母小夜灯', 'light'], ['小熊玩偶', 'plush'], ['御守', 'charm'], ['一枚贝壳', 'generic']];
+  for (const [name, category] of categories) assert.equal(souvenirCategory(name), category, name);
+  assert.equal(souvenirArtwork('<img src=x onerror=alert(1)>'), souvenirArtwork('未知物品'));
+  const data = { ok: true, total: 1, pieces: 1, places: 1, completePlaces: 0, progress: [], byPlace: [{ placeName: '公园', firstDay: '2026-11-15', items: [{ name: '银杏书签', times: 1, firstDay: '2026-11-15', memories: [] }] }] };
+  const { root } = await mountView('shelf', data);
+  const icon = root.querySelector('.fun-icon');
+  assert.equal(icon.getAttribute('data-category'), 'bookmark');
+  assert.equal(icon.getAttribute('aria-hidden'), 'true');
+  assert.match(root.querySelector('.fun-keepsake').textContent, /银杏书签/);
+});
+
+test('纪念册搜索地点、同行、日期与备注；地点日期取交集，逐字输入保留同一个搜索框', async () => {
+  const data = albumFixture([
+    tripFixture({ id: 'a', company: '小鱼', note: '带走最后一片落叶' }),
+    tripFixture({ id: 'b', placeId: 'museum', placeName: '博物馆', day: '2026-11-16', company: '同行乙', note: '抬头看穹顶' }),
+    tripFixture({ id: 'c', day: '2026-11-16', note: '下过一阵雨' }),
+  ]);
+  const { root, mounted } = await mountView('book', data);
+  const search = root.querySelector('.fun-book-search'); search.focus();
+  const names = () => root.querySelectorAll('.fun-trip-name').map((node) => node.textContent);
+  for (const [keyword, expected] of [['小鱼', ['公园']], ['穹顶', ['博物馆']], ['2026-11-15', ['公园']], ['博物馆', ['博物馆']]]) {
+    search.value = keyword; search.fire('input'); assert.deepEqual(names(), expected);
+    assert.equal(root.querySelector('.fun-book-search'), search); assert.equal(document.activeElement, search);
+  }
+  search.value = ''; search.fire('input');
+  const place = root.querySelector('.fun-book-place'); place.value = 'park'; place.fire('change');
+  const date = root.querySelector('.fun-book-date'); date.value = '2026-11-16'; date.fire('change');
+  assert.deepEqual(names(), ['公园']);
+  root.findByText('查看详情').fire();
+  assert.match(root.querySelector('.fun-trip-detail').textContent, /下过一阵雨/);
+  search.focus(); search.value = '没有的备注'; search.fire('input'); assert.match(root.querySelector('.fun-book-results').textContent, /没有匹配/);
+  await mounted.refresh();
+  assert.equal(document.activeElement, root.querySelector('.fun-book-search'));
+  assert.equal(root.querySelector('.fun-book-place').value, 'park');
+  assert.equal(root.querySelector('.fun-book-date').value, '2026-11-16');
+  assert.equal(root.querySelector('.fun-book-search').value, '没有的备注');
+});
+
+test('时间线：区域下的小事带对应选择，只显示已保存的逐项时间，空时间明确不详', async () => {
+  const timeline = [
+    { kind: 'enter', text: '来到公园', at: 100, day: '2026-11-15', hm: '14:00', area: '', event: '' },
+    { kind: 'area', text: '湖边', at: 200, day: '2026-11-15', hm: '14:06', area: '湖边', event: '' },
+    { kind: 'event', text: '碰到卖花的人', at: 300, day: '2026-11-15', hm: '14:07', area: '湖边', event: '卖花人' },
+    { kind: 'choice', text: '留下一束花', at: 400, day: '2026-11-15', hm: '14:09', area: '湖边', event: '卖花人' },
+    { kind: 'buy', text: '银杏书签', at: null, day: '2026-11-15', hm: '23:59', area: '湖边', event: '' },
+    { kind: 'area', text: '林间小路', at: 600, day: '2026-11-15', hm: '14:20', area: '林间小路', event: '' },
+    { kind: 'close', text: '回家', at: 700, day: '2026-11-15', hm: '15:00', area: '', event: '' },
+  ];
+  const { root } = await mountView('book', albumFixture([tripFixture({ timeline })]));
+  root.findByText('查看详情').fire();
+  const blocks = root.querySelectorAll('.fun-timeline-block');
+  assert.deepEqual(blocks.map((node) => node.getAttribute('data-area')), ['出发与进门', '湖边', '林间小路', '收摊']);
+  const event = root.querySelector('.fun-timeline-event');
+  assert.equal(event.getAttribute('data-event'), '卖花人');
+  assert.match(event.textContent, /14:07.*碰到卖花的人.*14:09.*留下一束花/);
+  assert.equal(event.querySelector('.fun-timeline-choice').getAttribute('data-event'), '卖花人');
+  const unknown = root.querySelectorAll('.fun-timeline-row').find((row) => row.getAttribute('data-kind') === 'buy');
+  assert.match(unknown.textContent, /时间不详/); assert.doesNotMatch(unknown.textContent, /23:59/);
+  assert.equal(unknown.getAttribute('data-at'), 'unknown');
+});
+
+test('旧行程没有 timeline 时保留所有事件和选择，并且不把进门时刻当成逐项时间', async () => {
+  const trip = tripFixture({ events: ['旧时遇到一只猫'], choices: [{ event: '旧时遇到一只猫', result: '在远处看一眼' }], souvenirs: ['旧书签'], photos: ['旧桥'], ate: [{ verb: '喝', item: '茶' }] });
+  delete trip.timeline;
+  const { root } = await mountView('book', albumFixture([trip])); root.findByText('查看详情').fire();
+  const detail = root.querySelector('.fun-trip-detail');
+  for (const text of ['湖边', '旧时遇到一只猫', '在远处看一眼', '旧书签', '旧桥', '茶', '没有保存逐项时间']) assert.ok(detail.textContent.includes(text), text);
+  assert.ok(root.querySelectorAll('.fun-timeline-row').every((row) => row.getAttribute('data-at') === 'unknown'));
+  assert.ok(root.querySelector('.fun-timeline-event').querySelector('.fun-timeline-choice'));
+  assert.doesNotMatch(detail.textContent, /14:00/);
+});
+
+test('联程按给定 ID 连接两站，搜索相连地点或同行人仍呈现联程，并可展开对应一站', async () => {
+  const a = tripFixture({ id: 'route-a', routeId: 'route-1', routeOrder: 1, company: '同行小鱼' });
+  const b = tripFixture({ id: 'route-b', placeId: 'cafe', placeName: '咖啡店', routeId: 'route-1', routeOrder: 2, summary: '坐在窗边', company: '' });
+  const route = { id: 'route-1', status: 'completed', stops: [{ placeId: 'park', placeName: '公园' }, { placeId: 'cafe', placeName: '咖啡店' }], tripIds: [a.id, b.id] };
+  const { root, calls } = await mountView('book', albumFixture([b, a], [route]));
+  const search = root.querySelector('.fun-book-search'); search.value = '同行小鱼'; search.fire('input');
+  const group = root.querySelector('.fun-route-group');
+  assert.equal(group.getAttribute('data-route-id'), route.id);
+  assert.match(group.textContent, /公园 → 咖啡店/);
+  assert.equal(group.querySelectorAll('.fun-ticket').length, 2);
+  const link = group.querySelectorAll('.fun-link').find((node) => node.getAttribute('data-trip-id') === a.id); link.fire();
+  assert.ok(root.querySelectorAll('.fun-ticket').find((node) => node.getAttribute('data-trip-id') === a.id).querySelector('.fun-trip-detail'));
+  assert.equal(calls.length, 1, '站间浏览只在当前面板展示，不调用未知导航或出发 API');
+});
+
+test('地点历史只读链接支持 pending、失败与重试，并在原详情内回看且不动搜索焦点', async () => {
+  const fixture = await mountPanels(); const data = await fixture.decl.invoke('places', 'list', []);
+  let resolve; let count = 0;
+  const trip = tripFixture({ note: '那天的晚风' });
+  const { root, calls } = await mountView('places', data, { history(args) {
+    assert.deepEqual(args, [{ placeId: 'park' }]); count += 1;
+    return count === 1 ? new Promise((done) => { resolve = done; }) : { ok: true, trips: [trip] };
+  } });
+  const search = root.querySelector('.fun-search'); search.value = '公园'; search.fire('input'); search.focus();
+  root.querySelector('.fun-card').fire();
+  const history = root.findByText('回看这里的行程'); history.fire(); history.fire();
+  assert.equal(count, 1); assert.equal(root.findByText('读取中…').disabled, true);
+  resolve({ ok: false, error: '暂时读不到旧行程' });
+  await waitFor(() => root.querySelector('.fun-history').textContent.includes('暂时读不到旧行程'), '历史失败');
+  root.querySelector('.fun-history').findByText('重试').fire();
+  await waitFor(() => root.querySelector('.fun-inspector'), '历史重试成功');
+  assert.match(root.querySelector('.fun-inspector').textContent, /那天的晚风/);
+  assert.equal(root.querySelector('.fun-search'), search); assert.equal(document.activeElement, search);
+  assert.deepEqual(calls.filter((call) => call.method !== 'list').map((call) => call.method), ['history', 'history']);
+});
+
+test('纪念品只为保留 ID 的回忆给行程链接，已归档没有假链接；错误可重试打开内联详情', async () => {
+  const trip = tripFixture({ id: 'kept-trip', company: '老朋友', note: '夹在书里的秋天' });
+  const data = { ok: true, total: 1, pieces: 3, places: 1, completePlaces: 0, progress: [], byPlace: [{ placeName: '公园', firstDay: '2026-11-15', items: [{ name: '银杏书签', times: 3, firstDay: '2026-11-15', archivedCount: 1,
+    memories: [{ id: trip.id, day: trip.day, summary: trip.summary }, { day: '2025-11-15', summary: '仅账本记录' }] }] }] };
+  let fail = true;
+  const { root, calls } = await mountView('shelf', data, { trip(args) { assert.deepEqual(args, [{ id: trip.id }]); if (fail) throw new Error('回忆暂时不可用'); return { ok: true, trips: [trip] }; } });
+  assert.equal(root.querySelectorAll('.fun-history-toggle').length, 1);
+  root.findByText('回看这趟行程').fire();
+  await waitFor(() => root.querySelector('.fun-history').textContent.includes('回忆暂时不可用'), '物品行程失败');
+  fail = false; root.querySelector('.fun-history').findByText('重试').fire();
+  await waitFor(() => root.querySelector('.fun-inspector'), '物品行程重试');
+  assert.match(root.querySelector('.fun-inspector').textContent, /老朋友.*夹在书里的秋天/);
+  assert.deepEqual(calls.filter((call) => call.method !== 'list').map((call) => call.method), ['trip', 'trip']);
+});
+
+test('时间线有穿插动作时仍按保存顺序展示，后来的选择保留对应事件标签', async () => {
+  const timeline = [
+    { kind: 'area', text: '湖边', area: '湖边', at: 1, hm: '14:01' },
+    { kind: 'event', text: '一阵风', event: '风', area: '湖边', at: 2, hm: '14:02' },
+    { kind: 'photo', text: '波纹', area: '湖边', at: 3, hm: '14:03' },
+    { kind: 'choice', text: '坐一会儿', event: '风', area: '湖边', at: 4, hm: '14:04' },
+  ];
+  const { root } = await mountView('book', albumFixture([tripFixture({ timeline })]));
+  root.findByText('查看详情').fire();
+  assert.deepEqual(root.querySelectorAll('.fun-timeline-row').map((row) => row.getAttribute('data-at')), ['1', '2', '3', '4']);
+  assert.match(root.querySelector('.fun-timeline-choice').textContent, /对应小事：风/);
+});
+
+test('同一趟关联多件纪念品时各处链接同步加载，并展示服务端保存的去过时段', async () => {
+  const trip = tripFixture();
+  const data = { ok: true, total: 2, pieces: 2, places: 1, completePlaces: 0,
+    byPlace: [{ placeName: '公园', items: ['票根', '书签'].map((name) => ({ name, times: 1, memories: [{ id: trip.id, day: trip.day, summary: trip.summary }] })) }],
+    progress: [{ placeName: '公园', visits: 1, percent: 50, phases: ['清早', '夜里'], areas: { done: 1, total: 2, left: ['林间'] }, souvenirs: { done: 2, total: 2 }, photos: { done: 0, total: 0 } }] };
+  const { root, calls } = await mountView('shelf', data, { trip: () => ({ ok: true, trips: [trip] }) });
+  const first = root.querySelector('.fun-keepsake'); first.findByText('回看这趟行程').fire();
+  await waitFor(() => first.querySelector('.fun-inspector'), '第一件物品自己的回看详情');
+  assert.equal(root.querySelectorAll('.fun-inspector').length, 2, '相同保留行程 ID 的状态一致');
+  assert.equal(calls.filter((call) => call.method === 'trip').length, 1);
+  assert.equal(root.querySelector('.fun-visited-phases').textContent, '去过的时段：清早、夜里');
 });
 
 report();

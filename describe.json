@@ -2,7 +2,7 @@
   "tools": [
     {
       "name": "fun_places",
-      "description": "查询当前可去地点，默认按营业状态和拥挤度排序；all 列出全部，kind 筛选类别。地点名以此工具返回为准。",
+      "description": "查询地点、当前可逛项目及心愿的合适时段。",
       "parameters": {
         "type": "object",
         "properties": {
@@ -99,7 +99,7 @@
     },
     {
       "name": "fun_choice",
-      "description": "处理 fun_wander 回执中出现的待选择事件。按回执提供的 choiceId 和 optionId 选一个，不会凭空添加收获。",
+      "description": "按待选回执的选项处理当前事件，也可略过。",
       "parameters": {
         "type": "object",
         "properties": {
@@ -109,7 +109,7 @@
           },
           "optionId": {
             "type": "string",
-            "description": "待选择事件回执给出的 optionId。"
+            "description": "使用回执中的 optionId，或填 skip 略过。"
           }
         },
         "required": [
@@ -122,19 +122,47 @@
         "write"
       ],
       "summary": {
-        "zh": "处理逛到的结构化事件选择，按回执中的 choiceId 和 optionId 选择。",
-        "en": "Resolve a structured event choice using the choiceId and optionId from the receipt."
+        "zh": "处理待选择事件，可按回执选择或略过。",
+        "en": "Resolve or skip a pending event choice."
+      }
+    },
+    {
+      "name": "fun_resume",
+      "description": "继续未逛完的行程，返回进度和待选事件。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "fun_view 提供的未完行程 ID。"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      },
+      "tags": [
+        "write"
+      ],
+      "summary": {
+        "zh": "继续一趟未逛完的行程。",
+        "en": "Resume an unfinished outing."
       }
     },
     {
       "name": "fun_home",
-      "description": "结束当前行程并返回摘要及记录提示。note 可选，记录一句本趟感受。",
+      "description": "收摊并把已发生的经历记入纪念册。",
       "parameters": {
         "type": "object",
         "properties": {
           "note": {
             "type": "string",
             "description": "这一趟怎么样，一句话，可选。"
+          },
+          "draftId": {
+            "type": "string",
+            "description": "要按已有记录结束未完行程时，填 fun_view 提供的 ID。结束正在逛的行程时不填。"
           }
         },
         "additionalProperties": false
@@ -163,8 +191,59 @@
       }
     },
     {
+      "name": "fun_route",
+      "description": "规划两站出门、前往下一站、改下一站或取消后续；不自动移动。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "plan",
+              "status",
+              "next",
+              "change",
+              "cancel"
+            ]
+          },
+          "places": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 2,
+            "maxItems": 2,
+            "description": "plan 时填两个不同地点正名或 ID。"
+          },
+          "id": {
+            "type": "string",
+            "description": "next/change/cancel 时填回执中的路线 ID。"
+          },
+          "place": {
+            "type": "string",
+            "description": "change 时的新下一站；只改尚未去的站。"
+          },
+          "company": {
+            "type": "string",
+            "description": "plan 时的同行人，可选。"
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "additionalProperties": false
+      },
+      "tags": [
+        "write"
+      ],
+      "summary": {
+        "zh": "规划和管理最多两站的出门路线，明确前往下一站或提前结束。",
+        "en": "Plan and manage a two-stop outing, explicitly move on or end early."
+      }
+    },
+    {
       "name": "fun_view",
-      "description": "按需查询近期或珍藏的行程记录。",
+      "description": "查询行程，可按地点、同行人、日期或关键词检索。",
       "parameters": {
         "type": "object",
         "properties": {
@@ -173,6 +252,30 @@
             "description": "看最近几趟，默认 5。",
             "minimum": 1,
             "maximum": 20
+          },
+          "query": {
+            "type": "string",
+            "description": "搜索地点、项目、备注、小事或纪念品。"
+          },
+          "place": {
+            "type": "string",
+            "description": "只看这个地点的行程，正名或别名。"
+          },
+          "company": {
+            "type": "string",
+            "description": "只看与这位同行人的行程。"
+          },
+          "from": {
+            "type": "string",
+            "description": "开始日期 YYYY-MM-DD，包含当天。"
+          },
+          "to": {
+            "type": "string",
+            "description": "结束日期 YYYY-MM-DD，包含当天。"
+          },
+          "id": {
+            "type": "string",
+            "description": "精确查看一个已有行程 ID。"
           }
         },
         "additionalProperties": false
@@ -182,8 +285,8 @@
         "snapshot"
       ],
       "summary": {
-        "zh": "按需查询近期或珍藏的行程记录。",
-        "en": "Query recent or kept trip records on demand."
+        "zh": "查看正在逛、未逛完或已收摊的行程。",
+        "en": "View active, unfinished, or finished outings."
       }
     },
     {
@@ -286,6 +389,64 @@
       }
     },
     {
+      "name": "fun_story",
+      "description": "管理本地地点剧情包，校验和预览只读，导入或启停须指定操作。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "list",
+              "template",
+              "validate",
+              "preview",
+              "export",
+              "import",
+              "enable",
+              "disable",
+              "remove"
+            ]
+          },
+          "id": {
+            "type": "string",
+            "description": "已有剧情包 ID，来自 list。"
+          },
+          "json": {
+            "type": "string",
+            "description": "完整剧情包 JSON，最多 32 KB；validate/preview 不保存。"
+          },
+          "placeId": {
+            "type": "string",
+            "description": "template 绑定的真实地点 ID，可来自自填地点；list 提供可用 ID。"
+          },
+          "area": {
+            "type": "string",
+            "description": "preview 的项目，默认使用起始节点项目。"
+          },
+          "time": {
+            "type": "string",
+            "description": "preview 的测试时刻 HH:MM，默认当前本地时刻。"
+          },
+          "replace": {
+            "type": "boolean",
+            "description": "import 覆盖已有同 ID 自定义包时才设 true。"
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "additionalProperties": false
+      },
+      "tags": [
+        "write"
+      ],
+      "summary": {
+        "zh": "管理、校验与预览本地地点剧情包，支持自填地点。",
+        "en": "Manage, validate, and preview local story packs, including custom places."
+      }
+    },
+    {
       "name": "fun_shelf",
       "description": "按地点查询长期纪念品收藏和收集进度。",
       "parameters": {
@@ -314,7 +475,7 @@
       "key": "worlds.fun.env",
       "title": "娱乐时间",
       "role": "envPrompt",
-      "content": "## 娱乐时间\n\n出游流程：`fun_places` 查询地点 → `fun_go` 进门 → `fun_wander` 逐处游逛 → `fun_home` 收摊；现在出门可用 `fun_start`。地点、项目、纪念品和拍照点名称以工具回执为准；吃喝只填当前地点真实提供的品类。历史与收藏按需用 `fun_view`、`fun_shelf` 查询。\n\n- 遇到带 `choiceId` / `optionId` 的待选事件，必须照回执调用 `fun_choice` 完成选择后再继续，不猜 ID 或选项。\n- 明确表达想去或想做时用 `fun_wish` 记录、`fun_wishes` 查询；不催促、不从旧行程推断完成。\n- 发图用 `imggen_draw`：按 `fun_home` 回执填写 `scene` / `outfits` 正名，不编场景或衣服名字；库里没找到的不要填。\n- 食物只记品类。开关联动允许且实际用「鱼的每一天」的 `feast_menu` → `feast_eat` 后才能描述口感；否则只说吃喝了什么，别形容味道。本插件不会探测别的扩展装没装，不依赖其他 World。\n- 时段可能改变氛围和可逛项目；重复到访有效。历史只按需查询，不编造未发生的经历。\n- 用户自填地点通常没有素材库场景；以回执为准。地点清单和动态详情通过 `fun_places` 查询。预设删不掉，只能恢复。\n- 出门前可用 `feast_life_now` 对齐日程；收摊后按回执用 `feast_life_play` 记录实际经历。\n\n{{fun_places_block}}\n"
+      "content": "## 娱乐时间\n\n出游流程：`fun_places` 查询地点 → `fun_go` 进门 → `fun_wander` 逐处游逛 → `fun_home` 收摊；现在出门可用 `fun_start`。地点、项目、纪念品和拍照点名称以工具回执为准；吃喝只填当前地点真实提供的品类。历史与收藏按需用 `fun_view`、`fun_shelf` 查询。\n\n- 连逛两处可用 `fun_route` 规划；每站自己进门、收摊，再决定下一站、换一站或提前结束，不自动移动。\n- 中断后用 `fun_view` 找未完行程，再决定续逛或按已有记录收摊。待选事件按回执的选项处理。\n- 明确表达想去或想做时用 `fun_wish` 记录、`fun_wishes` 查询；不催促、不从旧行程推断完成。\n- 发图用 `imggen_draw`：按 `fun_home` 回执填写 `scene` / `outfits` 正名，不编场景或衣服名字；库里没找到的不要填。\n- 食物只记品类。开关联动允许且实际用「鱼的每一天」的 `feast_menu` → `feast_eat` 后才能描述口感；否则只说吃喝了什么，别形容味道。本插件不会探测别的扩展装没装，不依赖其他 World。\n- 时段可能改变氛围和可逛项目；重复到访有效。历史只按需查询，不编造未发生的经历。\n- 用户自填地点通常没有素材库场景；以回执为准。地点清单和动态详情通过 `fun_places` 查询。预设删不掉，只能恢复。\n- 出门前可用 `feast_life_now` 对齐日程；收摊后按回执用 `feast_life_play` 记录实际经历。\n\n{{fun_places_block}}\n"
     }
   ]
 }

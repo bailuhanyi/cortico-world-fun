@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -52,10 +52,10 @@ test('describe 里 events 是空数组：这个 World 不推事件', () => {
   }
 });
 
-test('十一件工具都注册了', () => {
+test('十四件工具都注册了', () => {
   const w = funDefinition.create({ cfg: {}, dataDir: process.cwd(), timezone: TZ });
   const names = w.tools().map((t) => t.name).sort();
-  assert.deepEqual(names, ['fun_choice', 'fun_go', 'fun_home', 'fun_keepsake', 'fun_places', 'fun_shelf', 'fun_start', 'fun_view', 'fun_wander', 'fun_wish', 'fun_wishes']);
+  assert.deepEqual(names, ['fun_choice', 'fun_go', 'fun_home', 'fun_keepsake', 'fun_places', 'fun_resume', 'fun_route', 'fun_shelf', 'fun_start', 'fun_story', 'fun_view', 'fun_wander', 'fun_wish', 'fun_wishes']);
 });
 
 test('envPromptVars 不常驻完整地点清单，关闭时同样为空', async () => {
@@ -772,12 +772,78 @@ test('挂太久会提醒收摊，但不替她收', async () => {
   assert.ok(b.world.webUi().badges.some((x) => x.label === '正在逛'), '仍算在逛');
 });
 
-test('跨天 + 挂太久：昨天那一趟不该带进今天', async () => {
+test('未完行程重启后可续逛，待选事件可重读和略过', async () => {
+  const b = await boot();
+  await b.tool('fun_go')({ place: '海洋馆' });
+  b.setNow(at('2026-11-15T14:10:00+08:00'));
+  await b.tool('fun_wander')({ area: '海底隧道' });
+  const again = await boot({ dir: b.dir, now: at('2026-11-16T10:00:00+08:00') });
+  const view = await again.tool('fun_view')({});
+  const data = await again.world.webUi().invoke('places', 'list', []);
+  assert.equal(data.session, null);
+  assert.equal(data.draft.stayedMin, 10);
+  assert.equal(data.draft.visited[0].area, '海底隧道');
+  assert.ok(view.text.includes(data.draft.id));
+  assert.match((await again.tool('fun_wander')({})).text, /未逛完/);
+  assert.equal((await again.tool('fun_go')({ place: '漫展' })).failed, true);
+  assert.equal((await again.tool('fun_resume')({ id: '旧行程' })).failed, true);
+  const resumed = await again.tool('fun_resume')({ id: data.draft.id });
+  assert.match(resumed.text, /接着逛/);
+  const choice = data.draft.pendingChoice;
+  assert.ok(resumed.text.includes(choice.options[0].label));
+  assert.ok((await again.tool('fun_wander')({})).text.includes(choice.options[0].label));
+  assert.match((await again.tool('fun_choice')({ choiceId: choice.id, optionId: 'skip' })).text, /略过/);
+  assert.equal((await again.tool('fun_choice')({ choiceId: choice.id, optionId: 'skip' })).failed, true);
+  again.setNow(at('2026-11-16T10:03:00+08:00'));
+  await again.tool('fun_wander')({ area: '水母缸' });
+  const home = await again.tool('fun_home')({});
+  assert.match(home.text, /待了大约 13 分钟/);
+  const trip = (await again.world.webUi().invoke('book', 'list', [])).trips[0];
+  assert.deepEqual(trip.visited, ['海底隧道', '水母缸']);
+  assert.equal(trip.choices[0].result, '略过了这次选择');
+});
+
+test('面板只读识别草稿，显式收摊按原行程日期记入纪念册且不会重复', async () => {
   const b = await boot();
   await b.tool('fun_go')({ place: '漫展' });
-  b.setNow(at('2026-11-16T10:00:00+08:00')); // 跨天，且已经过去 20 小时（远过 TTL）
-  const r = await b.tool('fun_wander')({});
-  assert.match(r.text, /还没进门/, '跨天又挂太久的那一趟不该还认得');
+  b.setNow(at('2026-11-15T14:10:00+08:00'));
+  await b.tool('fun_wander')({ area: '同人展台', buy: '吧唧' });
+  const before = await readFile(b.world.stateFile(), 'utf8');
+  b.setNow(at('2026-11-16T10:00:00+08:00'));
+  const { invoke } = b.world.webUi();
+  const data = await invoke('places', 'list', []);
+  assert.equal((await invoke('book', 'list', [])).trips.length, 0);
+  assert.equal(await readFile(b.world.stateFile(), 'utf8'), before);
+  assert.equal((await invoke('places', 'closeDraft', [{ id: 'wrong' }])).ok, false);
+  assert.equal((await b.tool('fun_home')({})).failed, true);
+  const results = await Promise.all([1, 2].map(() => invoke('places', 'closeDraft', [{ id: data.draft.id }])));
+  assert.deepEqual(results.map((result) => result.ok), [true, false]);
+  const { trips } = await invoke('book', 'list', []);
+  assert.equal(trips.length, 1);
+  assert.equal(trips[0].day, '2026-11-15');
+  assert.equal(trips[0].stayedMin, 10);
+  assert.deepEqual(trips[0].souvenirs, ['吧唧']);
+  assert.equal((await invoke('places', 'list', [])).draft, null);
+});
+
+test('工具和面板使用同一时段项目并展示接下来可实现的心愿', async () => {
+  const b = await boot({ now: at('2026-11-15T17:30:00+08:00') });
+  const venue = VENUES.find((v) => v.name === '夜市');
+  const phase = venue.phases[0];
+  const later = venue.phases[1];
+  const unavailable = venue.areas.find((a) => !phase.areas.includes(a));
+  assert.ok(unavailable);
+  await b.tool('fun_wish')({ action: 'add', place: '夜市', type: 'phase', target: later.label });
+  const list = await b.tool('fun_places')({ kind: '夜市' });
+  assert.ok(list.text.includes(`现在能逛：${phase.areas.slice(0, 5).join('、')}`));
+  assert.ok(!list.text.includes(unavailable));
+  const data = await b.world.webUi().invoke('places', 'list', []);
+  const card = data.places.find((p) => p.id === venue.id);
+  assert.deepEqual(card.areas, phase.areas);
+  assert.ok(data.upcomingWish.includes(later.from));
+  assert.ok((await b.tool('fun_start')({})).text.includes(data.upcomingWish));
+  b.setNow(at(`2026-11-15T${later.from}:00+08:00`));
+  assert.match((await b.tool('fun_places')({ kind: '夜市' })).text, /有个心愿/);
 });
 
 test('跨午夜：夜市逛着过零点，这一趟不能丢', async () => {
@@ -1037,6 +1103,39 @@ test('工具内部抛错也兜住：返回 failed 而不是炸掉整个世界', 
   const r = await b.tool('fun_places')({ count: { evil: true } });
   assert.equal(r.failed, undefined, '坏参数应当被夹回默认值，不该失败');
   assert.match(r.text, /能去逛的/);
+});
+
+test('关闭等待正在提交的收摊，不用旧状态覆盖行程记录', async () => {
+  const b = await boot();
+  await b.tool('fun_go')({ place: '漫展' });
+  await b.tool('fun_wander')({ area: '同人展台' });
+  const closing = b.tool('fun_home')({});
+  await Promise.resolve();
+  await b.world.stop();
+  assert.match((await closing).text, /收摊/);
+  const saved = JSON.parse(await readFile(b.world.stateFile(), 'utf8'));
+  assert.equal(saved.session, null);
+  assert.equal(saved.draft, null);
+  assert.equal(saved.trips.length, 1);
+  assert.equal(saved.trips[0].visited[0].area, '同人展台');
+});
+
+test('保存续逛或草稿收摊失败时仍保留原记录', async () => {
+  const b = await boot();
+  await b.tool('fun_go')({ place: '漫展' });
+  b.setNow(at('2026-11-16T10:00:00+08:00'));
+  const data = await b.world.webUi().invoke('places', 'list', []);
+  const before = await readFile(b.world.stateFile(), 'utf8');
+  await mkdir(`${b.world.stateFile()}.tmp`);
+  const resumed = await b.tool('fun_resume')({ id: data.draft.id });
+  assert.equal(resumed.failed, true);
+  const closed = await b.tool('fun_home')({ draftId: data.draft.id });
+  assert.equal(closed.failed, true);
+  assert.equal(await readFile(b.world.stateFile(), 'utf8'), before);
+  const after = await b.world.webUi().invoke('places', 'list', []);
+  assert.equal(after.draft.id, data.draft.id);
+  assert.equal(after.session, null);
+  assert.equal((await b.world.webUi().invoke('book', 'list', [])).trips.length, 0);
 });
 
 test('webUi：没在逛时给场所数和灯；在逛时多一个正在逛的徽章', async () => {

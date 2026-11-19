@@ -5,3 +5,6 @@ node_modules/
 
 # 安装/补丁脚本的备份
 *.bak-*
+
+# 本地验证输出，不随源码提交
+verification-token.log

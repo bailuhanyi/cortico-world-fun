@@ -7,6 +7,7 @@
  * 元数据只能证明「声明了」，解包才能证明「东西在」。
  *
  * 用法：node tools/verify-published.mjs [版本号]
+ *       node tools/verify-published.mjs --file <本地 tgz>
  *   默认查 package.json 里当前的 version。
  *
  * 只读：下载到系统临时目录，验完删掉。不污染仓库。
@@ -15,7 +16,7 @@ import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promis
 import { existsSync } from 'node:fs';
 import { gunzipSync } from 'node:zlib';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { dirname, join, isAbsolute, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 /**
@@ -40,6 +41,8 @@ function untar(buf, destDir) {
     const type = String.fromCharCode(buf[off + 156] || 0x30);
     const dataStart = off + 512;
     const rel = name.replace(/^package\//, '').replace(/\/$/, '');
+    if (rel && (isAbsolute(rel) || rel.includes('\\') || rel.split('/').includes('..') || !name.startsWith('package/'))) throw new Error('非法 tar 条目：' + name);
+    if (dataStart + size > buf.length || !Number.isSafeInteger(size) || size < 0) throw new Error('截断或非法 tar 条目');
     if (type === '0' || type === '\0' || type === '0' || type === '') {
       if (rel) {
         const target = join(destDir, rel);
@@ -55,7 +58,11 @@ function untar(buf, destDir) {
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const pkg = JSON.parse(await readFile(join(ROOT, 'package.json'), 'utf8'));
-const version = process.argv[2] || pkg.version;
+const localIndex = process.argv.indexOf('--file');
+const localFile = localIndex >= 0 ? process.argv[localIndex + 1] : null;
+if (localIndex >= 0 && !localFile) throw new Error('--file 需要压缩包路径');
+const version = localFile ? pkg.version : (process.argv[2] || pkg.version);
+const sourceLabel = localFile ? '本地压缩包' : 'npm 上的包';
 const NAME = pkg.name;
 
 let failures = 0;
@@ -77,24 +84,23 @@ function sameNames(left, right) {
 }
 
 const tarballUrl = `https://registry.npmjs.org/${NAME}/-/${NAME}-${version}.tgz`;
-console.log(`验证 npm 上的 ${NAME}@${version}`);
-console.log(`  ${tarballUrl}`);
+console.log(`验证 ${sourceLabel} ${NAME}@${version}`);
+console.log(`  ${localFile ? resolve(localFile) : tarballUrl}`);
 console.log('');
 
 const work = await mkdtemp(join(tmpdir(), 'fun-published-'));
 
 try {
-  console.log('1) 下载');
-  const tgz = join(work, 'pkg.tgz');
-  const res = await fetch(tarballUrl);
-  if (!res.ok) {
-    failures += 1;
-    console.log(`  FAIL 下载失败：HTTP ${res.status}（${version} 还没发上去？）`);
-    throw new Error('download failed');
+  console.log(localFile ? '1) 读取本地实际压缩包' : '1) 下载');
+  let buf;
+  if (localFile) buf = await readFile(resolve(localFile));
+  else {
+    const res = await fetch(tarballUrl);
+    if (!res.ok) throw new Error('下载失败：HTTP ' + res.status);
+    buf = Buffer.from(await res.arrayBuffer());
   }
-  const buf = Buffer.from(await res.arrayBuffer());
-  await writeFile(tgz, buf);
-  ok(true, `下载成功（${(buf.length / 1024).toFixed(1)} KB）`);
+  await writeFile(join(work, 'pkg.tgz'), buf);
+  ok(true, `${localFile ? '读取' : '下载'}成功（${(buf.length / 1024).toFixed(1)} KB）`);
 
   console.log('2) 解包');
   const pkgDir = join(work, 'package');
@@ -229,4 +235,4 @@ if (failures) {
   console.log(`X ${failures} 项没过`);
   process.exit(1);
 }
-console.log(`npm 上的 ${NAME}@${version} 验证通过：面板真在包里，从安装形态跑通了`);
+console.log(`${sourceLabel} ${NAME}@${version} 验证通过：面板真在包里，从安装形态跑通了`);

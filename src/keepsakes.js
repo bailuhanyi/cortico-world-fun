@@ -1,4 +1,5 @@
 import { tripDay, tripSummary } from './state.js';
+import { explorationFor } from './exploration.js';
 const norm = (v, max) => typeof v === 'string' ? v.replace(/\s+/g, ' ').trim().slice(0, max) : '';
 
 /** 收藏可来自旧行程，或持久账本。详细回忆只关联仍保存的近期/珍藏行程。 */
@@ -39,20 +40,41 @@ export function collectSouvenirs(trips, timezone = 'Asia/Shanghai', collection =
   return { items, byPlace: [...places.values()].sort((a, b) => b.items.length - a.items.length || a.placeName.localeCompare(b.placeName)), total: items.reduce((n, x) => n + x.times, 0), uniquePlaces: places.size };
 }
 
-export function progressFor(place, trips, collection = null) {
+/**
+ * Calculate checklist progress. When an exploration ledger (or its place entry)
+ * is supplied, visits/areas/photos come from lifetime history and souvenirs come
+ * from the persistent collection; with null/missing history, retain the legacy
+ * recent-trip behavior.
+ */
+export function progressFor(place, trips, collection = null, exploration = null) {
   const placeId = norm(place?.id, 40);
   const mine = (Array.isArray(trips) ? trips : []).filter((t) => t && t.placeId === placeId);
+  const hasExploration = Array.isArray(exploration) || Array.isArray(exploration?.places)
+    || (exploration && typeof exploration === 'object');
+  const lifetime = hasExploration
+    ? (Array.isArray(exploration) || Array.isArray(exploration?.places)
+      ? explorationFor(exploration, placeId)
+      : (exploration.placeId === placeId ? exploration : null))
+    : null;
   const seenAreas = new Set(); const bought = new Set(); const shot = new Set();
-  for (const t of mine) {
-    for (const v of Array.isArray(t.visited) ? t.visited : []) { const a = norm(v?.area, 40); if (a) seenAreas.add(a); }
-    for (const s of Array.isArray(t.souvenirs) ? t.souvenirs : []) { const x = norm(s, 40); if (x) bought.add(x); }
-    for (const p of Array.isArray(t.photos) ? t.photos : []) { const x = norm(p, 60); if (x) shot.add(x); }
+  if (hasExploration) {
+    for (const area of Array.isArray(lifetime?.areas) ? lifetime.areas : []) { const a = norm(area, 40); if (a) seenAreas.add(a); }
+    for (const area of Object.keys(lifetime?.areaCounts && typeof lifetime.areaCounts === 'object' ? lifetime.areaCounts : {})) { const a = norm(area, 40); if (a) seenAreas.add(a); }
+    for (const p of Array.isArray(lifetime?.photos) ? lifetime.photos : []) { const x = norm(p, 60); if (x) shot.add(x); }
+  } else {
+    for (const t of mine) {
+      for (const v of Array.isArray(t.visited) ? t.visited : []) { const a = norm(v?.area, 40); if (a) seenAreas.add(a); }
+      for (const p of Array.isArray(t.photos) ? t.photos : []) { const x = norm(p, 60); if (x) shot.add(x); }
+    }
   }
-  for (const x of Array.isArray(collection) ? collection : []) if (x?.placeId === placeId) bought.add(norm(x.name, 40));
+  if (!hasExploration) for (const t of mine) {
+    for (const s of Array.isArray(t.souvenirs) ? t.souvenirs : []) { const x = norm(s, 40); if (x) bought.add(x); }
+  }
+  for (const x of Array.isArray(collection) ? collection : []) if (x?.placeId === placeId) { const name = norm(x.name, 40); if (name) bought.add(name); }
   const part = (all, seen) => { all = [...new Set((Array.isArray(all) ? all : []).map((x) => norm(x, 60)).filter(Boolean))]; const got = all.filter((x) => seen.has(x)); const left = all.filter((x) => !seen.has(x)); return { got, left, total: all.length, done: got.length, complete: all.length > 0 && !left.length }; };
   const areas = part(place?.areas, seenAreas); const souvenirs = part(place?.souvenirs, bought); const photos = part(place?.photoSpots, shot);
   const denom = areas.total + souvenirs.total + photos.total; const numer = areas.done + souvenirs.done + photos.done;
-  return { areas, souvenirs, photos, visits: mine.length, percent: denom ? Math.round(numer / denom * 100) : 0 };
+  return { areas, souvenirs, photos, visits: hasExploration ? Math.max(0, Math.floor(Number(lifetime?.visits) || 0)) : mine.length, percent: denom ? Math.round(numer / denom * 100) : 0 };
 }
 export function progressLine(progress, max = 3) {
   const left = progress?.areas?.left ?? []; if (!left.length) return '';
