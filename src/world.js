@@ -69,7 +69,7 @@ import {
 import { autoLimits, budgetStop, normalizeStoryReceipts, publicStoryReceipt, storyBudget, storyRequestKey } from './story-reliability.js';
 import { StoryDM, addDmUsage, dmBudget } from './story-dm.js';
 import { PlaceLibrary } from './place-library.js';
-import { ACTIVITIES, ACTIVITY_HINTS, ACTIVITY_LABELS, HomeRoom, defaultActivityAt, souvenirCategory } from './home-room.js';
+import { ACTIVITIES, ACTIVITY_HINTS, ACTIVITY_LABELS, HomeRoom, defaultActivityAt, phaseAtHour, souvenirCategory } from './home-room.js';
 const ENV_PROMPT = fileURLToPath(new URL('./ENV_PROMPT.md', import.meta.url));
 /** 面板委派出去的配图请求，在她的提示词里保留多久。 */
 const IMAGE_DELEGATION_TTL_MS = 45 * 60 * 1000;
@@ -1833,7 +1833,7 @@ export class FunWorld {
             : '她此刻在家做什么：换一个姿势、布置房间，或者看看她在不在外面。',
           // 只读：幂等、不写盘。写方法单独声明给宿主，面板才不会只被当成展示。
           getMethods: ['state', 'art'],
-          methods: ['setActivity', 'setNote', 'setPlan', 'resume', 'setBackground', 'clearBackground', 'setCharacter', 'clearCharacter', 'saveHotspots', 'resetRoom'],
+          methods: ['setActivity', 'setNote', 'setPlan', 'resume', 'setBackground', 'clearBackground', 'setForeground', 'clearForeground', 'setCharacter', 'clearCharacter', 'saveHotspots', 'savePlacements', 'resetRoom'],
         },
         {
           id: 'places',
@@ -2923,6 +2923,7 @@ export class FunWorld {
     // 时段默认：source 还是 default 时，活动由服务端按此刻的小时算，**不写盘**。
     // 用户点一下（source 变 panel）之后才固定成文件里的活动。
     const defaultActivity = defaultActivityAt(Math.floor(minutesIn(this.timezone, this.#now()) / 60));
+    const phase = phaseAtHour(Math.floor(minutesIn(this.timezone, this.#now()) / 60));
     const byDefault = snapshot.room.source === 'default';
     const activity = byDefault ? defaultActivity : snapshot.room.activity;
     const room = {
@@ -2952,6 +2953,8 @@ export class FunWorld {
         : null,
       keepsakes,
       pendingLine,
+      phase,
+      placements: snapshot.placements ?? {},
       activities: ACTIVITIES.map((id) => ({ id, label: ACTIVITY_LABELS[id], hint: ACTIVITY_HINTS[id] })),
     };
   }
@@ -3012,7 +3015,8 @@ export class FunWorld {
   async #invokeHome(method, payload) {
     if (method === 'state') return await this.#homeState();
     if (method === 'art') {
-      const slot = payload?.slot === 'background' ? 'background' : 'character';
+      const allowed = ['background', 'foreground', 'painting', 'character'];
+      const slot = allowed.includes(payload?.slot) ? payload.slot : 'character';
       const image = await this.#home.readArt(slot, payload?.activity ?? 'idle');
       return { ok: true, image };
     }
@@ -3030,9 +3034,12 @@ export class FunWorld {
         }
         case 'setBackground': await this.#home.setBackground(payload.dataUrl, payload.revision); break;
         case 'clearBackground': await this.#home.clearBackground(payload.revision); break;
+        case 'setForeground': await this.#home.setForeground(payload.dataUrl, payload.revision); break;
+        case 'clearForeground': await this.#home.clearForeground(payload.revision); break;
         case 'setCharacter': await this.#home.setCharacter(payload.activity, payload.dataUrl, payload.revision); break;
         case 'clearCharacter': await this.#home.clearCharacter(payload.activity, payload.revision); break;
         case 'saveHotspots': await this.#home.saveHotspots(payload.hotspots, payload.revision); break;
+        case 'savePlacements': await this.#home.savePlacements(payload.placements, payload.revision); break;
         case 'resetRoom': await this.#home.resetRoom(payload.revision); break;
         default: return { ok: false, error: `home 没有 ${method} 这个方法` };
       }

@@ -3982,6 +3982,13 @@ var HOME_STYLES = `
 .fhm-room-note{position:absolute;left:50%;top:44%;transform:translate(-50%,-50%);margin:0;font-size:11.5px;color:var(--f-dim,#6b6b70);text-align:center;line-height:1.7;z-index:1;pointer-events:none;width:80%}
 .fhm-room-note b{display:block;font-weight:600;color:var(--f-ink,#1b1a1e);font-size:12.5px;margin-bottom:3px}
 
+.fhm-light{position:absolute;inset:0;z-index:1;pointer-events:none;transition:background 240ms ease,opacity 240ms ease}
+.fhm-light[data-phase="morning"]{background:linear-gradient(160deg,rgba(255,214,150,.20),rgba(255,236,205,.06));opacity:.7}
+.fhm-light[data-phase="day"]{background:linear-gradient(160deg,rgba(255,246,224,.08),transparent 60%);opacity:.5}
+.fhm-light[data-phase="dusk"]{background:linear-gradient(180deg,rgba(224,134,47,.22),rgba(120,60,90,.12));opacity:.7}
+.fhm-light[data-phase="night"]{background:linear-gradient(180deg,rgba(38,52,92,.34),rgba(20,28,52,.28));opacity:.8}
+.fhm-foreground{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:3;pointer-events:none}
+
 .fhm-char{position:absolute;z-index:2;max-width:46%;object-fit:contain;transform:translateX(-50%);
   filter:drop-shadow(0 10px 16px rgba(24,24,30,.14));transition:none;animation:fhm-char-in 180ms ease-out both}
 .fhm-char-shadow{position:absolute;z-index:1;height:8%;min-height:14px;transform:translate(-50%,50%);
@@ -3998,9 +4005,16 @@ var HOME_STYLES = `
 .fhm-place[data-out="1"]{color:var(--f-warm,#e0862f)}
 .fhm-note{position:absolute;left:12px;bottom:12px;right:12px;margin:0;z-index:3;padding:6px 10px;border-radius:10px;font-size:12px;line-height:1.5;
   background:color-mix(in srgb,var(--f-card,#fbfbfb) 86%,transparent);color:var(--f-ink,#1b1a1e)}
-.fhm-spot{position:absolute;z-index:3;width:22px;height:22px;border-radius:50%;transform:translate(-50%,-50%);
-  border:1px solid color-mix(in srgb,var(--f-accent,#00a870) 55%,transparent);background:color-mix(in srgb,var(--f-accent,#00a870) 16%,transparent)}
-.fhm-spot-label{position:absolute;z-index:3;transform:translate(-50%,-100%);font-size:10.5px;color:var(--f-dim,#6b6b70);white-space:nowrap}
+.fhm-spot{position:absolute;z-index:4;width:26px;height:26px;border-radius:50%;transform:translate(-50%,-50%);
+  border:1px solid color-mix(in srgb,var(--f-accent,#00a870) 60%,transparent);
+  background:color-mix(in srgb,var(--f-accent,#00a870) 20%,var(--f-card,#fbfbfb));
+  color:var(--f-accent,#00a870);font:inherit;font-size:18px;line-height:1;padding:0;cursor:pointer}
+.fhm-spot:hover{border-color:var(--f-accent,#00a870);background:color-mix(in srgb,var(--f-accent,#00a870) 30%,var(--f-card,#fbfbfb))}
+.fhm-spot:focus-visible{outline:2px solid var(--f-accent,#00a870);outline-offset:2px}
+.fhm-spot-bubble{position:absolute;z-index:6;transform:translate(-50%,-130%);max-width:74%;padding:4px 8px;border-radius:8px;
+  font-size:11px;line-height:1.5;color:var(--f-ink,#1b1a1e);background:color-mix(in srgb,var(--f-card,#fbfbfb) 94%,transparent);
+  border:1px solid var(--f-line,#e3e4e3);white-space:normal;pointer-events:none}
+.fhm-spot-bubble[hidden]{display:none}
 
 .fhm-keepsake{position:absolute;z-index:1;transform:translate(-50%,-50%);width:30px;height:30px;border-radius:50%;
   border:1px solid color-mix(in srgb,var(--f-line,#e3e4e3) 80%,transparent);cursor:pointer;font-size:15px;line-height:1;
@@ -4060,6 +4074,17 @@ var HOME_STYLES = `
 .fhm-dress[hidden]{display:none}
 .fhm-dress h3{margin:0 0 4px;font-size:14px;font-weight:600}
 .fhm-dress-note{margin:0 0 10px;font-size:11.5px;line-height:1.6;color:var(--f-dim,#6b6b70)}
+.fhm-dress-section{margin-top:12px;padding-top:10px;border-top:1px dashed var(--f-line,#e3e4e3)}
+.fhm-dress-section h4{margin:0 0 4px;font-size:13px;font-weight:600}
+.fhm-hotspot-row,.fhm-place-row{display:grid;grid-template-columns:84px minmax(0,1fr) 60px;gap:6px;align-items:center;padding:4px 0}
+.fhm-hotspot-row{grid-template-columns:minmax(0,1fr) minmax(0,1.4fr) 54px}
+.fhm-place-row{grid-template-columns:64px 70px 70px 78px 54px}
+.fhm-hotspot-row input,.fhm-place-row input{font:inherit;font-size:11.5px;min-width:0;padding:3px 7px;border-radius:8px;
+  border:1px solid var(--f-line,#e3e4e3);background:var(--f-soft,#f3efe9);color:var(--f-ink,#1b1a1e)}
+.fhm-hotspot-row button,.fhm-place-row button,.fhm-row-actions button{font:inherit;font-size:11px;padding:3px 9px;border-radius:999px;cursor:pointer;
+  border:1px solid var(--f-line,#e3e4e3);background:var(--f-soft,#f3efe9);color:var(--f-ink,#1b1a1e)}
+.fhm-hotspot-row button:hover,.fhm-place-row button:hover,.fhm-row-actions button:hover{border-color:var(--f-accent,#00a870)}
+.fhm-row-actions{display:flex;gap:6px;flex-wrap:wrap;padding-top:6px}
 .fhm-row{display:grid;grid-template-columns:84px minmax(0,1fr) 54px 54px;gap:8px;align-items:center;padding:5px 0;border-top:1px dashed var(--f-line,#e3e4e3)}
 .fhm-row:first-of-type{border-top:none}
 .fhm-row.fhm-batch{grid-template-columns:84px minmax(0,1fr)}
@@ -4174,7 +4199,17 @@ function mountHome(ctx) {
   let busy = false;
   let snapshot = null;
   let ticker = null;
-  const view = { editing: false, noteDraft: null, planDraft: null, feedback: "", tone: "", batch: null, copyFallback: "" };
+  const view = {
+    editing: false,
+    noteDraft: null,
+    planDraft: null,
+    feedback: "",
+    tone: "",
+    batch: null,
+    copyFallback: "",
+    placements: null,
+    hotspots: null
+  };
   const live = () => !disposed && !ctx.signal?.aborted;
   function call(method, payload) {
     return ctx.invoke(method, payload === void 0 ? [] : [payload]);
@@ -4188,7 +4223,7 @@ function mountHome(ctx) {
     view.tone = tone;
   }
   async function loadArt(slot, activity) {
-    const key = slot === "background" ? snapshot?.art?.background : snapshot?.art?.characters?.[activity] ?? snapshot?.art?.characters?.idle;
+    const key = slot === "background" ? snapshot?.art?.background : slot === "foreground" ? snapshot?.art?.foreground : slot === "painting" ? snapshot?.art?.painting : snapshot?.art?.characters?.[activity] ?? snapshot?.art?.characters?.idle;
     if (!key) return null;
     if (artCache.has(key)) return artCache.get(key);
     try {
@@ -4247,6 +4282,91 @@ function mountHome(ctx) {
     }
   }
   const refs = {};
+  const clamp01 = (value) => Math.min(1, Math.max(0, value));
+  const round3 = (value) => Math.round(value * 1e3) / 1e3;
+  function effectiveSpot(activity) {
+    const base = positionOf(activity);
+    const override = (view.placements ?? snapshot.placements ?? {})[activity];
+    return override ? { ...base, ...override } : base;
+  }
+  function placementDraft() {
+    return { ...view.placements ?? snapshot.placements ?? {} };
+  }
+  function setPlacement(activity, next) {
+    const base = positionOf(activity);
+    const draft = placementDraft();
+    const same = Math.abs(next.x - base.x) < 5e-4 && Math.abs(next.y - base.y) < 5e-4 && Math.abs(next.scale - base.scale) < 5e-4;
+    if (same) delete draft[activity];
+    else draft[activity] = { x: round3(next.x), y: round3(next.y), scale: round3(next.scale) };
+    view.placements = draft;
+  }
+  function savePlacementsDraft() {
+    void write("savePlacements", { placements: placementDraft(), revision: snapshot.revision }, "位置存好了。");
+  }
+  function hotspotDraft() {
+    return (view.hotspots ?? snapshot.art?.hotspots ?? []).map((item) => ({ ...item }));
+  }
+  function saveHotspotsDraft() {
+    void write("saveHotspots", { hotspots: hotspotDraft(), revision: snapshot.revision }, "热点存好了。");
+  }
+  function stagePoint(stage, event) {
+    const rect2 = stage?.getBoundingClientRect?.();
+    if (!rect2?.width || !rect2?.height) return null;
+    return { x: clamp01((event.clientX - rect2.left) / rect2.width), y: clamp01((event.clientY - rect2.top) / rect2.height) };
+  }
+  function attachCharacterDrag(img, activity, shadow) {
+    let drag = null;
+    img.addEventListener("pointerdown", (event) => {
+      if (!view.editing || busy) return;
+      drag = { rect: img.parentNode?.getBoundingClientRect?.() ?? null };
+      event.preventDefault?.();
+    });
+    const move = (event) => {
+      if (!drag) return;
+      const rect2 = drag.rect;
+      if (!rect2?.width || !rect2?.height) return;
+      const x = clamp01((event.clientX - rect2.left) / rect2.width);
+      const y = clamp01((event.clientY - rect2.top) / rect2.height);
+      const next = { x, y, scale: effectiveSpot(activity).scale };
+      setPlacement(activity, next);
+      img.style.left = `${(x * 100).toFixed(2)}%`;
+      img.style.bottom = `${((1 - y) * 100).toFixed(2)}%`;
+      shadow.style.left = `${(x * 100).toFixed(2)}%`;
+      shadow.style.bottom = `${((1 - y) * 100).toFixed(2)}%`;
+    };
+    const up = () => {
+      if (!drag) return;
+      drag = null;
+      savePlacementsDraft();
+    };
+    img.addEventListener("pointermove", move);
+    img.addEventListener("pointerup", up);
+    img.addEventListener("pointercancel", up);
+  }
+  function attachHotspotDrag(node2, id, stage) {
+    let drag = null;
+    node2.addEventListener("pointerdown", (event) => {
+      if (!view.editing || busy) return;
+      drag = true;
+      event.preventDefault?.();
+    });
+    const move = (event) => {
+      if (!drag) return;
+      const point = stagePoint(stage, event);
+      if (!point) return;
+      view.hotspots = hotspotDraft().map((item) => item.id === id ? { ...item, x: round3(point.x), y: round3(point.y) } : item);
+      node2.style.left = `${(point.x * 100).toFixed(2)}%`;
+      node2.style.top = `${(point.y * 100).toFixed(2)}%`;
+    };
+    const up = () => {
+      if (!drag) return;
+      drag = null;
+      saveHotspotsDraft();
+    };
+    node2.addEventListener("pointermove", move);
+    node2.addEventListener("pointerup", up);
+    node2.addEventListener("pointercancel", up);
+  }
   function renderStage() {
     const stage = el2(document2, "div", {
       class: "fhm-stage",
@@ -4285,13 +4405,19 @@ function mountHome(ctx) {
     refs.status = status;
     refs.place = placeNode;
     stage.append(status, placeNode);
-    const hasCharacter = Boolean(snapshot.art?.characters?.[snapshot.room.activity] ?? snapshot.art?.characters?.idle);
-    const spot = positionOf(snapshot.room.activity);
     stage.append(el2(document2, "div", {
+      class: "fhm-light",
+      "data-phase": snapshot.phase ?? "day",
+      "aria-hidden": "true"
+    }));
+    const hasCharacter = Boolean(snapshot.art?.characters?.[snapshot.room.activity] ?? snapshot.art?.characters?.idle);
+    const spot = effectiveSpot(snapshot.room.activity);
+    const shadow = el2(document2, "div", {
       class: "fhm-char-shadow",
       "aria-hidden": "true",
       style: `left:${(spot.x * 100).toFixed(2)}%;bottom:${((1 - spot.y) * 100).toFixed(2)}%;width:${(spot.scale * 62).toFixed(2)}%`
-    }));
+    });
+    stage.append(shadow);
     if (hasCharacter) {
       const char = el2(document2, "img", {
         class: "fhm-char",
@@ -4304,20 +4430,40 @@ function mountHome(ctx) {
       loadArt("character", snapshot.room.activity).then((src) => {
         if (src && live()) char.setAttribute("src", src);
       });
+      if (view.editing) attachCharacterDrag(char, snapshot.room.activity, shadow);
     }
-    for (const spot2 of snapshot.art?.hotspots ?? []) {
-      stage.append(el2(document2, "span", {
+    if (snapshot.art?.foreground) {
+      const front = el2(document2, "img", { class: "fhm-foreground", alt: "", decoding: "async" });
+      stage.append(front);
+      loadArt("foreground").then((src) => {
+        if (src && live()) front.setAttribute("src", src);
+      });
+    }
+    const spotBubbles = [];
+    for (const item of snapshot.art?.hotspots ?? []) {
+      const bubble = el2(document2, "span", {
+        class: "fhm-spot-bubble",
+        hidden: true,
+        text: `${item.label || item.id}${item.note ? `：${item.note}` : ""}`,
+        style: `left:${(item.x * 100).toFixed(2)}%;top:${(item.y * 100).toFixed(2)}%`
+      });
+      spotBubbles.push(bubble);
+      const dot = el2(document2, "button", {
+        type: "button",
         class: "fhm-spot",
-        title: spot2.label || spot2.id,
-        style: `left:${(spot2.x * 100).toFixed(2)}%;top:${(spot2.y * 100).toFixed(2)}%`
-      }));
-      if (spot2.label) {
-        stage.append(el2(document2, "span", {
-          class: "fhm-spot-label",
-          text: spot2.label,
-          style: `left:${(spot2.x * 100).toFixed(2)}%;top:${(spot2.y * 100).toFixed(2)}%`
-        }));
-      }
+        "aria-label": `房间热点：${item.label || item.id}`,
+        title: item.label || item.id,
+        text: "·",
+        style: `left:${(item.x * 100).toFixed(2)}%;top:${(item.y * 100).toFixed(2)}%`,
+        onclick: () => {
+          if (view.editing) return;
+          const open = bubble.hidden;
+          for (const other of spotBubbles) other.hidden = true;
+          bubble.hidden = !open;
+        }
+      });
+      stage.append(dot, bubble);
+      if (view.editing) attachHotspotDrag(dot, item.id, stage);
     }
     if (snapshot.room.note) stage.append(el2(document2, "p", { class: "fhm-note", text: snapshot.room.note }));
     const used = {};
@@ -4383,7 +4529,14 @@ function mountHome(ctx) {
         text: view.editing ? "收起布置" : "布置房间",
         onclick: () => {
           view.editing = !view.editing;
-          if (view.editing) view.noteDraft = snapshot.room.note;
+          if (view.editing) {
+            view.noteDraft = snapshot.room.note;
+            view.placements = { ...snapshot.placements ?? {} };
+            view.hotspots = (snapshot.art?.hotspots ?? []).map((item) => ({ ...item }));
+          } else {
+            view.placements = null;
+            view.hotspots = null;
+          }
           render();
         }
       }),
@@ -4392,7 +4545,7 @@ function mountHome(ctx) {
         text: "恢复默认",
         disabled: Boolean(snapshot.damaged) || busy,
         onclick: () => {
-          if (typeof globalThis.confirm === "function" && !globalThis.confirm("把活动、备注和热点恢复默认？活动会改回「随时段变」，已上传的图片会保留。")) return;
+          if (typeof globalThis.confirm === "function" && !globalThis.confirm("把活动、备注、热点和位置恢复默认？活动会改回「随时段变」，已上传的图片会保留。")) return;
           void write("resetRoom", { revision: snapshot.revision }, "已恢复默认。");
         }
       }),
@@ -4407,6 +4560,7 @@ function mountHome(ctx) {
     try {
       const dataUrl = await pictureData(file, MAX_IMAGE_BYTES2, document2.defaultView?.FileReader ?? globalThis.FileReader);
       if (kind === "background") await write("setBackground", { dataUrl, revision: snapshot.revision }, "背景换好了。");
+      else if (kind === "foreground") await write("setForeground", { dataUrl, revision: snapshot.revision }, "前景换好了。");
       else await write("setCharacter", { activity, dataUrl, revision: snapshot.revision }, "这张图换好了。");
     } catch (error) {
       tell(error?.message ?? "这张图没读出来。", "error");
@@ -4477,6 +4631,30 @@ function mountHome(ctx) {
     box.append(el2(
       document2,
       "div",
+      { class: "fhm-row" },
+      el2(document2, "span", { class: "fhm-row-name", text: "前景层（可选）" }),
+      el2(document2, "input", {
+        type: "file",
+        accept: ACCEPT,
+        "aria-label": "选择前景层图片",
+        onchange: (event) => {
+          void upload("foreground", "", event.target);
+        }
+      }),
+      el2(document2, "span", { class: "fhm-row-name", text: snapshot.art?.foreground ? "已设置" : "未设置" }),
+      el2(document2, "button", {
+        type: "button",
+        text: "清空",
+        disabled: !snapshot.art?.foreground || busy,
+        "aria-label": "清空前景层图片",
+        onclick: () => {
+          void write("clearForeground", { revision: snapshot.revision }, "前景清掉了。");
+        }
+      })
+    ));
+    box.append(el2(
+      document2,
+      "div",
       { class: "fhm-row fhm-batch" },
       el2(document2, "span", { class: "fhm-row-name", text: "批量导入" }),
       el2(document2, "input", {
@@ -4522,6 +4700,145 @@ function mountHome(ctx) {
         })
       ));
     }
+    const hotspotList = view.hotspots ?? [];
+    const spotRows = hotspotList.map((item) => {
+      const label2 = el2(document2, "input", { type: "text", maxlength: "24", "aria-label": "热点名称" });
+      label2.value = item.label ?? "";
+      label2.addEventListener("input", () => {
+        item.label = label2.value;
+      });
+      const noteInput = el2(document2, "input", { type: "text", maxlength: "60", "aria-label": "热点那句话" });
+      noteInput.value = item.note ?? "";
+      noteInput.addEventListener("input", () => {
+        item.note = noteInput.value;
+      });
+      return el2(
+        document2,
+        "div",
+        { class: "fhm-hotspot-row" },
+        label2,
+        noteInput,
+        el2(document2, "button", {
+          type: "button",
+          text: "删除",
+          "aria-label": `删除热点 ${item.label || item.id}`,
+          onclick: () => {
+            view.hotspots = hotspotList.filter((row) => row.id !== item.id);
+            render();
+          }
+        })
+      );
+    });
+    const spotSection = el2(
+      document2,
+      "div",
+      { class: "fhm-dress-section" },
+      el2(document2, "h4", { text: "热点" }),
+      el2(document2, "p", { class: "fhm-dress-note", text: "家具名 + 一句说明；点画面上的圆点能看，布置时能拖；最多 12 个。" }),
+      ...spotRows,
+      el2(
+        document2,
+        "div",
+        { class: "fhm-row-actions" },
+        el2(document2, "button", {
+          type: "button",
+          text: "添加热点",
+          disabled: hotspotList.length >= 12 || busy,
+          onclick: () => {
+            const list3 = hotspotList;
+            let n = 1;
+            const ids = new Set(list3.map((row) => row.id));
+            while (ids.has(`spot-${n}`)) n += 1;
+            view.hotspots = [...list3, { id: `spot-${n}`, x: 0.5, y: 0.5, label: "新热点", note: "" }];
+            render();
+          }
+        }),
+        el2(document2, "button", {
+          type: "button",
+          text: "保存热点",
+          disabled: busy,
+          onclick: () => {
+            saveHotspotsDraft();
+          }
+        })
+      )
+    );
+    box.append(spotSection);
+    const placementRows = snapshot.activities.map((activity) => {
+      const current = effectiveSpot(activity.id);
+      const makeNumber = (key, value, min, max, step) => {
+        const input = el2(document2, "input", {
+          type: "number",
+          min: String(min),
+          max: String(max),
+          step: String(step),
+          "aria-label": `「${activity.label}」${key}`
+        });
+        input.value = String(value);
+        return input;
+      };
+      const x = makeNumber("x", current.x, 0, 1, 1e-3);
+      const y = makeNumber("y", current.y, 0, 1, 1e-3);
+      const scale = makeNumber("scale", current.scale, 0.1, 2, 1e-3);
+      const update = () => {
+        const next = { x: Number(x.value), y: Number(y.value), scale: Number(scale.value) };
+        if (!Number.isFinite(next.x) || !Number.isFinite(next.y) || !Number.isFinite(next.scale)) return;
+        setPlacement(activity.id, next);
+      };
+      x.addEventListener("input", update);
+      y.addEventListener("input", update);
+      scale.addEventListener("input", update);
+      return el2(
+        document2,
+        "div",
+        { class: "fhm-place-row" },
+        el2(document2, "span", { class: "fhm-row-name", text: activity.label }),
+        x,
+        y,
+        scale,
+        el2(document2, "button", {
+          type: "button",
+          text: "还原",
+          "aria-label": `还原「${activity.label}」的位置`,
+          onclick: () => {
+            const draft = placementDraft();
+            delete draft[activity.id];
+            view.placements = draft;
+            render();
+          }
+        })
+      );
+    });
+    const placeSection = el2(
+      document2,
+      "div",
+      { class: "fhm-dress-section" },
+      el2(document2, "h4", { text: "位置微调" }),
+      el2(document2, "p", { class: "fhm-dress-note", text: "x / y / 缩放（x、y 是 0–1，缩放 0.1–2）。也可以直接在画面上拖角色。只保存和默认站位不同的。" }),
+      ...placementRows,
+      el2(
+        document2,
+        "div",
+        { class: "fhm-row-actions" },
+        el2(document2, "button", {
+          type: "button",
+          text: "全部还原",
+          onclick: () => {
+            view.placements = {};
+            render();
+          }
+        }),
+        el2(document2, "button", {
+          type: "button",
+          text: "保存位置",
+          disabled: busy,
+          onclick: () => {
+            savePlacementsDraft();
+          }
+        })
+      )
+    );
+    box.append(placeSection);
     const note2 = el2(document2, "textarea", {
       maxlength: "120",
       placeholder: "一句房间里的备注，比如「在沙发上翻一本旧书」",

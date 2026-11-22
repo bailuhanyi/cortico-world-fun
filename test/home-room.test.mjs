@@ -3,7 +3,7 @@ import test from 'node:test';
 import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { blankRoom, defaultActivityAt, HomeRoom, HomeRoomError } from '../src/home-room.js';
+import { blankRoom, defaultActivityAt, HomeRoom, HomeRoomError, phaseAtHour } from '../src/home-room.js';
 
 const PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
 const OTHER_PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
@@ -24,7 +24,8 @@ test('空房间：读出来是发呆，而且只读不建目录', async (t) => {
   assert.equal(snapshot.room.label, '发呆');
   assert.equal(snapshot.room.since, null);
   assert.equal(snapshot.damaged, false);
-  assert.deepEqual(snapshot.art, { background: '', characters: {}, hotspots: [] });
+  assert.deepEqual(snapshot.art, { background: '', characters: {}, hotspots: [], foreground: '', painting: '' });
+  assert.deepEqual(snapshot.placements, {});
   await assert.rejects(stat(join(dir, 'fun')), { code: 'ENOENT' });
   assert.equal(await room.readArt('background'), null);
 });
@@ -38,7 +39,8 @@ test('切活动写盘：revision 加一、备注一起存、再读回来一致',
   assert.equal(next.room.note, '在沙发上翻一本旧书');
   const stored = JSON.parse(await readFile(file, 'utf8'));
   assert.equal(stored.room.activity, 'reading');
-  assert.equal(stored.version, 1);
+  assert.equal(stored.version, 2);
+  assert.deepEqual(stored.placements, {}, '新写的就是 v2，带空 placements');
   assert.deepEqual(await room.snapshot(), { ...next, damaged: false, warning: '' });
 });
 
@@ -153,10 +155,11 @@ test('房间只写自己的目录，行程存档逐字节不变', async (t) => {
 
 test('默认结构就是 blankRoom 的形状（给世界层兜底用）', async () => {
   assert.deepEqual(blankRoom(), {
-    version: 1,
+    version: 2,
     revision: 0,
     room: { activity: 'idle', since: null, source: 'default', note: '', plan: '' },
-    art: { background: '', characters: {}, hotspots: [] },
+    art: { background: '', characters: {}, hotspots: [], foreground: '', painting: '' },
+    placements: {},
     updatedAt: null,
   });
   assert.ok(new HomeRoomError('X', 'y') instanceof Error);
@@ -193,4 +196,82 @@ test('room.source：新装是 default，点一下变 panel，恢复默认回 def
   stored.room.source = 'panel';
   await writeFile(file, JSON.stringify(stored, null, 2), 'utf8');
   assert.equal((await room.snapshot()).room.source, 'panel');
+});
+
+test('时段色罩四段边界', () => {
+  assert.equal(phaseAtHour(4), 'night');
+  assert.equal(phaseAtHour(5), 'morning');
+  assert.equal(phaseAtHour(10), 'morning');
+  assert.equal(phaseAtHour(11), 'day');
+  assert.equal(phaseAtHour(16), 'day');
+  assert.equal(phaseAtHour(17), 'dusk');
+  assert.equal(phaseAtHour(19), 'dusk');
+  assert.equal(phaseAtHour(20), 'night');
+  assert.equal(phaseAtHour(23), 'night');
+});
+
+test('v1 → v2：读是只读迁移，第一次写才落 v2，旧字段一个不丢', async (t) => {
+  const { room, file } = await home(t);
+  await mkdir(join(file, '..'), { recursive: true });
+  const legacy = {
+    version: 1,
+    revision: 7,
+    room: { activity: 'reading', since: 1763700000000, source: 'panel', note: '在沙发上翻一本旧书', plan: '想读半小时书' },
+    art: { background: '', characters: {}, hotspots: [{ id: 'sofa', x: 0.556, y: 0.661, label: '沙发' }] },
+    updatedAt: 1763700000000,
+  };
+  await writeFile(file, JSON.stringify(legacy, null, 2), 'utf8');
+  const before = await room.snapshot();
+  assert.equal(before.damaged, false);
+  assert.equal(before.version, 2);
+  assert.equal(before.room.activity, 'reading');
+  assert.equal(before.room.plan, '想读半小时书');
+  assert.deepEqual(before.placements, {}, '内存里补空 placements');
+  assert.equal(JSON.parse(await readFile(file, 'utf8')).version, 1, '只读不写盘');
+
+  const written = await room.setNote('换个备注', 7);
+  assert.equal(written.version, 2);
+  const stored = JSON.parse(await readFile(file, 'utf8'));
+  assert.equal(stored.version, 2);
+  assert.deepEqual(stored.placements, {});
+  assert.equal(stored.art.foreground, '');
+  assert.equal(stored.art.painting, '');
+  assert.equal(stored.room.plan, '想读半小时书', '迁移不丢 plan');
+  assert.deepEqual(stored.art.hotspots, legacy.art.hotspots, '迁移不丢热点');
+  assert.equal((await room.snapshot()).room.note, '换个备注', '重开还在');
+});
+
+test('热点备注：存得下、能读回；不影响老热点形状', async (t) => {
+  const { room } = await home(t);
+  const saved = await room.saveHotspots([
+    { id: 'sofa', x: 0.5, y: 0.6, label: '沙发' },
+    { id: 'desk', x: 0.3, y: 0.5, label: '书桌', note: ' 桌上摊着一本没合的书 ' },
+  ], 0);
+  assert.deepEqual(saved.art.hotspots, [
+    { id: 'sofa', x: 0.5, y: 0.6, label: '沙发' },
+    { id: 'desk', x: 0.3, y: 0.5, label: '书桌', note: '桌上摊着一本没合的书' },
+  ]);
+});
+
+test('位置微调：只存提交的活动，坐标/缩放越界拒绝；恢复默认清空', async (t) => {
+  const { room, file } = await home(t);
+  const saved = await room.savePlacements({ reading: { x: 0.41, y: 0.905, scale: 0.42 } }, 0);
+  assert.deepEqual(saved.placements, { reading: { x: 0.41, y: 0.905, scale: 0.42 } });
+  assert.deepEqual(JSON.parse(await readFile(file, 'utf8')).placements, { reading: { x: 0.41, y: 0.905, scale: 0.42 } });
+  await assert.rejects(room.savePlacements({ flying: { x: 0.5, y: 0.5, scale: 0.5 } }, saved.revision), (error) => error.code === 'INVALID_ROOM');
+  await assert.rejects(room.savePlacements({ reading: { x: 2, y: 0.5, scale: 0.5 } }, saved.revision), (error) => error.code === 'INVALID_ROOM');
+  await assert.rejects(room.savePlacements({ reading: { x: 0.5, y: 0.5, scale: 9 } }, saved.revision), (error) => error.code === 'INVALID_ROOM');
+  const reset = await room.resetRoom(saved.revision);
+  assert.deepEqual(reset.placements, {});
+});
+
+test('前景层：按内容寻址落盘，readArt 取得到；恢复默认保留图片', async (t) => {
+  const { room, art } = await home(t);
+  const next = await room.setForeground(dataUrl(OTHER_PNG), 0);
+  assert.match(next.art.foreground, /^[a-f0-9]{64}\.png$/);
+  assert.deepEqual(await readdir(art), [next.art.foreground]);
+  const image = await room.readArt('foreground');
+  assert.equal(image.mime, 'image/png');
+  const reset = await room.resetRoom(next.revision);
+  assert.equal(reset.art.foreground, next.art.foreground, '图片不是状态，恢复默认不删');
 });

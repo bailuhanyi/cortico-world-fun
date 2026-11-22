@@ -10,6 +10,8 @@ import { classifyHomeFile, mountHome } from './webui.js';
 const flush = () => new Promise((resolve) => setImmediate(resolve));
 /** 固定在一个时段（21:30 → 刷视频），否则时段默认会让断言随运行时间漂。 */
 const FIXED_NOW = Date.parse('2026-11-22T21:30:00+08:00');
+const PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+const PNG_URL = `data:image/png;base64,${PNG}`;
 
 /** 极简 DOM：够挂载面板、点按钮、读文字；不做布局。 */
 class Node extends EventTarget {
@@ -161,7 +163,8 @@ test('布置房间：背景与十个活动各一个文件入口，备注能存�
   h.button('布置房间').click();
   await h.settle();
   const inputs = h.root.querySelectorAll('input');
-  assert.equal(inputs.length, 12, '批量导入 1 + 背景 1 + 十个活动');
+  const files = inputs.filter((item) => item.getAttribute('type') === 'file');
+  assert.equal(files.length, 13, '批量导入 1 + 背景 1 + 前景 1 + 十个活动');
   const textarea = h.root.querySelectorAll('textarea').find((item) => item.getAttribute('aria-label') === '房间备注');
   assert.ok(textarea, '备注输入框要在');
   textarea.value = '在沙发上翻一本旧书';
@@ -270,4 +273,69 @@ test('今天想做什么：≤60 字、只写非空；旁边写明不会变成�
   assert.match(h.root.textContent, /不会自动变成她做过的事/);
   const room = JSON.parse(await readFile(join(h.dir, 'fun', 'home', 'room.json'), 'utf8'));
   assert.equal(room.room.plan, '想读半小时书');
+});
+
+test('时段色罩：21:30 是 night，画面上有一层 data-phase', async (t) => {
+  const h = await mountHomePanel(t);
+  const light = h.root.querySelectorAll('div').find((item) => item.getAttribute('data-phase'));
+  assert.ok(light);
+  assert.equal(light.getAttribute('data-phase'), 'night');
+});
+
+test('热点：渲染成按钮、Enter 可开只读气泡；布置页能改名并保存', async (t) => {
+  const h = await mountHomePanel(t, async ({ call }) => {
+    await call('saveHotspots', { hotspots: [{ id: 'sofa', x: 0.5, y: 0.6, label: '沙发', note: '坐这儿' }], revision: 0 });
+  });
+  const dot = h.buttons().find((item) => item.className === 'fhm-spot');
+  assert.ok(dot, '热点要渲染成按钮');
+  dot.click();
+  await h.settle();
+  const bubble = h.root.querySelectorAll('span').find((item) => item.className === 'fhm-spot-bubble');
+  assert.ok(bubble);
+  assert.equal(bubble.hidden, false);
+  assert.match(bubble.textContent, /沙发：坐这儿/);
+
+  h.button('布置房间').click();
+  await h.settle();
+  const label = h.root.querySelectorAll('input').find((item) => item.getAttribute('aria-label') === '热点名称');
+  assert.ok(label);
+  label.value = '沙发边';
+  label.dispatchEvent(new Event('input'));
+  h.button('保存热点').click();
+  await h.settle();
+  const write = h.calls.find((call) => call.method === 'saveHotspots');
+  assert.ok(write);
+  assert.equal(write.args[0].hotspots[0].label, '沙发边');
+});
+
+test('位置微调：只保存改过的活动，能单个/全部还原', async (t) => {
+  const h = await mountHomePanel(t);
+  h.button('布置房间').click();
+  await h.settle();
+  const x = h.root.querySelectorAll('input').find((item) => item.getAttribute('aria-label') === '「读书」x');
+  assert.ok(x);
+  x.value = '0.42';
+  x.dispatchEvent(new Event('input'));
+  h.button('保存位置').click();
+  await h.settle();
+  const write = h.calls.find((call) => call.method === 'savePlacements');
+  assert.ok(write);
+  assert.deepEqual(write.args[0].placements, { reading: { x: 0.42, y: 0.92, scale: 0.4 } });
+
+  h.buttons().find((item) => item.getAttribute('aria-label') === '还原「读书」的位置').click();
+  await h.settle();
+  h.button('保存位置').click();
+  await h.settle();
+  const writes = h.calls.filter((call) => call.method === 'savePlacements');
+  assert.deepEqual(writes.at(-1).args[0].placements, {});
+});
+
+test('前景层：可选图叠在角色前面', async (t) => {
+  const h = await mountHomePanel(t, async ({ call }) => {
+    await call('setForeground', { dataUrl: PNG_URL, revision: 0 });
+  });
+  await h.settle();
+  const front = h.root.querySelectorAll('img').find((item) => item.className === 'fhm-foreground');
+  assert.ok(front, '前景图要在');
+  assert.match(front.getAttribute('src') ?? '', /^data:image\/png;base64,/);
 });

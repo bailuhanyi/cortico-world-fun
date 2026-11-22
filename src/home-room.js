@@ -6,6 +6,10 @@
  *   2. **读不落盘**——`snapshot()` / `readArt()` 只读；写只有那几个 `set*`。
  *   3. **坏文件不覆盖**——`room.json` 解析不了就整份留在原地，面板转只读，写操作全拒。
  *
+ * 版本：`room.json` v1（P0–P2）与 v2（P4 起）。v2 多了 `placements`、`art.foreground`、
+ * `art.painting`；v1 读进来先在内存里补成 v2，**第一次写才落成 v2**（只读方法仍然不落盘）。
+ * 旧字段一个都不丢：迁移只加缺省值。
+ *
  * 图片复用地点封面的校验器（`place-cover.js`）：同一个 8 MiB 上限、同一组格式、
  * 同一个 `<sha256>.<ext>` 内容寻址命名；读盘时再用 `storedCover()` 复核一遍，
  * 防止文件被换掉之后仍被当成原图显示。
@@ -53,6 +57,9 @@ const MAX_ART_BYTES = 128 * 1024 * 1024;
 const MAX_NOTE = 120;
 const MAX_PLAN = 60;
 const MAX_HOTSPOTS = 12;
+const MAX_HOTSPOT_NOTE = 60;
+const MIN_SCALE = 0.1;
+const MAX_SCALE = 2;
 const REF = /^[a-f0-9]{64}\.(?:png|jpg|gif|webp)$/;
 const HOTSPOT_ID = /^[a-z0-9-]{1,32}$/;
 const SOURCES = new Set(['default', 'panel']);
@@ -72,6 +79,18 @@ export function defaultActivityAt(hour) {
   if (h < 18) return 'reading';
   if (h < 21) return 'gaming';
   return 'watching';
+}
+
+/**
+ * 四段光：morning 05–10、day 11–16、dusk 17–19、night 20–04。
+ * 只用来盖一层薄色罩；现有三张背景是画风变体，不按时段换图。
+ */
+export function phaseAtHour(hour) {
+  const h = Number.isFinite(hour) ? ((Math.trunc(hour) % 24) + 24) % 24 : 0;
+  if (h >= 5 && h < 11) return 'morning';
+  if (h >= 11 && h < 17) return 'day';
+  if (h >= 17 && h < 20) return 'dusk';
+  return 'night';
 }
 
 /**
@@ -102,35 +121,84 @@ const round3 = (value) => Math.round(value * 1000) / 1000;
 
 export function blankRoom() {
   return {
-    version: 1,
+    version: 2,
     revision: 0,
     room: { activity: 'idle', since: null, source: 'default', note: '', plan: '' },
-    art: { background: '', characters: {}, hotspots: [] },
+    art: { background: '', characters: {}, hotspots: [], foreground: '', painting: '' },
+    placements: {},
     updatedAt: null,
   };
 }
 
-/** 固定字段顺序：写盘和读盘对同一条记录必须逐字节一致，否则会被当成「被改过」。 */
-function canonical(state) {
-  const characters = {};
+function hotspotShape(item) {
+  return {
+    id: item.id,
+    x: item.x,
+    y: item.y,
+    label: item.label,
+    ...(item.note ? { note: item.note } : {}),
+  };
+}
+
+function placementShape(item) {
+  return { x: item.x, y: item.y, scale: item.scale };
+}
+
+function charactersOf(characters) {
+  const result = {};
   for (const activity of ACTIVITIES) {
-    if (state.art.characters[activity]) characters[activity] = state.art.characters[activity];
+    if (characters[activity]) result[activity] = characters[activity];
   }
+  return result;
+}
+
+function placementsOf(placements) {
+  const result = {};
+  for (const activity of ACTIVITIES) {
+    if (placements[activity]) result[activity] = placementShape(placements[activity]);
+  }
+  return result;
+}
+
+function roomOf(state) {
+  return {
+    activity: state.room.activity,
+    since: state.room.since,
+    source: state.room.source,
+    note: state.room.note,
+    // 空 plan 整条省略：老文件（没有这个键）读进来再写回去仍然合法、可比较。
+    ...(state.room.plan ? { plan: state.room.plan } : {}),
+  };
+}
+
+/** v2 的固定字段顺序：写盘和读盘对同一条记录必须逐字节一致，否则会被当成「被改过」。 */
+function canonicalV2(state) {
+  return {
+    version: 2,
+    revision: state.revision,
+    room: roomOf(state),
+    art: {
+      background: state.art.background,
+      characters: charactersOf(state.art.characters),
+      hotspots: state.art.hotspots.map(hotspotShape),
+      foreground: state.art.foreground,
+      painting: state.art.painting,
+    },
+    placements: placementsOf(state.placements ?? {}),
+    updatedAt: state.updatedAt,
+  };
+}
+
+/** v1 的形状：没有 placements / foreground / painting，读旧文件时逐字节对得上。 */
+function canonicalV1(state) {
   return {
     version: 1,
     revision: state.revision,
-    room: {
-      activity: state.room.activity,
-      since: state.room.since,
-      source: state.room.source,
-      note: state.room.note,
-      // 空 plan 整条省略：老文件（没有这个键）读进来再写回去仍然合法、可比较。
-      ...(state.room.plan ? { plan: state.room.plan } : {}),
-    },
+    room: roomOf(state),
     art: {
       background: state.art.background,
-      characters,
-      hotspots: state.art.hotspots.map((item) => ({ id: item.id, x: item.x, y: item.y, label: item.label })),
+      characters: charactersOf(state.art.characters),
+      hotspots: state.art.hotspots.map(hotspotShape),
     },
     updatedAt: state.updatedAt,
   };
@@ -175,15 +243,41 @@ function cleanHotspots(value) {
       fail('INVALID_ROOM', '热点的位置必须是 0 到 1 之间的小数。');
     }
     const label = typeof item.label === 'string' ? item.label.trim().slice(0, 24) : '';
-    return { id, x: round3(x), y: round3(y), label };
+    const note = typeof item.note === 'string' ? item.note.trim().slice(0, MAX_HOTSPOT_NOTE) : '';
+    if (/[\u0000-\u001f\u007f]/u.test(note)) fail('INVALID_ROOM', '热点那句里不能有控制字符。');
+    return { id, x: round3(x), y: round3(y), label, ...(note ? { note } : {}) };
   });
+}
+
+/** 位置微调：只接受十个活动键；只存提交上来的（UI 负责只提交改过的）。 */
+function cleanPlacements(value) {
+  if (!isObject(value)) fail('INVALID_ROOM', '位置微调必须是一份对象。');
+  const result = {};
+  for (const [activity, placement] of Object.entries(value)) {
+    if (!ACTIVITIES.includes(activity)) fail('INVALID_ROOM', '位置微调里有不认识的活动。');
+    if (!isObject(placement)) fail('INVALID_ROOM', '位置微调格式不对。');
+    const x = Number(placement.x);
+    const y = Number(placement.y);
+    const scale = Number(placement.scale);
+    if (!Number.isFinite(x) || x < 0 || x > 1 || !Number.isFinite(y) || y < 0 || y > 1) {
+      fail('INVALID_ROOM', '位置微调的 x/y 必须是 0 到 1 之间的小数。');
+    }
+    if (!Number.isFinite(scale) || scale < MIN_SCALE || scale > MAX_SCALE) {
+      fail('INVALID_ROOM', `位置微调的缩放要在 ${MIN_SCALE} 到 ${MAX_SCALE} 之间。`);
+    }
+    result[activity] = { x: round3(x), y: round3(y), scale: round3(scale) };
+  }
+  return result;
 }
 
 function readState(raw) {
   if (!isObject(raw)) fail('DAMAGED_ROOM', '房间档案不是一份 JSON 对象。');
+  if (raw.version !== 1 && raw.version !== 2) fail('DAMAGED_ROOM', '房间档案版本不认识。');
   if (!isObject(raw.room) || !isObject(raw.art) || !isObject(raw.art.characters)
     || !Array.isArray(raw.art.hotspots)) fail('DAMAGED_ROOM', '房间档案缺少字段。');
-  const state = canonical({
+  const version = raw.version;
+  const state = {
+    version: 2,
     revision: raw.revision,
     room: {
       activity: raw.room.activity,
@@ -196,28 +290,34 @@ function readState(raw) {
       background: raw.art.background ?? '',
       characters: raw.art.characters,
       hotspots: cleanHotspots(raw.art.hotspots),
+      foreground: version === 2 ? raw.art.foreground ?? '' : '',
+      painting: version === 2 ? raw.art.painting ?? '' : '',
     },
+    placements: version === 2 ? cleanPlacements(raw.placements ?? {}) : {},
     updatedAt: raw.updatedAt ?? null,
-  });
-  if (JSON.stringify(state) !== JSON.stringify(raw)) fail('DAMAGED_ROOM', '房间档案损坏，已保留原文件。');
+  };
+  const expected = version === 1 ? canonicalV1(state) : canonicalV2(state);
+  if (JSON.stringify(expected) !== JSON.stringify(raw)) fail('DAMAGED_ROOM', '房间档案损坏，已保留原文件。');
+
   const okActivity = ACTIVITIES.includes(state.room.activity);
   const okSince = state.room.since === null || (Number.isFinite(state.room.since) && state.room.since > 0);
   const okRevision = Number.isSafeInteger(state.revision) && state.revision >= 0;
   const okSource = SOURCES.has(state.room.source);
   const okNote = typeof state.room.note === 'string' && state.room.note === state.room.note.trim()
     && state.room.note.length <= MAX_NOTE && !/[\u0000-\u001f\u007f]/u.test(state.room.note);
-  // canonical 会特意省略空 plan（老文件没有这个键），所以这里按缺省空串校验。
-  const plan = state.room.plan ?? '';
-  const okPlan = typeof plan === 'string' && plan === plan.trim()
-    && plan.length <= MAX_PLAN && !/[\u0000-\u001f\u007f]/u.test(plan);
+  const okPlan = typeof state.room.plan === 'string' && state.room.plan === state.room.plan.trim()
+    && state.room.plan.length <= MAX_PLAN && !/[\u0000-\u001f\u007f]/u.test(state.room.plan);
   const okBackground = state.art.background === '' || REF.test(state.art.background);
+  const okForeground = state.art.foreground === '' || REF.test(state.art.foreground);
+  const okPainting = state.art.painting === '' || REF.test(state.art.painting);
   const okCharacters = Object.entries(state.art.characters)
     .every(([activity, ref]) => ACTIVITIES.includes(activity) && REF.test(ref));
   const okUpdated = state.updatedAt === null || (Number.isFinite(state.updatedAt) && state.updatedAt > 0);
-  if (!okActivity || !okSince || !okRevision || !okSource || !okNote || !okPlan || !okBackground || !okCharacters || !okUpdated) {
+  if (!okActivity || !okSince || !okRevision || !okSource || !okNote || !okPlan
+    || !okBackground || !okForeground || !okPainting || !okCharacters || !okUpdated) {
     fail('DAMAGED_ROOM', '房间档案损坏，已保留原文件。');
   }
-  return { ...state, room: { ...state.room, plan } };
+  return state;
 }
 
 async function readBounded(file) {
@@ -300,6 +400,7 @@ export class HomeRoom {
     const since = Number.isFinite(state.room.since) ? state.room.since : null;
     const elapsedMinutes = since === null ? null : Math.max(0, Math.floor((this.#now() - since) / 60000));
     return {
+      version: 2,
       revision: state.revision,
       room: {
         activity: state.room.activity,
@@ -315,7 +416,10 @@ export class HomeRoom {
         background: state.art.background,
         characters: { ...state.art.characters },
         hotspots: state.art.hotspots.map((item) => ({ ...item })),
+        foreground: state.art.foreground,
+        painting: state.art.painting,
       },
+      placements: placementsOf(state.placements ?? {}),
     };
   }
 
@@ -329,8 +433,10 @@ export class HomeRoom {
     const { state } = await this.#load();
     let ref = '';
     if (slot === 'background') ref = state.art.background;
+    else if (slot === 'foreground') ref = state.art.foreground;
+    else if (slot === 'painting') ref = state.art.painting;
     else if (slot === 'character') ref = state.art.characters[activity] ?? state.art.characters.idle ?? '';
-    else fail('INVALID_ROOM', '只支持背景和角色图。');
+    else fail('INVALID_ROOM', '只支持背景、前景、画架和角色图。');
     if (!ref) return null;
     const path = join(this.#artDir, ref);
     let entry;
@@ -351,7 +457,7 @@ export class HomeRoom {
     if (revision !== state.revision) fail('STALE_ROOM', '房间刚刚被改过，刷新后再试。');
     const draft = clone(state);
     const images = mutate(draft) ?? [];
-    const next = canonical({ ...draft, revision: state.revision + 1, updatedAt: this.#now() });
+    const next = canonicalV2({ ...draft, revision: state.revision + 1, updatedAt: this.#now() });
     await this.#write(next, images);
     if (collect) await this.#collect(next, state);
     // canonical 会省略空 plan；内存里的状态仍要有这个字段，面板才知道「没有」。
@@ -387,8 +493,14 @@ export class HomeRoom {
 
   /** 换图/清图之后把没人引用的旧文件删掉；只删素材目录里符合命名规则的文件。 */
   async #collect(next, previous) {
-    const keep = new Set([next.art.background, ...Object.values(next.art.characters)].filter(Boolean));
-    const before = new Set([previous.art.background, ...Object.values(previous.art.characters)].filter(Boolean));
+    const keep = new Set([
+      next.art.background, next.art.foreground, next.art.painting,
+      ...Object.values(next.art.characters),
+    ].filter(Boolean));
+    const before = new Set([
+      previous.art.background, previous.art.foreground, previous.art.painting,
+      ...Object.values(previous.art.characters),
+    ].filter(Boolean));
     for (const ref of before) {
       if (keep.has(ref) || !REF.test(ref)) continue;
       await unlink(join(this.#artDir, ref)).catch(() => {});
@@ -440,6 +552,20 @@ export class HomeRoom {
     return this.#mutate(revision, (draft) => { draft.art.background = ''; });
   }
 
+  async setForeground(dataUrl, revision) {
+    const image = decodeCover(dataUrl);
+    return this.#mutate(revision, (draft) => {
+      draft.art.foreground = image.cover;
+      return [image];
+    });
+  }
+
+  async clearForeground(revision) {
+    const { state } = await this.#load();
+    if (!state.art.foreground) return this.#public(state);
+    return this.#mutate(revision, (draft) => { draft.art.foreground = ''; });
+  }
+
   async setCharacter(activity, dataUrl, revision) {
     const id = cleanActivity(activity);
     const image = decodeCover(dataUrl);
@@ -463,7 +589,14 @@ export class HomeRoom {
     return this.#mutate(revision, (draft) => { draft.art.hotspots = list; });
   }
 
-  /** 恢复默认：活动回「随时段变」、清备注与热点；**图片保留**（素材不是状态，别替人删）。 */
+  async savePlacements(placements, revision) {
+    const list = cleanPlacements(placements ?? {});
+    const { state } = await this.#load();
+    if (JSON.stringify(placementsOf(state.placements)) === JSON.stringify(placementsOf(list))) return this.#public(state);
+    return this.#mutate(revision, (draft) => { draft.placements = list; });
+  }
+
+  /** 恢复默认：活动回「随时段变」、清备注/热点/位置；**图片保留**（素材不是状态）。 */
   async resetRoom(revision) {
     return this.#mutate(revision, (draft) => {
       draft.room.activity = 'idle';
@@ -471,6 +604,7 @@ export class HomeRoom {
       draft.room.source = 'default';
       draft.room.note = '';
       draft.art.hotspots = [];
+      draft.placements = {};
     }, { collect: false });
   }
 }
