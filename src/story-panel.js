@@ -15,8 +15,8 @@ export function describePack(row, venue, nowMin, visits, completedStoryIds = [],
     const availability = storyAvailability(pack, venue, completedStoryIds);
     let problem = '';
     if (!enabled) problem = '这篇故事在「故事工坊」中已停用。';
-    else if (opts.freeEnabled !== true) problem = '自由模式未开启：到娱乐时间设置里打开「自由模式（场景包）」。';
-    else if (!venue) problem = '地点绑定已失效，请在娱乐时间检查。';
+    else if (opts.freeEnabled !== true) problem = '自由模式未开启：到从0开始的肥鱼大冒险设置里打开「自由模式（场景包）」。';
+    else if (!venue) problem = '地点绑定已失效，请在从0开始的肥鱼大冒险检查。';
     else if (!availability.available) problem = availability.missingStoryIds?.length
       ? `尚未完成正史前置故事：${availability.missingStoryIds.join('、')}。`
       : '这篇场景包的地点当前不可用。';
@@ -35,7 +35,7 @@ export function describePack(row, venue, nowMin, visits, completedStoryIds = [],
   if (!enabled) problem = '这篇故事在「故事工坊」中已停用。';
   else if (!availability.available) problem = availability.missingStoryIds?.length
     ? `尚未完成正史前置故事：${availability.missingStoryIds.join('、')}。`
-    : '地点、区域或时段绑定已失效，请在娱乐时间检查。';
+    : '地点、区域或时段绑定已失效，请在从0开始的肥鱼大冒险检查。';
   else if (!pickStory([row], venue, node.area, nowMin, null, visits, completedStoryIds)) problem = '此刻或正史前置条件不满足故事开场。';
   return {
     id: pack.id, title: pack.title, description: pack.version === 2 ? pack.metadata.synopsis : '', revision: pack.revision,

@@ -290,8 +290,8 @@ test('服务端面板声明带 getMethods，且声明的方法真的能调', asy
   const authored = { ...JSON.parse(template.json), id: 'user-rpc-story' };
   assert.equal((await decl.invoke('stories', 'import', [{ json: JSON.stringify(authored) }])).ok, true);
   const builtin = authored;
-  // 页签顺序按方案图：去哪儿 → 地点册 → 出游 → 纪念册 → 纪念品架 → 故事工坊。
-  assert.deepEqual(decl.panels.map((p) => p.id), ['places', 'locations', 'story', 'book', 'shelf', 'stories']);
+  // 页签顺序：家 → 去哪儿 → 地点册 → 出游 → 纪念册 → 纪念品架 → 故事工坊。
+  assert.deepEqual(decl.panels.map((p) => p.id), ['home', 'places', 'locations', 'story', 'book', 'shelf', 'stories']);
   for (const p of decl.panels) {
     assert.ok(p.title && p.description, `${p.id} 缺标题或说明`);
     assert.ok(Array.isArray(p.getMethods) && p.getMethods.length, `${p.id} 没声明 getMethods`);
@@ -311,6 +311,39 @@ test('服务端面板声明带 getMethods，且声明的方法真的能调', asy
       else assert.equal(r.ok, true, `${p.id}.${m} 失败了：${r.error}`);
     }
   }
+});
+
+test('家：出门中只读显示，切姿势不改行程，也不写旧存档', async () => {
+  const { decl, tool, dataDir } = await mountPanels();
+  const stateFile = join(dataDir, 'fun', 'state.json');
+
+  const idle = await decl.invoke('home', 'state', []);
+  assert.equal(idle.ok, true, idle.error);
+  assert.equal(idle.trip.mode, 'home');
+  assert.equal(idle.activities.length, 10);
+  assert.equal(idle.place, null, '没设住所时明确说没有，而不是编一个');
+  assert.equal(idle.room.activity, 'idle');
+  assert.equal((await decl.invoke('home', 'art', [{ slot: 'character' }])).image, null);
+
+  await tool('fun_go')({ place: '海洋馆' });
+  const before = await readFile(stateFile);
+  const out = await decl.invoke('home', 'state', []);
+  assert.equal(out.trip.mode, 'out');
+  assert.equal(out.trip.placeName, '海洋馆');
+  assert.ok(out.trip.total > 0, '出门中要能算出逛了几处');
+
+  const switched = await decl.invoke('home', 'setActivity', [{ activity: 'reading', revision: out.revision }]);
+  assert.equal(switched.ok, true, switched.error);
+  assert.equal(switched.room.activity, 'reading');
+  assert.equal(switched.trip.mode, 'out', '在房间里换姿势不该影响出门状态');
+  assert.deepEqual(await readFile(stateFile), before, '房间只写 fun/home，行程存档一个字节都不动');
+
+  const stale = await decl.invoke('home', 'setActivity', [{ activity: 'gaming', revision: 0 }]);
+  assert.equal(stale.ok, false);
+  assert.equal(stale.code, 'STALE_ROOM');
+  const unknown = await decl.invoke('home', 'setActivity', [{ activity: 'flying', revision: switched.revision }]);
+  assert.equal(unknown.ok, false);
+  assert.equal(unknown.code, 'INVALID_ACTIVITY');
 });
 
 async function mountStoriesView(decl, options = {}) {
@@ -1279,7 +1312,7 @@ test('面板标题互不相同：两个故事面板不能都叫「故事工坊�
   const { decl, mount } = await mountPanels();
   const titles = decl.panels.map((panel) => panel.title);
   assert.equal(new Set(titles).size, titles.length, `面板标题重复：${titles.join('、')}`);
-  assert.deepEqual(titles, ['去哪儿', '地点册', '出游', '纪念册', '纪念品架', '故事工坊']);
+  assert.deepEqual(titles, ['家', '去哪儿', '地点册', '出游', '纪念册', '纪念品架', '故事工坊']);
   const root = await mount('stories');
   assert.match(root.textContent, /给下一次出游，写一个故事。/);
 });

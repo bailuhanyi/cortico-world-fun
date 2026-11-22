@@ -633,7 +633,7 @@ export function storyStepBlock(pack, node, venue, nowMin, visits = 0) {
     return `这一步要来这处至少 ${when.minVisits} 次之后才会触发；现在已经来过 ${Number(visits) || 0} 次。`;
   }
   if (!Array.isArray(venue.areas) || !venue.areas.includes(node.area)) {
-    return `故事要去的「${node.area}」不在这处地点里。请在娱乐时间核对故事包绑定的区域和地点。`;
+    return `故事要去的「${node.area}」不在这处地点里。请在从0开始的肥鱼大冒险核对故事包绑定的区域和地点。`;
   }
   if (!areasNow(venue, nowMin).includes(node.area)) {
     const windows = (venue.phases ?? []).filter((phase) => (phase.areas ?? []).includes(node.area))

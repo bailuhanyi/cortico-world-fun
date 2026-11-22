@@ -89,7 +89,7 @@ export const funDefinition = {
   /** `worlds.fun` 段的默认值；启用与否由部署决定，定义里恒为 false。 */
   defaults: () => structuredClone(DEFAULTS),
   preflight: () => {
-    if (typeof structuredClone !== 'function') throw new Error('娱乐时间需要 Node 22+ 的 structuredClone。');
+    if (typeof structuredClone !== 'function') throw new Error('从0开始的肥鱼大冒险需要 Node 22+ 的 structuredClone。');
   },
   create: (ctx) => new FunWorld({
     cfg: ctx.cfg,

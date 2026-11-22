@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, rm, readdir, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { StoryImages, STORY_IMAGE_MAX_BYTES, validateStoryImageSource } from '../src/story-images.js';
+import { StoryImages, STORY_IMAGE_MAX_BYTES, validateStoryImageSource, validateStoryWorkflow, materializeWorkflow } from '../src/story-images.js';
 
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a5V8AAAAASUVORK5CYII=', 'base64');
 const draft = { enabled: true, scene: '窗边', outfits: '蓝色外套', prompt: '温暖的午后，水彩画' };
@@ -352,3 +352,79 @@ test('malformed independent settings fall back safely and settings writes serial
   await fresh.init();
   assert.equal(fresh.status(true).source, '');
 });
+
+const WORKFLOW = JSON.stringify({
+  '3': { class_type: 'CheckpointLoaderSimple', inputs: { ckpt_name: 'mine.safetensors' } },
+  '5': { class_type: 'CLIPTextEncode', inputs: { text: '前缀 {{prompt}} 后缀', clip: ['3', 0] } },
+  '77': { class_type: 'SaveImage', inputs: { images: ['5', 0] } },
+});
+
+test('自定义工作流：只收 API 格式，必须有 {{prompt}}，并有体积与结构上限', () => {
+  assert.equal(validateStoryWorkflow(undefined).ok, true);
+  assert.equal(validateStoryWorkflow('   ').ok, true);
+  assert.equal(validateStoryWorkflow('{').ok, false, '畸形 JSON');
+  assert.equal(validateStoryWorkflow('[]').ok, false, '数组不是工作流');
+  assert.equal(validateStoryWorkflow(JSON.stringify({ 1: { class_type: 'X', inputs: {} } })).ok, false, '缺占位符');
+  assert.equal(validateStoryWorkflow(JSON.stringify({ 1: { class_type: 'X', inputs: {}, extra: 1, __proto__x: 2 } })).ok, false, '多余键');
+  assert.equal(validateStoryWorkflow(JSON.stringify({ 1: { inputs: {} } })).ok, false, '缺 class_type');
+  assert.equal(validateStoryWorkflow(JSON.stringify({ 1: { class_type: 'X' } })).ok, false, '缺 inputs');
+  assert.equal(validateStoryWorkflow(JSON.stringify({ 'a b': { class_type: 'X', inputs: {} } })).ok, false, '节点 ID 不合法');
+  assert.equal(validateStoryWorkflow('x'.repeat(33 * 1024)).ok, false, '超过 32 KB');
+  const good = validateStoryWorkflow(WORKFLOW);
+  assert.equal(good.ok, true);
+  assert.equal(good.workflow, WORKFLOW);
+});
+
+test('自定义工作流：{{prompt}} 与 {{seed}} 填进去，没写 {{seed}} 时自动给采样器随机种子', () => {
+  const filled = materializeWorkflow(WORKFLOW, { prompt: '一句话', seed: 42 });
+  assert.equal(filled['5'].inputs.text, '前缀 一句话 后缀');
+  assert.equal(filled['3'].inputs.ckpt_name, 'mine.safetensors');
+  assert.equal(filled['77'].class_type, 'SaveImage');
+  const seeded = materializeWorkflow(JSON.stringify({
+    '1': { class_type: 'KSampler', inputs: { seed: 1, steps: 30 } },
+    '2': { class_type: 'CLIPTextEncode', inputs: { text: '{{prompt}}' } },
+  }), { prompt: 'x', seed: 7 });
+  assert.equal(seeded['1'].inputs.seed, 7);
+  const token = materializeWorkflow(JSON.stringify({
+    '1': { class_type: 'Note', inputs: { text: 'seed={{seed}}' } },
+    '2': { class_type: 'CLIPTextEncode', inputs: { text: '{{prompt}}' } },
+  }), { prompt: 'x', seed: 123456 });
+  assert.equal(token['1'].inputs.text, 'seed=123456');
+  assert.throws(() => materializeWorkflow(JSON.stringify({ '1': { class_type: 'X', inputs: {} } }), { prompt: 'x' }));
+});
+
+test('自定义工作流直连：不再问 checkpoint，工作流原样提交，SaveImage 节点 ID 随意', async (t) => {
+  const { images, calls } = await direct(t, {}, {
+    history: () => json({ 'test-job-123': { outputs: { '77': { images: [{ filename: 'x.png', subfolder: '', type: 'output' }] } } } }),
+  });
+  assert.equal((await images.configure({ source: 'http://127.0.0.1:8188', workflow: WORKFLOW })).ok, true);
+  assert.equal(images.status(true).hasWorkflow, true);
+  assert.match(images.status(true).message, /你自己贴的工作流/);
+  const result = await images.generate(draft);
+  assert.equal(result.status, 'ready', result.message);
+  assert.equal(calls.some(({ url }) => url.pathname === '/object_info/CheckpointLoaderSimple'), false, '自定义工作流不查 checkpoint');
+  const submission = JSON.parse(calls.find(({ url }) => url.pathname === '/prompt').options.body);
+  assert.equal(submission.prompt['3'].inputs.ckpt_name, 'mine.safetensors');
+  assert.match(submission.prompt['5'].inputs.text, /窗边\n蓝色外套\n温暖/);
+  assert.equal(submission.prompt['77'].class_type, 'SaveImage');
+  assert.ok((await images.read(result.imageId)).ok);
+});
+
+test('自定义工作流：保存后可重启读回，清空即回到内置，坏工作流不覆盖已保存的来源', async (t) => {
+  const { images, dataDir, directory } = await setup(t, { fetchImpl: () => assert.fail('cannot fetch') });
+  assert.equal((await images.configure({ source: 'http://127.0.0.1:8188', workflow: '{' })).ok, false);
+  assert.equal(images.status().source, '', '坏工作流不应写入来源');
+  assert.equal((await images.configure({ source: 'http://127.0.0.1:8188', workflow: WORKFLOW })).ok, true);
+  assert.match(JSON.parse(await readFile(join(directory, 'settings.json'), 'utf8')).workflow, /\{\{prompt\}\}/);
+  const reloaded = new StoryImages({ dataDir });
+  await reloaded.init();
+  assert.equal(reloaded.status(true).hasWorkflow, true);
+  assert.equal(reloaded.status(true).workflow, WORKFLOW);
+  assert.equal((await reloaded.configure({ source: 'http://127.0.0.1:8188', workflow: '' })).ok, true);
+  assert.equal(reloaded.status(true).hasWorkflow, false);
+  const plain = new StoryImages({ dataDir });
+  await plain.init();
+  assert.equal(plain.status(true).hasWorkflow, false);
+  assert.equal(JSON.parse(await readFile(join(directory, 'settings.json'), 'utf8')).workflow, '');
+});
+

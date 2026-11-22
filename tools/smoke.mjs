@@ -39,7 +39,7 @@ const ok = (cond, what, extra = '') => {
 console.log('1) 入口形状');
 ok(definition === funDefinition, 'default export 就是 funDefinition');
 ok(funDefinition.id === 'fun', 'id 是 fun');
-ok(funDefinition.label === '娱乐时间', 'label 是 娱乐时间');
+ok(funDefinition.label === '从0开始的肥鱼大冒险', 'label 是 从0开始的肥鱼大冒险');
 ok(typeof funDefinition.defaults === 'function', 'defaults 是函数');
 ok(typeof funDefinition.preflight === 'function', 'preflight 是函数');
 ok(typeof funDefinition.create === 'function', 'create 是函数');
@@ -73,7 +73,7 @@ const logged = [];
 const host = { log: { info: (m, meta) => logged.push([m, meta]), warn: (m) => logged.push([`WARN ${m}`]), error() {} } };
 const world = new FunWorld({ cfg: { enabled: true }, dataDir: dir, timezone: TZ, persist: () => {} });
 await world.start(host);
-ok(logged.some(([m]) => /娱乐时间已启动/.test(m)), 'start 打了启动日志');
+ok(logged.some(([m]) => /从0开始的肥鱼大冒险已启动/.test(m)), 'start 打了启动日志');
 
 const names = world.tools().map((t) => t.name).sort();
 // 七个工具：0.1.6 加了 fun_shelf（纪念品架）。
@@ -109,7 +109,7 @@ ok(offWorld.envPromptVars().fun_places_block === '', 'funOn 关掉后不注入�
 await offWorld.stop();
 
 const ui = world.webUi('zh');
-ok(ui.label === '娱乐时间', 'webUi label');
+ok(ui.label === '从0开始的肥鱼大冒险', 'webUi label');
 ok(Array.isArray(ui.lamps) && ui.lamps.length === 1, 'webUi 有一盏灯');
 ok(Array.isArray(ui.config) && ui.config.length === 1, 'webUi 一组配置');
 ok(ui.promptDocs?.[0]?.key === 'worlds.fun.env', 'webUi 的 promptDocs key 是 worlds.fun.env');

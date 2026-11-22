@@ -26,8 +26,20 @@ var ZH = {
   storyGroupProgress: (done, total) => `${done}/${total} 已填写`,
   storyGroupOptional: "可选设置",
   settingsTab: "设置",
-  settingsTitle: "故事设置与本地插画",
-  settingsIntro: "主持和图片都是可选项；不配置也能完整手动游玩。",
+  settingsTitle: "本机设置",
+  settingsIntro: "这里只放跟这台机器有关的东西：故事长度、主持凭据、剧情图片和本地插画。世界开关、地点、日程与创作在别处，见最后一节。",
+  settingsPartLength: "故事长度",
+  settingsPartLengthHint: "新建或导入故事时允许多少个节点。",
+  settingsPartPrivate: "主持与图片来源",
+  settingsPartPrivateHint: "主持接口和图片来源一起保存；密钥只存这台机器。",
+  settingsPartImage: "剧情图片",
+  settingsPartImageHint: "按上面选的来源试一张；失败时保留原插画，文字照常往下走。",
+  settingsPartArtwork: "本地插画",
+  settingsPartArtworkHint: "存浏览器里、不上传；加载失败会回到示意场景。",
+  settingsPartElsewhere: "其他设置在哪里",
+  settingsArtworkAbout: "关于本地插画",
+  settingsElsewhereTitle: "开关、地点与日程",
+  settingsElsewhereNote: "世界开关（剧情图片、文本主持、文字通道、自由模式）：「配置 → 从0开始的肥鱼大冒险」。地点、住所与画风：「地点册」。场所与故事分支：「故事工坊」。今日安排与生活记录：「鱼的每一天」。",
   storyNodeLimitTitle: "故事节点上限",
   storyNodeLimitSummary: "控制新建或导入故事时允许的最大节点数。填 0 表示不限制节点数；单篇 JSON 仍最多 32 KB。修改设置不会删除或阻断已有故事。",
   storyNodeLimitField: "节点数（0 = 不限）",
@@ -46,7 +58,7 @@ var ZH = {
   storyImageHelpSummary: "查看三种来源与失败处理",
   storyImageOff: "已关闭",
   storyImageOn: "已开启",
-  storyImageSettingsHint: "开关在「世界 → 娱乐时间」配置页。",
+  storyImageSettingsHint: "开关在「世界 → 从0开始的肥鱼大冒险」配置页。",
   storyDmApiUrl: "接口地址（留空沿用宿主模型）",
   storyDmApiKey: "API Key",
   storyDmModel: "模型名（可留空）",
@@ -64,9 +76,18 @@ var ZH = {
   storyImageTitle: "剧情图片生成",
   storyImageSourceHint: "留空：默认委派给「鱼的生图包」，由主对话调用 imggen_draw；需要安装并启用该包。当前没有经过验证的安装检测：主对话若没有 imggen_draw，须明确提示未安装；fun 只给出委派参数，不跨 World 调工具，图片由生图包保存在其目录。填写 loopback 根 URL（如 http://127.0.0.1:8188）：由本插件直连 ComfyUI HTTP，需要运行中的服务与传统 checkpoint；固定 512×512、Euler 20 步，30 秒超时、8 MiB 图片上限。失败显示原因并保留原图，已排队的上游任务可能继续；成功图片存本插件 dataDir/fun/story-images；ComfyUI 同时保留其服务端输出。填写其他插件名或说明：仅生成委派说明，由主对话或你指定的插件执行，需要自行确认能力；失败不自动重试，图片由实际执行方保存。URL 严禁包含任何凭据（用户名、密码、密钥、查询或片段）。开关关闭时仅用本地预制或显式导入图片；文字剧情任何时候都不等图片。",
   storyImageInvalid: "图片 URL 只能是不含凭据、查询和片段的 loopback HTTP(S) 根地址；请勿填写密钥。",
+  storyImageWorkflowTitle: "自定义工作流（可选）",
+  storyImageWorkflowLabel: "工作流 JSON（留空用内置）",
+  storyImageWorkflowPlaceholder: '{\n  "1": { "class_type": "CheckpointLoaderSimple", "inputs": { "ckpt_name": "your.safetensors" } },\n  "2": { "class_type": "CLIPTextEncode", "inputs": { "text": "{{prompt}}", "clip": ["1", 0] } }\n}',
+  storyImageWorkflowSummary: "贴 ComfyUI 的 API 格式 JSON，用 {{prompt}} 标出提示词；只对直连本机 ComfyUI 生效。",
+  storyImageWorkflowHint: "怎么导出：在 ComfyUI 里搭好工作流 → 菜单「Save (API Format)」→ 把整段 JSON 贴进来。把你的正向提示词那段文字换成 {{prompt}}（必填），想固定种子就写 {{seed}}（不写则每次自动随机，免得 ComfyUI 缓存出同一张图）。模型、尺寸、步数全由你的工作流决定，本插件不再用内置的 512×512；最多 32 KB、200 个节点。",
+  storyImageWorkflowInvalid: "工作流 JSON 解析失败：请确认是从 ComfyUI 用「Save (API Format)」导出的。",
+  storyImageWorkflowNoPrompt: "工作流里必须有一个 {{prompt}} 占位符，用来放这一段的正向提示词。",
+  storyImageWorkflowOn: "自定义工作流",
+  storyImageWorkflowOff: "内置工作流",
   storyImageGenerate: "生成／委派当前场景图片",
   storyImagePending: "正在生成／准备委派…",
-  storyImageDelegated: "已生成委派说明；请由主对话或指定插件执行。",
+  storyImageDelegated: "已把委派参数递给她（45 分钟内有效）；画不画由她定，也可以按上面的 JSON 交给指定插件。",
   storyImageDirect: "图片已保存在本插件本地数据目录。",
   storyImageNoPlugin: "尚未确认安装「鱼的生图包」；请安装启用，或复制委派参数交给主对话。",
   storyImageUnavailable: "当前无法生成图片；文字故事照常继续。",
@@ -95,7 +116,7 @@ var ZH = {
   storyCustom: "自定义故事",
   storyStart: "现在出发",
   storyContinue: "先继续当前行程",
-  storyProgress: "进度由娱乐时间保存",
+  storyProgress: "进度由从0开始的肥鱼大冒险保存",
   storyBlocked: "暂时无法出发"
 };
 var EN = {
@@ -125,8 +146,20 @@ var EN = {
   storyGroupProgress: (done, total) => `${done}/${total} filled`,
   storyGroupOptional: "Optional settings",
   settingsTab: "Settings",
-  settingsTitle: "Story settings and local artwork",
-  settingsIntro: "Text DM and images are optional; manual stories work without configuring either.",
+  settingsTitle: "Local settings",
+  settingsIntro: "Only what belongs to this machine: story length, DM credentials, story images and local artwork. World switches, places, schedule and authoring live elsewhere — see the last section.",
+  settingsPartLength: "Story length",
+  settingsPartLengthHint: "How many nodes a new or imported story may have.",
+  settingsPartPrivate: "DM and image source",
+  settingsPartPrivateHint: "DM endpoint and image source save together; the key never leaves this machine.",
+  settingsPartImage: "Story images",
+  settingsPartImageHint: "Try one with the source above; failures keep the old artwork and text keeps flowing.",
+  settingsPartArtwork: "Local artwork",
+  settingsPartArtworkHint: "Stored in this browser, never uploaded; a failed load falls back to the sketch.",
+  settingsPartElsewhere: "Where the other settings live",
+  settingsArtworkAbout: "About local artwork",
+  settingsElsewhereTitle: "Switches, places and schedule",
+  settingsElsewhereNote: "World switches (story images, text DM, text channel, free mode): Configuration → Adventures of Fat Fish from Scratch. Places, home and style: Place Book. Venues and story branches: Story Workshop. Schedule and life log: Fish Every Day.",
   storyNodeLimitTitle: "Story node limit",
   storyNodeLimitSummary: "Set the maximum nodes allowed when creating or importing a story. Enter 0 for no node-count limit; each story JSON remains limited to 32 KB. Changing this setting does not delete or block existing stories.",
   storyNodeLimitField: "Node count (0 = unlimited)",
@@ -145,7 +178,7 @@ var EN = {
   storyImageHelpSummary: "Show source and failure details",
   storyImageOff: "Off",
   storyImageOn: "On",
-  storyImageSettingsHint: "The switch lives in World → Fun time configuration.",
+  storyImageSettingsHint: "The switch lives in World → Adventures of Fat Fish from Scratch configuration.",
   storyDmApiUrl: "API endpoint (blank uses the host model)",
   storyDmApiKey: "API key",
   storyDmModel: "Model name (optional)",
@@ -163,9 +196,18 @@ var EN = {
   storyImageTitle: "Story image generation",
   storyImageSourceHint: "Blank: delegates to Fish Image Pack by default; the main conversation calls imggen_draw. Install and enable that pack. There is no verified installation discovery: if the main conversation has no imggen_draw, it must explicitly report the missing plugin. Fun only supplies delegation parameters and never calls across Worlds; the image pack saves images in its own directory. Local URL (a loopback root such as http://127.0.0.1:8188): this plugin connects directly to ComfyUI HTTP, requiring a running service and a traditional checkpoint. Uses fixed 512×512, Euler 20 steps, a 30-second timeout and an 8 MiB image limit. Failures explain the reason and retain the previous image; already queued upstream jobs may continue. Successful images are saved under this plugin dataDir/fun/story-images; ComfyUI also retains its server output. Another plugin name or instructions: produces delegation instructions only; the main conversation or your chosen plugin executes them, and you must confirm its capabilities. Failures are not retried automatically; the executing provider saves the images. URLs must never contain credentials (username, password, key, query or fragment). When disabled, only packaged local art or explicit imports are used. Text stories never wait for images.",
   storyImageInvalid: "Image URLs must be loopback HTTP(S) root addresses without credentials, a query or fragment. Do not enter keys.",
+  storyImageWorkflowTitle: "Custom workflow (optional)",
+  storyImageWorkflowLabel: "Workflow JSON (blank uses the built-in one)",
+  storyImageWorkflowPlaceholder: '{\n  "1": { "class_type": "CheckpointLoaderSimple", "inputs": { "ckpt_name": "your.safetensors" } },\n  "2": { "class_type": "CLIPTextEncode", "inputs": { "text": "{{prompt}}", "clip": ["1", 0] } }\n}',
+  storyImageWorkflowSummary: "Paste a ComfyUI API-format JSON and mark the prompt with {{prompt}}. Only used for local ComfyUI.",
+  storyImageWorkflowHint: 'In ComfyUI build the graph, then use "Save (API Format)" and paste the whole JSON. Replace your positive prompt text with {{prompt}} (required); add {{seed}} if you want a fixed seed (otherwise every run gets a random one so ComfyUI does not cache the same image). Model, size and steps come from your workflow — the built-in 512×512 is not used. At most 32 KB and 200 nodes.',
+  storyImageWorkflowInvalid: `Workflow JSON could not be parsed. Make sure it was exported with ComfyUI's "Save (API Format)".`,
+  storyImageWorkflowNoPrompt: "The workflow must contain a {{prompt}} placeholder for the positive prompt.",
+  storyImageWorkflowOn: "Custom workflow",
+  storyImageWorkflowOff: "Built-in workflow",
   storyImageGenerate: "Generate / delegate current scene image",
   storyImagePending: "Generating / preparing delegation…",
-  storyImageDelegated: "Delegation instructions are ready for the main conversation or chosen plugin.",
+  storyImageDelegated: "Drawing parameters are handed to her (valid for 45 minutes); whether to draw is up to her, or run the JSON above with a chosen plugin.",
   storyImageDirect: "The image was saved in this plugin’s local data directory.",
   storyImageNoPlugin: "Fish Image Pack installation is unverified. Install and enable it, or copy the delegation parameters to the main conversation.",
   storyImageUnavailable: "Image generation is unavailable. The text story can continue.",
@@ -1193,7 +1235,7 @@ function mountStories(ctx) {
       el(
         "div",
         { class: "fun-story-head-main" },
-        el("p", { class: "fun-story-kicker" }, "娱乐时间 · 给下一次出游，写一个故事。"),
+        el("p", { class: "fun-story-kicker" }, "从0开始的肥鱼大冒险 · 给下一次出游，写一个故事。"),
         el("h2", {}, "给下一次出游，写一个故事。"),
         el("p", { class: "fun-story-note" }, "故事库、创作与试玩放在一起；平时只看作品，编辑时再展开。")
       ),
@@ -2119,6 +2161,27 @@ var STYLES = `
 .sw-drawer-body{flex:1 1 auto;min-height:0;overflow-y:auto;padding:14px 18px 18px}
 @container (max-width:650px){.sw-play{--sw-play-h:min(72vh,680px)}.sw-play>.sw-aside{position:static;max-height:none;overflow:visible}.sw-imm .sw-scene{min-height:220px}.sw-imm-lead{font-size:15px}}
 @media (prefers-contrast:more){.sw{--sw-muted:var(--sw-ink)}.sw-badge,.sw-btn,.sw-card{border-width:2px}}
+/* 自定义工作流：折叠区 + 等宽 textarea */
+.sw-settings-workflow{margin:12px 0 0;border:1px solid var(--sw-line);border-radius:10px;padding:11px 13px;background:var(--sw-soft)}
+.sw-settings-workflow>summary{cursor:pointer;font-weight:650;font-size:13px;display:flex;align-items:center;gap:8px;list-style:none}
+.sw-settings-workflow>summary::-webkit-details-marker{display:none}
+.sw-settings-workflow>summary .sw-badge{margin-left:auto;font-weight:500}
+.sw-settings-workflow[open]>summary{margin-bottom:8px}
+.sw-workflow-json{margin-top:6px;width:100%;min-height:150px;border:1px solid var(--sw-line);border-radius:8px;background:var(--sw-paper);color:inherit;font:12px/1.55 ui-monospace,Consolas,monospace;padding:8px 10px;resize:vertical}
+.sw-workflow-json:focus-visible{outline:3px solid color-mix(in srgb,var(--sw-green) 65%,white);outline-offset:2px}
+.sw-settings-image-card .sw-setting-field{margin-bottom:0}
+/* 共同决定：两席各一票，票面摆在选项上方，谁还没投一眼看得见 */
+.sw-votes{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:14px 0 4px}
+.sw-vote{border:1px dashed var(--sw-line);border-radius:9px;padding:8px 11px;background:var(--sw-paper);min-width:0}
+.sw-vote small{display:block;font-size:10px;letter-spacing:.04em;color:var(--sw-muted)}
+.sw-vote strong{display:block;font-size:12px;margin-top:2px;overflow-wrap:anywhere}
+.sw-vote-done{border-style:solid;border-color:color-mix(in srgb,var(--sw-green) 38%,var(--sw-line));background:var(--sw-soft)}
+.sw-imm .sw-votes{grid-template-columns:1fr 1fr;max-width:520px;margin:12px auto 0}
+/* 设置页的分区：一节只讲一件事，标题是名词，副句说人话 */
+.sw-settings-part{display:flex;flex-direction:column;gap:12px;min-width:0}
+.sw-settings-part-head h3{font-size:15px;letter-spacing:.01em}
+.sw-settings-part-head p{font-size:11.5px;line-height:1.7;color:var(--sw-muted);margin-top:4px;max-width:64ch}
+.sw-settings-part+.sw-settings-part{padding-top:20px;border-top:1px solid color-mix(in srgb,var(--sw-line) 70%,transparent)}
 `;
 
 // webui/story/panel.js
@@ -2493,8 +2556,28 @@ function mountPanel(root, ctx) {
     if (current.state === "draft") return "先继续行程，再选择下一步。";
     if (state.autoAuthorized) return "鱼正在考虑这些有效选项。你可以随时关闭右侧开关接管。";
     if (canSubstitute) return "鱼这一步没法自己决定：你可以替她选一个，点下去会先问你确认；也可以先收尾，或者点右侧「再来一段」。";
-    if (current.pending?.actor === "joint") return "双方都明确提交才会前进；等待与超时都不算同意。";
+    const pending = current.pending;
+    if (pending?.actor === "joint") {
+      const votes = pending.votes ?? {};
+      if (!votes.owner) return "两席各投一票，同票才出发：你先选，选完等鱼自己投她那一票。";
+      if (!votes.fish) return "你这一票已经记下了。这一票要鱼自己投：到聊天里让她说，或者打开右侧「鱼自己游玩」由她决定。两票相同才会前进。";
+      return "两边的票不一样，这一轮重新来：你可以改选，鱼也会被要求重选。同票才前进，等待不算同意。";
+    }
     return "选一条你想走的路。点击后会等待保存确认。";
+  }
+  function jointBoard(pending) {
+    const votes = pending?.votes ?? {};
+    const labelOf = (id) => list(pending?.options).find((option) => option.id === id)?.label ?? "";
+    const seat = (who, name) => {
+      const picked = labelOf(votes[who]);
+      return node(
+        "div",
+        { class: `sw-vote${picked ? " sw-vote-done" : ""}` },
+        node("small", {}, name),
+        node("strong", {}, picked || "还没投")
+      );
+    };
+    return node("div", { class: "sw-votes", "aria-label": "共同决定的两席票" }, seat("owner", "你这一席"), seat("fish", "鱼那一席"));
   }
   function advanceButton(state, current, opts = {}) {
     const manually = canAct(state) && !state.snapshot.autonomy.enabled;
@@ -2679,7 +2762,7 @@ function mountPanel(root, ctx) {
       {},
       node("div", { class: "sw-kicker" }, isDraft ? "等待继续" : "当前行程"),
       node("h2", {}, text(current.title, text(current.placeName, "正在出游")))
-    ), badge(isDraft ? "等待继续" : current.step === "blocked" ? "暂时受阻" : state.autoAuthorized ? "鱼自己游玩中" : "由你亲自选择", isDraft || current.step === "blocked")));
+    ), badge(isDraft ? "等待继续" : current.step === "blocked" ? "暂时受阻" : state.autoAuthorized ? "鱼自己游玩中" : current.actor === "fish" ? "等鱼提交" : "由你亲自选择", isDraft || current.step === "blocked")));
     const events = list(current.events);
     const choices = list(current.choices);
     left.append(node(
@@ -2702,7 +2785,12 @@ function mountPanel(root, ctx) {
       ));
       reading.append(node("ul", { class: "sw-event-history" }, events.slice(-3).map((event) => node("li", {}, node("p", { class: "sw-prose" }, text(event))))));
     } else reading.append(node("p", { class: "sw-prose" }, current.step === "move" ? "路就在眼前。走近一点，看看会遇见什么。" : "这一趟的故事，将随着真实的行动在这里展开。"));
-    if (current.actor) reading.append(note(`当前行动者：${current.actor === "fish" ? "鱼" : "你"}${pending?.actor === "joint" ? ` · 共同决定：${pending.jointResolution === "require-agreement" ? "双方必须明确同意；分歧保持待定" : pending.jointResolution === "owner-final" ? "分歧按你的明确选择" : "分歧按鱼的明确选择"}` : ""}。等待不会当作同意。`));
+    if (current.actor) {
+      const joint = pending?.actor === "joint" ? pending : null;
+      const picked = (id) => list(joint?.options).find((option) => option.id === id)?.label ?? "";
+      const seats = joint ? ` · 你${joint.votes?.owner ? `已选「${picked(joint.votes.owner)}」` : "还没投"}，鱼${joint.votes?.fish ? `已选「${picked(joint.votes.fish)}」` : "还没投"}` : "";
+      reading.append(note(`当前行动者：${current.actor === "fish" ? "鱼" : "你"}${pending?.actor === "joint" ? ` · 共同决定：${pending.jointResolution === "require-agreement" ? "双方必须明确同意；分歧保持待定" : pending.jointResolution === "owner-final" ? "分歧按你的明确选择" : "分歧按鱼的明确选择"}` : ""}${seats}。等待不会当作同意。`));
+    }
     for (const reference of list(current.references)) reading.append(note(reference));
     if (current.blocked) reading.append(node("div", { class: "sw-notice sw-notice-error" }, icon("info"), node("p", {}, text(current.blocked, "当前无法推进，请核对场所与故事条件。"))));
     if (current.complete) reading.append(node("div", { class: "sw-reason" }, "这一段故事已经走到结尾。确认回家后，会按实际发生的内容收进回忆。"));
@@ -2710,9 +2798,20 @@ function mountPanel(root, ctx) {
     const action = node("div", { class: "sw-play-action", "aria-label": "当前这一步" });
     if (pending) {
       const { block, canSubstitute } = pendingPicker(state, current, "sw-choices");
-      action.append(node("div", { class: "sw-kicker" }, "现在轮到你了"));
+      const joint = pending.actor === "joint";
+      action.append(node("div", { class: "sw-kicker" }, joint && current.actor === "fish" ? "现在轮到鱼" : "现在轮到你了"));
       if (pending.prompt) action.append(node("p", { class: "sw-prose" }, text(pending.prompt)));
+      if (joint) action.append(jointBoard(pending));
       action.append(block, note(optionsHint(state, current, canSubstitute)));
+      if (joint && current.actor === "fish" && canAct(state)) {
+        action.append(actionRow(button(
+          "刷新，看鱼投了没",
+          () => {
+            void controller.refresh();
+          },
+          { small: true, quiet: true, key: "joint-refresh", disabled: Boolean(state.busy) }
+        )));
+      }
     } else {
       const advance = advanceButton(state, current, { block: true });
       action.append(node("div", { class: "sw-kicker" }, isDraft || current.step === "resume" ? "下一步" : current.step === "close" ? "收尾" : "下一处"));
@@ -2731,7 +2830,7 @@ function mountPanel(root, ctx) {
     const checked = state.autoplay === true;
     const running = state.autoAuthorized === true;
     const stopped = Boolean(snapshot.autonomy.stop);
-    const modeSubtitle = stopped ? snapshot.autonomy.canContinue ? "这一段走完了，可以再来一段" : "这一段走完了，等你收尾" : running ? "这一趟，由鱼自己决定" : checked ? current.actor === "owner" ? "轮到你选择；选完鱼会接着走" : "鱼会接着往下走" : "下一步，等你来选择";
+    const modeSubtitle = stopped ? snapshot.autonomy.canContinue ? "这一段走完了，可以再来一段" : "这一段走完了，等你收尾" : running ? "这一趟，由鱼自己决定" : checked ? current.actor === "owner" ? "轮到你选择；选完鱼会接着走" : "鱼会接着往下走" : current.actor === "fish" ? "这一步等鱼提交，可以去聊天里让她说" : "下一步，等你来选择";
     modeCard.append(node(
       "div",
       { class: "sw-mode" },
@@ -2810,10 +2909,11 @@ function mountPanel(root, ctx) {
       node("div", { class: "sw-kicker" }, isDraft ? "等待继续" : `此刻 · ${text(current.area, current.placeName)}`),
       node("p", { class: "sw-imm-lead" }, text(events.at(-1), current.step === "move" ? "路就在眼前。走近一点，看看会遇见什么。" : "这一趟的故事，将随着真实的行动在这里展开。")),
       pending?.prompt ? node("p", { class: "sw-imm-ask" }, text(pending.prompt)) : null,
-      current.actor === "joint" || pending?.actor === "joint" ? note("共同决定：双方都明确提交后才会前进；等待与超时都不算同意。") : null
+      current.actor === "joint" || pending?.actor === "joint" ? note(`共同决定：${current.actor === "fish" ? "现在轮到鱼投她那一票" : "现在等你投这一票"}；两边同票才会前进，等待与超时都不算同意。`) : null
     ));
     if (pending) {
       const { block, canSubstitute } = pendingPicker(state, current, "sw-imm-choices");
+      if (pending.actor === "joint") wrap.append(jointBoard(pending));
       wrap.append(block, note(optionsHint(state, current, canSubstitute)));
     } else {
       const advance = advanceButton(state, current, { block: true });
@@ -3142,6 +3242,8 @@ function mountPanel(root, ctx) {
       imageTouched: false,
       imagesEnabled: false,
       revision: 0,
+      workflow: "",
+      workflowTouched: false,
       modelName: "",
       savedModel: "",
       modelTouched: false,
@@ -3206,6 +3308,28 @@ function mountPanel(root, ctx) {
       ++model.revision;
       paint();
     });
+    const workflow = node("textarea", {
+      rows: "6",
+      spellcheck: "false",
+      class: "sw-workflow-json",
+      "data-focus": "settings-workflow",
+      "aria-label": t.storyImageWorkflowLabel,
+      placeholder: t.storyImageWorkflowPlaceholder
+    });
+    workflow.addEventListener("input", () => {
+      model.workflow = workflow.value;
+      model.workflowTouched = true;
+      paint();
+    });
+    const workflowBadge = node("span", { class: "sw-badge sw-settings-state", "data-settings-workflow-state": "" });
+    const workflowBox = node(
+      "details",
+      { class: "sw-settings-workflow" },
+      node("summary", {}, node("span", {}, t.storyImageWorkflowTitle), workflowBadge),
+      node("p", { class: "sw-card-note" }, t.storyImageWorkflowSummary),
+      node("label", { class: "sw-setting-field" }, t.storyImageWorkflowLabel, workflow),
+      note(t.storyImageWorkflowHint)
+    );
     const save = button(t.settingsSave, async () => {
       if (model.busy) return;
       const args = { imageSource: model.imageSource.trim() };
@@ -3239,6 +3363,25 @@ function mountPanel(root, ctx) {
         error.textContent = t.storyImageInvalid;
         return;
       }
+      if (model.workflowTouched) {
+        args.workflow = model.workflow.trim();
+        if (args.workflow) {
+          try {
+            JSON.parse(args.workflow);
+          } catch {
+            error.textContent = t.storyImageWorkflowInvalid;
+            return;
+          }
+          if (!args.workflow.includes("{{prompt}}")) {
+            error.textContent = t.storyImageWorkflowNoPrompt;
+            return;
+          }
+          if (args.workflow.length > 32 * 1024) {
+            error.textContent = t.storyImageWorkflowInvalid;
+            return;
+          }
+        }
+      }
       const revision = model.revision;
       const modelRevision = model.modelRevision;
       const privateRevisions = { apiUrl: model.apiUrl.revision, apiKey: model.apiKey.revision };
@@ -3252,7 +3395,10 @@ function mountPanel(root, ctx) {
         if (disposed || ctx.signal?.aborted) return;
         if (!result?.ok) {
           if (result) applySafeView(result);
-          if (result?.partial !== "dm") throw new Error();
+          if (result?.partial !== "dm") {
+            error.textContent = result?.error || t.settingsFailure;
+            return;
+          }
           if (model.modelRevision === modelRevision) {
             model.modelTouched = false;
             if (Object.hasOwn(args, "model")) model.savedModel = model.modelName = modelInput.value = args.model;
@@ -3279,6 +3425,10 @@ function mountPanel(root, ctx) {
           model.imageTouched = false;
           source.value = model.imageSource = savedImageSource;
         }
+        if (Object.hasOwn(args, "workflow") && model.workflow.trim() === args.workflow) {
+          model.workflowTouched = false;
+          workflow.value = model.workflow = savedWorkflow;
+        }
         status.textContent = t.settingsSaved;
       } catch {
         if (!disposed) error.textContent = t.settingsFailure;
@@ -3296,6 +3446,8 @@ function mountPanel(root, ctx) {
       modelInput.value = model.savedModel;
       model.imageTouched = false;
       source.value = model.imageSource = savedImageSource;
+      model.workflowTouched = false;
+      workflow.value = model.workflow = savedWorkflow;
       ++model.revision;
       error.textContent = "";
       status.textContent = t.settingsCancelled;
@@ -3329,12 +3481,17 @@ function mountPanel(root, ctx) {
     }, { danger: true, key: "settings-clear" });
     const reload = button(t.settingsReload, () => void load(), { quiet: true, key: "settings-reload" });
     let savedImageSource = "";
+    let savedWorkflow = "";
     function applySafeView(result) {
       if (typeof result.dm?.saved === "boolean") model.saved = result.dm.saved;
       if (typeof result.dm?.supported === "boolean") model.supported = result.dm.supported;
       if (typeof result.imageSource === "string") {
         savedImageSource = result.imageSource;
         if (!model.imageTouched) source.value = model.imageSource = savedImageSource;
+      }
+      if (typeof result.imageWorkflow === "string") {
+        savedWorkflow = result.imageWorkflow;
+        if (!model.workflowTouched) workflow.value = model.workflow = savedWorkflow;
       }
       if (typeof result.dm?.model === "string") {
         model.savedModel = result.dm.model;
@@ -3353,7 +3510,7 @@ function mountPanel(root, ctx) {
       modelInput.value = "";
     }
     function paint() {
-      const dirty = model.apiUrl.touched || model.apiKey.touched || model.imageTouched || model.modelTouched;
+      const dirty = model.apiUrl.touched || model.apiKey.touched || model.imageTouched || model.modelTouched || model.workflowTouched;
       saved.textContent = dirty ? t.storyDmApiPending : model.saved ? t.storyDmApiSaved : t.storyDmApiUnset;
       support.textContent = model.supported ? "" : t.storyDmApiUnsupported;
       save.disabled = Boolean(model.busy) || !model.loaded || !dirty;
@@ -3362,6 +3519,9 @@ function mountPanel(root, ctx) {
       reload.disabled = Boolean(model.busy);
       fields.apiUrl.input.disabled = !model.supported;
       fields.apiKey.input.disabled = !model.supported;
+      const hasWorkflow = Boolean(model.workflow.trim());
+      workflowBadge.textContent = hasWorkflow ? t.storyImageWorkflowOn : t.storyImageWorkflowOff;
+      workflowBadge.className = hasWorkflow ? "sw-badge sw-settings-state sw-settings-state-on" : "sw-badge sw-settings-state";
       container.setAttribute("aria-busy", String(Boolean(model.busy)));
     }
     function setImageEnabled(enabled) {
@@ -3416,6 +3576,7 @@ function mountPanel(root, ctx) {
       node("div", { class: "sw-settings-subhead" }, node("div", {}, node("h3", {}, t.storyImageTitle), node("p", { class: "sw-card-summary" }, t.storyImageSummary)), imageBadge),
       node("label", { class: "sw-setting-field" }, t.storyImageSource, source),
       node("details", { class: "sw-settings-help" }, node("summary", {}, t.storyImageHelpSummary), note(t.storyImageSourceHint)),
+      workflowBox,
       note(t.storyImageSettingsHint)
     );
     const container = node("div", { class: "sw-settings-stack sw-private-settings" }, dmCard, imageCard);
@@ -3475,6 +3636,14 @@ function mountPanel(root, ctx) {
       if (!disposed) render();
     }
   }
+  function settingsPart(title, intro, ...children) {
+    return node(
+      "section",
+      { class: "sw-settings-part" },
+      node("div", { class: "sw-settings-part-head" }, node("h3", {}, title), intro ? node("p", {}, intro) : null),
+      ...children
+    );
+  }
   function settings(state) {
     if (!nodeLimitSettings) nodeLimitSettings = buildNodeLimitSettings();
     void nodeLimitSettings.load();
@@ -3483,73 +3652,86 @@ function mountPanel(root, ctx) {
       void privateSettings.load();
     }
     privateSettings.setImageEnabled(state?.snapshot?.images?.enabled === true);
+    const slots = RESOURCE_SLOTS.filter((slot) => slot.id !== "creek-letter-ending").map((slot) => {
+      const file = node("input", { type: "file", accept: "image/png,image/jpeg,image/webp", hidden: true, "aria-label": `导入${slot.title}插画` });
+      file.addEventListener("change", async () => {
+        const picked = file.files?.[0];
+        if (!picked || importing) return;
+        importing = slot.id;
+        localError = "";
+        localNotice = "";
+        render();
+        try {
+          await artwork.import(slot.id, picked);
+          if (!disposed) localNotice = "插画已应用。浏览器允许时会保留在本面板的本地存储中。";
+        } catch (error) {
+          if (!disposed) localError = error.message ?? "图片导入失败。";
+        } finally {
+          importing = "";
+          if (!disposed) render();
+        }
+      });
+      return node(
+        "section",
+        { class: "sw-card sw-resource" },
+        scene(slot.id, slot.title, "", { tag: artwork.get(slot.id) ? "已设置插画" : "默认示意场景" }),
+        node(
+          "div",
+          { class: "sw-card-pad" },
+          node("code", {}, slot.id),
+          node("p", {}, slot.description),
+          file,
+          actionRow(
+            button(importing === slot.id ? "正在读取…" : "选择本地图", () => file.click(), { icon: "image", small: true, disabled: Boolean(importing), key: `import-${slot.id}` }),
+            artwork.get(slot.id) ? button("恢复示意", () => artwork.clear(slot.id), { quiet: true, small: true, key: `clear-${slot.id}` }) : null
+          )
+        )
+      );
+    });
     return node(
       "div",
       { class: "sw-stack" },
       node("div", { class: "sw-lead" }, node("h2", {}, t.settingsTitle), node("p", {}, t.settingsIntro)),
-      nodeLimitSettings.node,
-      privateSettings.node,
-      node("div", { class: "sw-settings-grid" }, RESOURCE_SLOTS.filter((slot) => slot.id !== "creek-letter-ending").map((slot) => {
-        const file = node("input", { type: "file", accept: "image/png,image/jpeg,image/webp", hidden: true, "aria-label": `导入${slot.title}插画` });
-        file.addEventListener("change", async () => {
-          const picked = file.files?.[0];
-          if (!picked || importing) return;
-          importing = slot.id;
-          localError = "";
-          localNotice = "";
-          render();
-          try {
-            await artwork.import(slot.id, picked);
-            if (!disposed) localNotice = "插画已应用。浏览器允许时会保留在本面板的本地存储中。";
-          } catch (error) {
-            if (!disposed) localError = error.message ?? "图片导入失败。";
-          } finally {
-            importing = "";
-            if (!disposed) render();
-          }
-        });
-        return node(
+      settingsPart(t.settingsPartLength, t.settingsPartLengthHint, nodeLimitSettings.node),
+      settingsPart(t.settingsPartPrivate, t.settingsPartPrivateHint, privateSettings.node),
+      settingsPart(
+        t.settingsPartImage,
+        t.settingsPartImageHint,
+        node(
           "section",
-          { class: "sw-card sw-resource" },
-          scene(slot.id, slot.title, "", { tag: artwork.get(slot.id) ? "已设置插画" : "默认示意场景" }),
-          node(
-            "div",
-            { class: "sw-card-pad" },
-            node("code", {}, slot.id),
-            node("p", {}, slot.description),
-            file,
-            actionRow(
-              button(importing === slot.id ? "正在读取…" : "选择本地图", () => file.click(), { icon: "image", small: true, disabled: Boolean(importing), key: `import-${slot.id}` }),
-              artwork.get(slot.id) ? button("恢复示意", () => artwork.clear(slot.id), { quiet: true, small: true, key: `clear-${slot.id}` }) : null
-            )
-          )
-        );
-      })),
-      node(
-        "section",
-        { class: "sw-card sw-card-pad" },
-        node("div", { class: "sw-side-title" }, icon("image"), t.storyImageTitle),
-        node("p", { class: "sw-card-note" }, state?.snapshot?.images?.message ?? t.storyImageUnavailable),
-        actionRow(button(
-          imageBusy ? t.storyImagePending : t.storyImageGenerate,
-          () => void requestImage(),
-          { disabled: imageBusy || !state?.snapshot?.images?.enabled && !state?.snapshot?.images?.generationAvailable, key: "story-image" }
-        )),
-        imageOutput
+          { class: "sw-card sw-card-pad" },
+          node("div", { class: "sw-side-title" }, icon("image"), t.storyImageTitle),
+          node("p", { class: "sw-card-note" }, state?.snapshot?.images?.message ?? t.storyImageUnavailable),
+          actionRow(button(
+            imageBusy ? t.storyImagePending : t.storyImageGenerate,
+            () => void requestImage(),
+            { disabled: imageBusy || !state?.snapshot?.images?.enabled && !state?.snapshot?.images?.generationAvailable, key: "story-image" }
+          )),
+          imageOutput
+        )
       ),
-      node(
-        "section",
-        { class: "sw-card sw-card-pad" },
-        node("div", { class: "sw-side-title" }, icon("info"), "关于本地插画"),
-        node("p", { class: "sw-card-note" }, "仅接受 PNG、JPEG、WebP，每张不超过 2 MB、1600 万像素。文件类型与内容会经过检查，不接受 SVG。图片不会上传；请只导入你有权使用的素材。"),
-        note(t.localStorageHint),
-        note("清理浏览器数据可能移除插画。图片加载失败时会回到文字与示意场景，操作入口照常保留。")
+      settingsPart(
+        t.settingsPartArtwork,
+        t.settingsPartArtworkHint,
+        node("div", { class: "sw-settings-grid" }, slots),
+        node(
+          "section",
+          { class: "sw-card sw-card-pad" },
+          node("div", { class: "sw-side-title" }, icon("info"), t.settingsArtworkAbout),
+          node("p", { class: "sw-card-note" }, "仅接受 PNG、JPEG、WebP，每张不超过 2 MB、1600 万像素。文件类型与内容会经过检查，不接受 SVG。图片不会上传；请只导入你有权使用的素材。"),
+          note(t.localStorageHint),
+          note("清理浏览器数据可能移除插画。图片加载失败时会回到文字与示意场景，操作入口照常保留。")
+        )
       ),
-      node(
-        "section",
-        { class: "sw-card sw-card-pad" },
-        node("div", { class: "sw-side-title" }, icon("settings"), "地点、日程与故事创作"),
-        node("p", { class: "sw-card-note" }, "地点、住所与画风：娱乐时间的「地点册」。场所与分支：娱乐时间。今日安排与生活记录：鱼的每一天。")
+      settingsPart(
+        t.settingsPartElsewhere,
+        null,
+        node(
+          "section",
+          { class: "sw-card sw-card-pad" },
+          node("div", { class: "sw-side-title" }, icon("settings"), t.settingsElsewhereTitle),
+          node("p", { class: "sw-card-note" }, t.settingsElsewhereNote)
+        )
       )
     );
   }
@@ -3704,7 +3886,7 @@ function dom(document2) {
 function styleDescription(place) {
   if (place.styleSource === "place" || place.style?.trim()) return "地点画风";
   if (place.styleSource === "source-default") return "补录的旧世界默认画风";
-  if (place.effectiveStyle) return "娱乐时间默认画风";
+  if (place.effectiveStyle) return "从0开始的肥鱼大冒险默认画风";
   return "未设置";
 }
 function hasSafeImage(dataUrl) {
@@ -3741,6 +3923,515 @@ function pictureData(file, maxBytes, FileReaderClass = globalThis.FileReader) {
     reader.onabort = () => reject(new Error("图片读取已取消。"));
     reader.readAsDataURL(file);
   });
+}
+
+// webui/home/layout.js
+var HOME_LAYOUT = Object.freeze({
+  idle: { x: 0.76, y: 0.79 },
+  reading: { x: 0.72, y: 0.79 },
+  watching: { x: 0.8, y: 0.79 },
+  chatting: { x: 0.74, y: 0.79 },
+  sleeping: { x: 0.78, y: 0.76 },
+  cards: { x: 0.45, y: 0.9 },
+  gaming: { x: 0.47, y: 0.92 },
+  painting: { x: 0.33, y: 0.88 },
+  cooking: { x: 0.13, y: 0.9 },
+  looking_outside: { x: 0.13, y: 0.82 }
+});
+var HOME_FALLBACK = Object.freeze({ x: 0.76, y: 0.79 });
+var positionOf = (activity) => HOME_LAYOUT[activity] ?? HOME_FALLBACK;
+
+// webui/home/styles.js
+var HOME_STYLES = `
+/* 自己的主题 token：家是第一块页签，宿主可能只挂载这一块，
+   不能指望别的面板先把 .fun 那层样式注进来。 */
+.fhm{--f-line:var(--border,#e3e4e3);--f-ink:var(--foreground,#1b1a1e);--f-dim:var(--muted-foreground,#5c5c60);
+  --f-card:var(--surface,#fbfbfb);--f-soft:color-mix(in srgb,var(--surface,#fbfbfb) 92%,var(--foreground,#1b1a1e));
+  --f-accent:var(--accent,#00a870);--f-warm:#e0862f;--f-mint:#00a870;
+  font:13px/1.6 var(--sans,-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif);
+  color:var(--f-ink,#1b1a1e);max-width:1040px;margin:0 auto;padding:4px 2px 22px}
+.fhm *{box-sizing:border-box}
+.fhm-head{padding:2px 2px 10px}
+.fhm-kicker{margin:0;font-size:11.5px;letter-spacing:.06em;color:var(--f-dim,#6b6b70)}
+.fhm-title{margin:3px 0 0;font-size:22px;line-height:1.25;font-weight:650;letter-spacing:.01em}
+.fhm-sub{margin:5px 0 0;font-size:12.5px;line-height:1.6;color:var(--f-dim,#6b6b70)}
+.fhm-feedback{min-height:18px;font-size:12px;line-height:1.5;margin:2px 2px 8px;color:var(--f-dim,#6b6b70)}
+.fhm-feedback[data-tone="error"]{color:#c0453c}
+.fhm-feedback[data-tone="ok"]{color:var(--f-mint,#00a870)}
+
+.fhm-stage{position:relative;aspect-ratio:16/9;max-height:min(62vh,600px);min-height:190px;border:1px solid var(--f-line,#e3e4e3);border-radius:14px;overflow:hidden;background:var(--f-soft,#f3efe9);isolation:isolate}
+.fhm-stage:focus-visible{outline:2px solid var(--f-accent,#00a870);outline-offset:2px}
+.fhm-bg{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center;z-index:0;display:block}
+.fhm-room{position:absolute;inset:0;z-index:0;
+  background:
+    linear-gradient(180deg,color-mix(in srgb,var(--f-warm,#e0862f) 10%,var(--f-soft,#f3efe9)) 0%,var(--f-soft,#f3efe9) 62%),
+    linear-gradient(180deg,transparent 61%,color-mix(in srgb,var(--f-warm,#e0862f) 18%,var(--f-card,#fbfbfb)) 62%,color-mix(in srgb,var(--f-warm,#e0862f) 10%,var(--f-card,#fbfbfb)) 100%)}
+.fhm-window{position:absolute;left:6%;top:14%;width:22%;height:42%;border-radius:8px 8px 4px 4px;
+  background:linear-gradient(160deg,color-mix(in srgb,#cfe6f3 60%,var(--f-card,#fbfbfb)),color-mix(in srgb,#eaf4f8 45%,var(--f-card,#fbfbfb)) 60%,color-mix(in srgb,#f6fbfd 35%,var(--f-card,#fbfbfb)));
+  border:3px solid color-mix(in srgb,var(--f-line,#e3e4e3) 80%,transparent);
+  box-shadow:inset 0 0 22px color-mix(in srgb,#ffeebe 45%,transparent)}
+.fhm-window::after{content:"";position:absolute;left:50%;top:0;bottom:0;width:3px;transform:translateX(-50%);background:color-mix(in srgb,var(--f-line,#e3e4e3) 85%,transparent)}
+.fhm-sofa{position:absolute;right:9%;bottom:22%;width:30%;height:22%;border-radius:12px 12px 8px 8px;
+  background:linear-gradient(180deg,color-mix(in srgb,var(--f-warm,#e0862f) 22%,var(--f-card,#fbfbfb)),color-mix(in srgb,var(--f-warm,#e0862f) 30%,var(--f-card,#fbfbfb)))}
+.fhm-sofa::before{content:"";position:absolute;left:4%;right:4%;top:-30%;height:34%;border-radius:12px 12px 4px 4px;background:color-mix(in srgb,var(--f-warm,#e0862f) 18%,var(--f-card,#fbfbfb))}
+.fhm-sofa::after{content:"";position:absolute;left:50%;top:8%;bottom:10%;width:1px;transform:translateX(-50%);
+  background:color-mix(in srgb,var(--f-warm,#e0862f) 26%,transparent)}
+.fhm-baseboard{position:absolute;left:0;right:0;bottom:22%;height:2px;background:color-mix(in srgb,var(--f-line,#e3e4e3) 70%,transparent)}
+.fhm-rug{position:absolute;left:28%;bottom:6%;width:34%;height:16%;border-radius:50%;
+  background:color-mix(in srgb,var(--f-warm,#e0862f) 14%,var(--f-card,#fbfbfb));border:1px dashed color-mix(in srgb,var(--f-line,#e3e4e3) 90%,transparent)}
+.fhm-room-note{position:absolute;left:50%;top:44%;transform:translate(-50%,-50%);margin:0;font-size:11.5px;color:var(--f-dim,#6b6b70);text-align:center;line-height:1.7;z-index:1;pointer-events:none;width:80%}
+.fhm-room-note b{display:block;font-weight:600;color:var(--f-ink,#1b1a1e);font-size:12.5px;margin-bottom:3px}
+
+.fhm-char{position:absolute;z-index:2;max-height:76%;max-width:42%;object-fit:contain;transform:translateX(-50%);
+  filter:drop-shadow(0 8px 14px rgba(24,24,30,.16));transition:none}
+.fhm-char-empty{position:absolute;left:50%;bottom:12%;transform:translateX(-50%);width:34%;height:9%;border-radius:50%;
+  background:radial-gradient(ellipse at center,rgba(24,24,30,.16),transparent 70%);z-index:1}
+.fhm-char-hint{position:absolute;left:50%;bottom:7%;transform:translateX(-50%);margin:0;font-size:11px;color:var(--f-dim,#6b6b70);z-index:3;white-space:nowrap}
+
+.fhm-status{position:absolute;left:10px;top:10px;margin:0;z-index:3;padding:3px 9px;border-radius:999px;font-size:11.5px;
+  background:color-mix(in srgb,var(--f-card,#fbfbfb) 82%,transparent);color:var(--f-ink,#1b1a1e);backdrop-filter:blur(2px)}
+.fhm-place{position:absolute;right:10px;top:10px;margin:0;z-index:3;padding:3px 9px;border-radius:999px;font-size:11.5px;
+  background:color-mix(in srgb,var(--f-card,#fbfbfb) 82%,transparent);color:var(--f-dim,#6b6b70);max-width:46%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fhm-place[data-out="1"]{color:var(--f-warm,#e0862f)}
+.fhm-note{position:absolute;left:12px;bottom:12px;right:12px;margin:0;z-index:3;padding:6px 10px;border-radius:10px;font-size:12px;line-height:1.5;
+  background:color-mix(in srgb,var(--f-card,#fbfbfb) 86%,transparent);color:var(--f-ink,#1b1a1e)}
+.fhm-spot{position:absolute;z-index:3;width:22px;height:22px;border-radius:50%;transform:translate(-50%,-50%);
+  border:1px solid color-mix(in srgb,var(--f-accent,#00a870) 55%,transparent);background:color-mix(in srgb,var(--f-accent,#00a870) 16%,transparent)}
+.fhm-spot-label{position:absolute;z-index:3;transform:translate(-50%,-100%);font-size:10.5px;color:var(--f-dim,#6b6b70);white-space:nowrap}
+
+.fhm-chips{display:flex;gap:6px;flex-wrap:nowrap;overflow-x:auto;padding:10px 2px 4px;scrollbar-width:thin}
+.fhm-chip{flex:none;font-size:12px;line-height:1.5;padding:4px 11px;border-radius:999px;cursor:pointer;
+  border:1px solid var(--f-line,#e3e4e3);background:var(--f-card,#fbfbfb);color:var(--f-dim,#6b6b70);font:inherit;font-size:12px}
+.fhm-chip:hover{border-color:var(--f-accent,#00a870);color:var(--f-ink,#1b1a1e)}
+.fhm-chip[aria-pressed="true"]{color:var(--f-ink,#1b1a1e);border-color:var(--f-accent,#00a870);
+  background:color-mix(in srgb,var(--f-accent,#00a870) 12%,var(--f-card,#fbfbfb))}
+.fhm-chip:disabled{opacity:.5;cursor:default}
+.fhm-chip:focus-visible{outline:2px solid var(--f-accent,#00a870);outline-offset:2px}
+
+.fhm-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:6px 2px 0}
+.fhm-actions button{font:inherit;font-size:12px;padding:4px 11px;border-radius:999px;cursor:pointer;
+  border:1px solid var(--f-line,#e3e4e3);background:var(--f-card,#fbfbfb);color:var(--f-ink,#1b1a1e)}
+.fhm-actions button:hover{border-color:var(--f-accent,#00a870)}
+.fhm-actions button:focus-visible{outline:2px solid var(--f-accent,#00a870);outline-offset:2px}
+.fhm-fine{margin-left:auto;font-size:11px;color:var(--f-dim,#6b6b70);line-height:1.5}
+.fhm-foot{margin:8px 2px 0;font-size:11.5px;color:var(--f-dim,#6b6b70);line-height:1.6}
+
+.fhm-dress{margin-top:10px;border:1px solid var(--f-line,#e3e4e3);border-radius:14px;padding:12px 13px;background:var(--f-card,#fbfbfb);max-width:760px}
+.fhm-dress[hidden]{display:none}
+.fhm-dress h3{margin:0 0 4px;font-size:14px;font-weight:600}
+.fhm-dress-note{margin:0 0 10px;font-size:11.5px;line-height:1.6;color:var(--f-dim,#6b6b70)}
+.fhm-row{display:grid;grid-template-columns:84px minmax(0,1fr) 54px 54px;gap:8px;align-items:center;padding:5px 0;border-top:1px dashed var(--f-line,#e3e4e3)}
+.fhm-row:first-of-type{border-top:none}
+.fhm-row-name{font-size:12px;color:var(--f-ink,#1b1a1e)}
+.fhm-row input[type=file]{font:inherit;font-size:11px;min-width:0;color:var(--f-dim,#6b6b70)}
+.fhm-row button{font:inherit;font-size:11.5px;padding:3px 9px;border-radius:999px;cursor:pointer;border:1px solid var(--f-line,#e3e4e3);background:var(--f-soft,#f3efe9);color:var(--f-ink,#1b1a1e)}
+.fhm-row button:hover{border-color:var(--f-accent,#00a870)}
+.fhm-row button:disabled{opacity:.45;cursor:default}
+.fhm-note-form{display:flex;gap:8px;align-items:flex-start;flex-wrap:wrap;margin-top:4px;padding-top:10px;border-top:1px dashed var(--f-line,#e3e4e3)}
+.fhm-note-form textarea{flex:1;min-width:180px;min-height:52px;resize:vertical;font:inherit;font-size:12px;line-height:1.55;padding:6px 9px;
+  border:1px solid var(--f-line,#e3e4e3);border-radius:10px;background:var(--f-soft,#f3efe9);color:var(--f-ink,#1b1a1e)}
+.fhm-note-form textarea:focus{border-color:var(--f-accent,#00a870);outline:none}
+.fhm-note-form button{font:inherit;font-size:12px;padding:5px 12px;border-radius:999px;cursor:pointer;border:1px solid var(--f-accent,#00a870);background:var(--f-accent,#00a870);color:#fff}
+.fhm-note-form button:disabled{opacity:.55;cursor:default}
+
+@media (max-width:560px){
+  .fhm-title{font-size:19px}
+  .fhm-stage{max-height:40vh;min-height:170px}
+  .fhm-fine{margin-left:0;flex-basis:100%}
+  .fhm-row{grid-template-columns:1fr;gap:4px}
+  .fhm-row button{justify-self:start}
+}
+@media (prefers-reduced-motion:reduce){
+  .fhm *{transition:none !important;animation:none !important}
+}
+`;
+
+// webui/home/webui.js
+var MAX_IMAGE_BYTES2 = 8 * 1024 * 1024;
+var ACCEPT = "image/png,image/jpeg,image/gif,image/webp,.png,.jpg,.jpeg,.gif,.webp";
+var artCache = /* @__PURE__ */ new Map();
+function el2(document2, tag, attrs = {}, ...children) {
+  const element = document2.createElement(tag);
+  for (const [name, value] of Object.entries(attrs)) {
+    if (value === null || value === void 0 || value === false) continue;
+    if (name === "class") element.className = value;
+    else if (name === "text") element.textContent = String(value);
+    else if (name === "style") element.setAttribute("style", value);
+    else if (name === "hidden") element.hidden = Boolean(value);
+    else if (name.startsWith("on") && typeof value === "function") element.addEventListener(name.slice(2), value);
+    else element.setAttribute(name, String(value));
+  }
+  for (const child of children.flat(Infinity)) {
+    if (child === null || child === void 0 || child === false) continue;
+    element.append(typeof child === "object" ? child : String(child));
+  }
+  return element;
+}
+function relativeTime(minutes) {
+  if (minutes === null || minutes === void 0) return "";
+  if (minutes < 1) return "刚开始";
+  if (minutes < 60) return `${minutes} 分钟`;
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  return rest ? `${hours} 小时 ${rest} 分` : `${hours} 小时`;
+}
+function statusOf(snapshot) {
+  const trip = snapshot.trip ?? { mode: "home" };
+  if (trip.mode === "out") {
+    const walked = trip.total ? `（逛了 ${trip.visited}/${trip.total}）` : "";
+    return `出门中 · ${trip.placeName}${walked}`;
+  }
+  if (trip.mode === "draft") return `还没逛完 · ${trip.placeName}`;
+  const label2 = snapshot.room?.label ?? "发呆";
+  const time = relativeTime(snapshot.room?.elapsedMinutes);
+  return time ? `${label2} · ${time}` : label2;
+}
+function placeOf(snapshot) {
+  if (snapshot.trip?.mode === "out") return { text: `在外 · ${snapshot.trip.placeName}`, out: true };
+  if (snapshot.place?.name) return { text: snapshot.place.name, out: false };
+  return { text: "还没设住所", out: false };
+}
+function mountHome(ctx) {
+  const root = ctx.root;
+  const document2 = root.ownerDocument ?? globalThis.document;
+  const section = el2(document2, "section", { class: "fun fhm", "aria-label": "鱼的家" });
+  const style = el2(document2, "style");
+  style.textContent = HOME_STYLES;
+  section.append(style);
+  root.replaceChildren(section);
+  let disposed = false;
+  let busy = false;
+  let snapshot = null;
+  let ticker = null;
+  const view = { editing: false, noteDraft: null, feedback: "", tone: "" };
+  const live = () => !disposed && !ctx.signal?.aborted;
+  function call(method, payload) {
+    return ctx.invoke(method, payload === void 0 ? [] : [payload]);
+  }
+  function accept(result) {
+    if (result && Array.isArray(result.activities) && result.room) snapshot = result;
+    return snapshot;
+  }
+  function tell(text2, tone = "") {
+    view.feedback = text2;
+    view.tone = tone;
+  }
+  async function loadArt(slot, activity) {
+    const key = slot === "background" ? snapshot?.art?.background : snapshot?.art?.characters?.[activity] ?? snapshot?.art?.characters?.idle;
+    if (!key) return null;
+    if (artCache.has(key)) return artCache.get(key);
+    try {
+      const result = await call("art", { slot, activity });
+      const image = result?.image?.dataUrl ?? null;
+      if (image) artCache.set(key, image);
+      return image;
+    } catch {
+      return null;
+    }
+  }
+  async function refresh() {
+    if (disposed) return;
+    try {
+      accept(await call("state"));
+      tell("");
+    } catch (error) {
+      tell(error?.message ?? "房间暂时读不出来。", "error");
+    }
+    render();
+  }
+  async function write(method, payload, okText = "") {
+    if (busy || !live()) return null;
+    busy = true;
+    section.setAttribute("aria-busy", "true");
+    try {
+      const result = await call(method, payload);
+      if (result?.ok === false) throw new Error(result.error || "宿主拒绝了这次修改。");
+      if (result?.ok !== true) throw new Error("宿主没有返回结果。");
+      accept(result);
+      tell(okText, okText ? "ok" : "");
+      return result;
+    } catch (error) {
+      tell(error?.message ?? "这次修改没成功。", "error");
+      return null;
+    } finally {
+      busy = false;
+      section.setAttribute("aria-busy", "false");
+      if (!view.editing) render();
+      else render({ keepFocus: true });
+    }
+  }
+  async function tick() {
+    if (!live() || busy || view.editing) return;
+    try {
+      const result = await call("state");
+      if (result?.ok === false) return;
+      accept(result);
+      if (refs.status) refs.status.textContent = statusOf(snapshot);
+      if (refs.place) {
+        const place = placeOf(snapshot);
+        refs.place.textContent = place.text;
+        refs.place.setAttribute("data-out", place.out ? "1" : "0");
+      }
+    } catch {
+    }
+  }
+  const refs = {};
+  function renderStage() {
+    const stage = el2(document2, "div", {
+      class: "fhm-stage",
+      tabindex: "0",
+      role: "img",
+      "aria-label": `鱼的家，正在${snapshot.room.label}`
+    });
+    const bgRef = snapshot.art?.background;
+    if (bgRef) {
+      const img = el2(document2, "img", { class: "fhm-bg", alt: "", decoding: "async" });
+      stage.append(img);
+      loadArt("background").then((src) => {
+        if (src && live()) img.setAttribute("src", src);
+      });
+    } else {
+      stage.append(el2(
+        document2,
+        "div",
+        { class: "fhm-room" },
+        el2(document2, "div", { class: "fhm-window" }),
+        el2(document2, "div", { class: "fhm-baseboard" }),
+        el2(document2, "div", { class: "fhm-sofa" }),
+        el2(document2, "div", { class: "fhm-rug" }),
+        el2(
+          document2,
+          "p",
+          { class: "fhm-room-note" },
+          el2(document2, "b", { text: "还没有房间图" }),
+          "点「布置房间」换一张。没有她的图也行，一样看得到她在做什么。"
+        )
+      ));
+    }
+    const status = el2(document2, "p", { class: "fhm-status", text: statusOf(snapshot) });
+    const place = placeOf(snapshot);
+    const placeNode = el2(document2, "p", { class: "fhm-place", "data-out": place.out ? "1" : "0", text: place.text });
+    refs.status = status;
+    refs.place = placeNode;
+    stage.append(status, placeNode);
+    const hasCharacter = Boolean(snapshot.art?.characters?.[snapshot.room.activity] ?? snapshot.art?.characters?.idle);
+    if (hasCharacter) {
+      const spot = positionOf(snapshot.room.activity);
+      const char = el2(document2, "img", {
+        class: "fhm-char",
+        alt: `鱼在家的样子：${snapshot.room.label}`,
+        decoding: "async",
+        style: `left:${(spot.x * 100).toFixed(2)}%;bottom:${((1 - spot.y) * 100).toFixed(2)}%`
+      });
+      stage.append(char);
+      loadArt("character", snapshot.room.activity).then((src) => {
+        if (src && live()) char.setAttribute("src", src);
+      });
+    } else {
+      stage.append(el2(document2, "div", { class: "fhm-char-empty" }));
+    }
+    for (const spot of snapshot.art?.hotspots ?? []) {
+      stage.append(el2(document2, "span", {
+        class: "fhm-spot",
+        title: spot.label || spot.id,
+        style: `left:${(spot.x * 100).toFixed(2)}%;top:${(spot.y * 100).toFixed(2)}%`
+      }));
+      if (spot.label) {
+        stage.append(el2(document2, "span", {
+          class: "fhm-spot-label",
+          text: spot.label,
+          style: `left:${(spot.x * 100).toFixed(2)}%;top:${(spot.y * 100).toFixed(2)}%`
+        }));
+      }
+    }
+    if (snapshot.room.note) stage.append(el2(document2, "p", { class: "fhm-note", text: snapshot.room.note }));
+    return stage;
+  }
+  function renderChips() {
+    const row = el2(document2, "div", { class: "fhm-chips", role: "group", "aria-label": "她在家的样子" });
+    for (const activity of snapshot.activities) {
+      const current = activity.id === snapshot.room.activity;
+      row.append(el2(document2, "button", {
+        type: "button",
+        class: "fhm-chip",
+        "aria-pressed": current ? "true" : "false",
+        title: activity.hint,
+        disabled: Boolean(snapshot.damaged) || busy,
+        onclick: () => {
+          if (activity.id === snapshot.room.activity) return;
+          void write(
+            "setActivity",
+            { activity: activity.id, revision: snapshot.revision },
+            `换成「${activity.label}」了。`
+          );
+        }
+      }, activity.label));
+    }
+    return row;
+  }
+  function renderActions() {
+    const row = el2(
+      document2,
+      "div",
+      { class: "fhm-actions" },
+      el2(document2, "button", {
+        type: "button",
+        text: view.editing ? "收起布置" : "布置房间",
+        onclick: () => {
+          view.editing = !view.editing;
+          if (view.editing) view.noteDraft = snapshot.room.note;
+          render();
+        }
+      }),
+      el2(document2, "button", {
+        type: "button",
+        text: "恢复默认",
+        disabled: Boolean(snapshot.damaged) || busy,
+        onclick: () => {
+          if (typeof globalThis.confirm === "function" && !globalThis.confirm("把活动、备注和热点恢复默认？已上传的图片会保留。")) return;
+          void write("resetRoom", { revision: snapshot.revision }, "已恢复默认。");
+        }
+      }),
+      el2(document2, "span", { class: "fhm-fine", text: "ⓘ 这里显示的是房间里的样子，不是记录" })
+    );
+    return row;
+  }
+  async function upload(kind, activity, input) {
+    const file = input?.files?.[0];
+    if (!file) return;
+    input.value = "";
+    try {
+      const dataUrl = await pictureData(file, MAX_IMAGE_BYTES2, document2.defaultView?.FileReader ?? globalThis.FileReader);
+      if (kind === "background") await write("setBackground", { dataUrl, revision: snapshot.revision }, "背景换好了。");
+      else await write("setCharacter", { activity, dataUrl, revision: snapshot.revision }, "这张图换好了。");
+    } catch (error) {
+      tell(error?.message ?? "这张图没读出来。", "error");
+      render();
+    }
+  }
+  function renderDress() {
+    if (!view.editing) return null;
+    const box = el2(
+      document2,
+      "div",
+      { class: "fhm-dress" },
+      el2(document2, "h3", { text: "布置房间" }),
+      el2(document2, "p", {
+        class: "fhm-dress-note",
+        text: "背景 1920×1080；角色图十个活动同一张画布、底边对齐（见素材单）。单张不超过 8 MiB，支持 PNG / JPG / WebP / GIF。"
+      })
+    );
+    const bgRow = el2(
+      document2,
+      "div",
+      { class: "fhm-row" },
+      el2(document2, "span", { class: "fhm-row-name", text: "房间背景" }),
+      el2(document2, "input", { type: "file", accept: ACCEPT, "aria-label": "选择房间背景", onchange: (event) => {
+        void upload("background", "", event.target);
+      } }),
+      el2(document2, "span", { class: "fhm-row-name", text: snapshot.art?.background ? "已设置" : "未设置" }),
+      el2(document2, "button", {
+        type: "button",
+        text: "清空",
+        disabled: !snapshot.art?.background || busy,
+        "aria-label": "清空房间背景",
+        onclick: () => {
+          void write("clearBackground", { revision: snapshot.revision }, "背景清掉了。");
+        }
+      })
+    );
+    box.append(bgRow);
+    for (const activity of snapshot.activities) {
+      const has = Boolean(snapshot.art?.characters?.[activity.id]);
+      box.append(el2(
+        document2,
+        "div",
+        { class: "fhm-row" },
+        el2(document2, "span", { class: "fhm-row-name", text: activity.label }),
+        el2(document2, "input", {
+          type: "file",
+          accept: ACCEPT,
+          "aria-label": `选择「${activity.label}」的角色图`,
+          onchange: (event) => {
+            void upload("character", activity.id, event.target);
+          }
+        }),
+        el2(document2, "span", { class: "fhm-row-name", text: has ? "已设置" : "未设置" }),
+        el2(document2, "button", {
+          type: "button",
+          text: "清空",
+          disabled: !has || busy,
+          "aria-label": `清空「${activity.label}」的角色图`,
+          onclick: () => {
+            void write("clearCharacter", { activity: activity.id, revision: snapshot.revision }, "这张图清掉了。");
+          }
+        })
+      ));
+    }
+    const note2 = el2(document2, "textarea", {
+      maxlength: "120",
+      placeholder: "一句房间里的备注，比如「在沙发上翻一本旧书」",
+      "aria-label": "房间备注"
+    });
+    note2.value = view.noteDraft ?? snapshot.room.note;
+    note2.addEventListener("input", () => {
+      view.noteDraft = note2.value;
+    });
+    box.append(el2(
+      document2,
+      "div",
+      { class: "fhm-note-form" },
+      note2,
+      el2(document2, "button", {
+        type: "button",
+        text: "保存备注",
+        disabled: busy,
+        onclick: () => {
+          void write("setNote", { note: note2.value, revision: snapshot.revision }, "备注记下了。").then(() => {
+            view.noteDraft = null;
+          });
+        }
+      })
+    ));
+    return box;
+  }
+  function render() {
+    if (disposed || !snapshot) return;
+    const head = el2(
+      document2,
+      "header",
+      { class: "fhm-head" },
+      el2(document2, "p", { class: "fhm-kicker", text: "从0开始的肥鱼大冒险 · 回家看看" }),
+      el2(document2, "h2", { class: "fhm-title", text: "鱼的家" }),
+      el2(document2, "p", { class: "fhm-sub", text: "她此刻在家做什么，换一个姿势，或者看看她在不在外面。" })
+    );
+    const feedback3 = el2(document2, "div", {
+      class: "fhm-feedback",
+      role: view.tone === "error" ? "alert" : "status",
+      "data-tone": view.tone,
+      text: snapshot.warning || view.feedback
+    });
+    const nodes = [head, feedback3, renderStage(), renderChips(), renderActions()];
+    const dress = renderDress();
+    if (dress) nodes.push(dress);
+    nodes.push(el2(document2, "p", { class: "fhm-foot", text: "出门在「去哪儿」，故事在「出游」。这里只记她在家里的样子。" }));
+    section.replaceChildren(style, ...nodes);
+    section.setAttribute("aria-busy", busy ? "true" : "false");
+  }
+  function dispose() {
+    if (disposed) return;
+    disposed = true;
+    if (typeof ticker === "function") ticker();
+    ctx.signal?.removeEventListener("abort", dispose);
+  }
+  ctx.signal?.addEventListener("abort", dispose, { once: true });
+  if (typeof ctx.interval === "function") {
+    const handle = ctx.interval(tick, 6e4);
+    if (typeof handle === "function") ticker = handle;
+    else if (handle && typeof handle.dispose === "function") ticker = () => handle.dispose();
+  }
+  const ready = refresh();
+  return { refresh, dispose, ready };
 }
 
 // webui/places/migration.js
@@ -3930,7 +4621,7 @@ function createMigrationView({ document: document2, places, snapshot, run, call,
       impactBlock(preview),
       list2(preview.items).map(decisionRow),
       node2("label", { class: "fpl-check" }, homeChoice, home ? `将「${home.name}」设为本地住所` : "此备份没有可选的住所"),
-      field("从旧世界补录默认画风（可选）", style, "旧导出不包含全局画风。补录只用于所选旧地点的空白画风，不会更改娱乐时间的全局画风。"),
+      field("从旧世界补录默认画风（可选）", style, "旧导出不包含全局画风。补录只用于所选旧地点的空白画风，不会更改从0开始的肥鱼大冒险的全局画风。"),
       row(button2("查看迁入结果预览", reviewPlan, { class: "fpl-primary" }), button2("更换备份", clearFile))
     );
   }
@@ -4003,7 +4694,7 @@ function createMigrationView({ document: document2, places, snapshot, run, call,
       note2(review.useHome ? `住所将设为「${approvedHome ?? preview.sourceHomeId}」。` : "保留本地住所。"),
       note2(defaultStyle.trim() ? `用「${defaultStyle.trim()}」补充所选旧地点的空白画风；保留本地全局画风设置。` : "未提供旧默认画风；保留本地全局画风设置。"),
       impactBlock({ ...data, warnings: proposed?.warnings ?? data.warnings }),
-      node2("label", { class: "fpl-check" }, approve, "我已核对地点选择、住所和画风，确认写入娱乐时间。"),
+      node2("label", { class: "fpl-check" }, approve, "我已核对地点选择、住所和画风，确认写入从0开始的肥鱼大冒险。"),
       row(commitButton, button2("返回修改选择", () => {
         review = void 0;
         redraw();
@@ -4055,7 +4746,7 @@ function createMigrationView({ document: document2, places, snapshot, run, call,
       "section",
       { class: "fpl-card fpl-stack" },
       node2("h4", {}, receipt.duplicate ? "这份迁入已处理" : "迁入完成"),
-      note2(records.length ? `已处理 ${records.length} 条地点映射。` : "状态已由娱乐时间保存。"),
+      note2(records.length ? `已处理 ${records.length} 条地点映射。` : "状态已由从0开始的肥鱼大冒险保存。"),
       records.length ? node2("ul", {}, records.map((entry) => node2("li", {}, `${entry.sourceId}${entry.targetId ? ` → ${places().find((p) => p.id === entry.targetId)?.name ?? entry.targetId}` : ` · ${actionNames[entry.action] || "已处理"}`}`))) : null,
       list2(receipt.warnings).map((warning) => note2(typeof warning === "string" ? warning : warning?.message))
     );
@@ -4066,7 +4757,7 @@ function createMigrationView({ document: document2, places, snapshot, run, call,
       "section",
       { class: "fpl-stack" },
       node2("h3", { tabindex: -1 }, "从鱼的小世界迁入"),
-      note2("使用鱼的小世界导出的 little-world v1 文件。地点和封面会写入娱乐时间，旧世界仍保留原样。草稿、视图偏好和历史图片归档不在这份迁入范围内。"),
+      note2("使用鱼的小世界导出的 little-world v1 文件。地点和封面会写入从0开始的肥鱼大冒险，旧世界仍保留原样。草稿、视图偏好和历史图片归档不在这份迁入范围内。"),
       migrationReceipt(),
       review ? reviewPanel() : preview ? choices() : sourceForm(),
       recovery()
@@ -4153,7 +4844,7 @@ var STYLES2 = `
 
 // webui/places/webui.js
 var split = (value) => [...new Set(value.split(/[\n，、,；;]+/u).map((item) => item.trim()).filter(Boolean))];
-var MAX_IMAGE_BYTES2 = 8 * 1024 * 1024;
+var MAX_IMAGE_BYTES3 = 8 * 1024 * 1024;
 var kinds = { home: "家", around: "附近", frequent: "常去", travel: "旅行", venue: "娱乐场所", place: "普通地点" };
 var kindLabel = (place) => place.kindLabel || kinds[place.kind] || place.kind || (place.playable ? "自填场所" : "普通地点");
 var CATEGORY_GROUPS = [
@@ -4203,7 +4894,7 @@ function mountPlaces(ctx) {
   section.append(node2("style", {}, STYLES2), node2(
     "header",
     { class: "fpl-header" },
-    node2("p", { class: "fpl-kicker" }, "娱乐时间 · 把喜欢的地方，记在这里。"),
+    node2("p", { class: "fpl-kicker" }, "从0开始的肥鱼大冒险 · 把喜欢的地方，记在这里。"),
     node2("h2", {}, "把喜欢的地方，记在这里。"),
     note2("管理地点、游玩内容、封面与关联。")
   ), navigation, feedback3, main);
@@ -4502,7 +5193,7 @@ function mountPlaces(ctx) {
         tell("请选择要上传的封面图片。", true);
         return;
       }
-      void submit("setCover", async () => ({ id: place.id, dataUrl: await pictureData(chosen, MAX_IMAGE_BYTES2, document2.defaultView?.FileReader), coverFocus: readFocus() }), "已保存封面。", reload);
+      void submit("setCover", async () => ({ id: place.id, dataUrl: await pictureData(chosen, MAX_IMAGE_BYTES3, document2.defaultView?.FileReader), coverFocus: readFocus() }), "已保存封面。", reload);
     });
     return node2(
       "section",
@@ -5277,7 +5968,7 @@ var CSS2 = `
   .fun,.fpl,.sw{--f-line:currentColor}
 }
 `;
-function el2(tag, props, ...kids) {
+function el3(tag, props, ...kids) {
   const n = document.createElement(tag);
   if (props) {
     for (const [k, v] of Object.entries(props)) {
@@ -5298,40 +5989,40 @@ function el2(tag, props, ...kids) {
 }
 function ensureStyle(root) {
   if (root.querySelector("style.fun-style")) return;
-  root.appendChild(el2("style", { class: "fun-style", text: CSS2 }));
+  root.appendChild(el3("style", { class: "fun-style", text: CSS2 }));
 }
 function shell(root) {
   ensureStyle(root);
-  const box = el2("div", { class: "fun" });
+  const box = el3("div", { class: "fun" });
   root.appendChild(box);
   return box;
 }
 function errorCard(err, retry, retained = false) {
-  return el2(
+  return el3(
     "div",
     { class: "fun-err", role: "alert" },
-    el2("span", { text: retained ? `刷新失败，保留上次内容：${err?.message ?? String(err)}` : `面板加载失败：${err?.message ?? String(err)}` }),
-    retry ? el2("button", { type: "button", onclick: () => {
+    el3("span", { text: retained ? `刷新失败，保留上次内容：${err?.message ?? String(err)}` : `面板加载失败：${err?.message ?? String(err)}` }),
+    retry ? el3("button", { type: "button", onclick: () => {
       void retry();
     } }, "重试") : null
   );
 }
 function heading(title, subtitle) {
-  return el2(
+  return el3(
     "header",
     { class: "fun-heading" },
-    el2("p", { class: "fun-kicker", text: `娱乐时间 · ${title}` }),
-    el2("h2", { text: title }),
-    subtitle ? el2("p", { class: "fun-heading-lead", text: subtitle }) : null
+    el3("p", { class: "fun-kicker", text: `从0开始的肥鱼大冒险 · ${title}` }),
+    el3("h2", { text: title }),
+    subtitle ? el3("p", { class: "fun-heading-lead", text: subtitle }) : null
   );
 }
 function feedback2(box) {
-  const node2 = el2("div", { class: "fun-feedback" });
+  const node2 = el3("div", { class: "fun-feedback" });
   box.appendChild(node2);
   return node2;
 }
 function sceneArt(place, detail = false) {
-  return el2("div", {
+  return el3("div", {
     class: `fun-art${detail ? " fun-art-detail" : ""}`,
     "aria-hidden": "true",
     "data-artwork": place.userVenue ? "custom" : place.id,
@@ -5339,7 +6030,7 @@ function sceneArt(place, detail = false) {
   });
 }
 function itemIcon(name) {
-  return el2("span", { class: "fun-icon", "aria-hidden": "true", "data-category": souvenirCategory(name), html: souvenirArtwork(name) });
+  return el3("span", { class: "fun-icon", "aria-hidden": "true", "data-category": souvenirCategory(name), html: souvenirArtwork(name) });
 }
 function rememberFocus(container) {
   const active = document.activeElement;
@@ -5362,27 +6053,27 @@ function rememberFocus(container) {
 }
 var routeStatus = { planned: "待出发", active: "行程中", between: "站间歇脚", completed: "已完成", cancelled: "已取消" };
 function routeSummary(route, trips = [], selectTrip) {
-  const node2 = el2(
+  const node2 = el3(
     "section",
     { class: "fun-route", "data-route-id": route.id, "aria-label": "联程记录" },
-    el2("strong", { text: `联程 · ${routeStatus[route.status] ?? "状态未知"}` }),
-    el2("div", { class: "fun-route-stops", text: (route.stops ?? []).map((stop) => stop.placeName || stop.placeId).join(" → ") })
+    el3("strong", { text: `联程 · ${routeStatus[route.status] ?? "状态未知"}` }),
+    el3("div", { class: "fun-route-stops", text: (route.stops ?? []).map((stop) => stop.placeName || stop.placeId).join(" → ") })
   );
   const retained = (route.tripIds ?? []).map((id) => trips.find((trip) => trip.id === id)).filter(Boolean);
-  if (selectTrip && retained.length) node2.appendChild(el2("div", { class: "fun-route-stops" }, retained.map((trip) => el2("button", {
+  if (selectTrip && retained.length) node2.appendChild(el3("div", { class: "fun-route-stops" }, retained.map((trip) => el3("button", {
     type: "button",
     class: "fun-link",
     "data-trip-id": trip.id,
     onclick: () => selectTrip(trip)
   }, `${trip.routeOrder ? `第 ${trip.routeOrder} 站 · ` : ""}${trip.placeName} · ${trip.day || "日期不详"}`))));
-  if (selectTrip && (route.tripIds ?? []).length > retained.length) node2.appendChild(el2("div", { class: "fun-note", text: "较早行程仅保留联程归属，详细记录已归档。" }));
+  if (selectTrip && (route.tripIds ?? []).length > retained.length) node2.appendChild(el3("div", { class: "fun-note", text: "较早行程仅保留联程归属，详细记录已归档。" }));
   return node2;
 }
 function tripDetails(trip) {
-  const detail = el2("section", { class: "fun-trip-detail", "aria-label": `${trip.placeName}行程详情` });
-  if (trip.company) detail.appendChild(el2("p", { text: `同行 · ${trip.company}` }));
-  if (trip.timelineTruncated) detail.appendChild(el2("p", { class: "fun-note", text: "这趟记录较长，时间线保留进门与最近的活动；较早的逐项细节已省略。" }));
-  if (trip.routeId) detail.appendChild(el2("p", { class: "fun-note", text: `联程${trip.routeOrder ? ` · 第 ${trip.routeOrder} 站` : ""}`, "data-route-id": trip.routeId }));
+  const detail = el3("section", { class: "fun-trip-detail", "aria-label": `${trip.placeName}行程详情` });
+  if (trip.company) detail.appendChild(el3("p", { text: `同行 · ${trip.company}` }));
+  if (trip.timelineTruncated) detail.appendChild(el3("p", { class: "fun-note", text: "这趟记录较长，时间线保留进门与最近的活动；较早的逐项细节已省略。" }));
+  if (trip.routeId) detail.appendChild(el3("p", { class: "fun-note", text: `联程${trip.routeOrder ? ` · 第 ${trip.routeOrder} 站` : ""}`, "data-route-id": trip.routeId }));
   const supplied = Array.isArray(trip.timeline) && trip.timeline.length > 0;
   const timeline = supplied ? trip.timeline : [
     ...(trip.visited ?? []).map((area) => ({ kind: "area", text: typeof area === "string" ? area : area.area, area: typeof area === "string" ? area : area.area, at: null })),
@@ -5393,13 +6084,13 @@ function tripDetails(trip) {
     ...(trip.ate ?? []).map((item) => ({ kind: "consume", text: `${item.verb}了 ${item.item}`, at: null }))
   ];
   if (timeline.length) {
-    detail.appendChild(el2("div", { class: "fun-sec", text: "沿途时间线" }));
-    if (!supplied) detail.appendChild(el2("p", { class: "fun-note", text: "这趟旧记录没有保存逐项时间，以下均标为时间不详。" }));
-    const list3 = el2("ol", { class: "fun-timeline" });
+    detail.appendChild(el3("div", { class: "fun-sec", text: "沿途时间线" }));
+    if (!supplied) detail.appendChild(el3("p", { class: "fun-note", text: "这趟旧记录没有保存逐项时间，以下均标为时间不详。" }));
+    const list3 = el3("ol", { class: "fun-timeline" });
     const blocks = [];
     let current = null;
     const block = (area) => {
-      const node2 = el2("li", { class: "fun-timeline-block", "data-area": area || "" }, el2("div", { class: "fun-timeline-area", text: area || "途中记录（区域未记）" }));
+      const node2 = el3("li", { class: "fun-timeline-block", "data-area": area || "" }, el3("div", { class: "fun-timeline-area", text: area || "途中记录（区域未记）" }));
       const value = { area, node: node2, events: [] };
       blocks.push(value);
       list3.appendChild(node2);
@@ -5409,11 +6100,11 @@ function tripDetails(trip) {
     for (const entry of timeline) {
       const known = typeof entry.at === "number" && Number.isFinite(entry.at);
       const clock = known ? [entry.day, entry.hm].filter(Boolean).join(" ") || "时间未标注" : "时间不详";
-      const row = el2(
+      const row = el3(
         "div",
         { class: "fun-timeline-row", "data-kind": entry.kind, "data-at": known ? String(entry.at) : "unknown" },
-        el2("span", { class: "fun-timeline-time", text: clock }),
-        el2("span", null, entry.kind === "buy" ? itemIcon(entry.text) : null, `${labels[entry.kind] ?? "记录"} · ${entry.text || (entry.kind === "area" ? entry.area : "") || "未记内容"}`)
+        el3("span", { class: "fun-timeline-time", text: clock }),
+        el3("span", null, entry.kind === "buy" ? itemIcon(entry.text) : null, `${labels[entry.kind] ?? "记录"} · ${entry.text || (entry.kind === "area" ? entry.area : "") || "未记内容"}`)
       );
       if (entry.kind === "enter" || entry.kind === "close") {
         current = block(entry.kind === "enter" ? "出发与进门" : "回家");
@@ -5423,20 +6114,20 @@ function tripDetails(trip) {
       }
       const source = entry.kind === "choice" ? [...blocks].reverse().flatMap((group) => [...group.events].reverse()).find((event) => entry.event && event.name === entry.event && (!entry.area || event.area === entry.area)) : null;
       if (source && current === source.group && current.lastNode === source.node) {
-        source.node.appendChild(el2("div", { class: "fun-timeline-choice", "data-event": entry.event }, row));
+        source.node.appendChild(el3("div", { class: "fun-timeline-choice", "data-event": entry.event }, row));
         continue;
       }
       const area = entry.area || "";
       if (!current || area !== current.area) current = block(area);
       if (entry.kind === "event") {
-        const event = el2("div", { class: "fun-timeline-event", "data-event": entry.event || entry.text }, row);
+        const event = el3("div", { class: "fun-timeline-event", "data-event": entry.event || entry.text }, row);
         current.events.push({ name: entry.event || entry.text, area: current.area, group: current, node: event });
         current.node.appendChild(event);
         current.lastNode = event;
       } else {
         if (entry.kind === "choice" && entry.event) {
-          row.appendChild(el2("span", { class: "fun-timeline-source", text: `对应小事：${entry.event}` }));
-          const choice = el2("div", { class: "fun-timeline-choice", "data-event": entry.event }, row);
+          row.appendChild(el3("span", { class: "fun-timeline-source", text: `对应小事：${entry.event}` }));
+          const choice = el3("div", { class: "fun-timeline-choice", "data-event": entry.event }, row);
           current.node.appendChild(choice);
           current.lastNode = choice;
         } else {
@@ -5447,8 +6138,8 @@ function tripDetails(trip) {
     }
     detail.appendChild(list3);
   }
-  if (trip.note) detail.appendChild(el2("p", { text: `回家备注 · ${trip.note}` }));
-  if (trip.scene) detail.appendChild(el2("p", { class: "fun-dim", text: `生图 scene：${trip.scene}${trip.outfit ? ` · outfits：${trip.outfit}` : ""}` }));
+  if (trip.note) detail.appendChild(el3("p", { text: `回家备注 · ${trip.note}` }));
+  if (trip.scene) detail.appendChild(el3("p", { class: "fun-dim", text: `生图 scene：${trip.scene}${trip.outfit ? ` · outfits：${trip.outfit}` : ""}` }));
   return detail;
 }
 function tripLookup(ctx, method, parameter, label2) {
@@ -5463,11 +6154,11 @@ function tripLookup(ctx, method, parameter, label2) {
   return (id) => {
     const state = states.get(id) ?? { opened: false, pending: false, trips: null, error: "" };
     states.set(id, state);
-    const host = el2("section", { class: "fun-history", "data-lookup-id": id });
+    const host = el3("section", { class: "fun-history", "data-lookup-id": id });
     const paint = () => {
       let focused = document.activeElement;
       while (focused && focused !== host) focused = focused.parentNode;
-      host.replaceChildren(el2(
+      host.replaceChildren(el3(
         "button",
         {
           type: "button",
@@ -5494,17 +6185,17 @@ function tripLookup(ctx, method, parameter, label2) {
         restore();
         return;
       }
-      const content = el2("div", { class: "fun-history-content", "aria-live": "polite" });
+      const content = el3("div", { class: "fun-history-content", "aria-live": "polite" });
       host.appendChild(content);
-      if (state.pending) content.appendChild(el2("div", { class: "fun-inline-status", role: "status", text: "正在找这段回忆…" }));
-      if (state.error) content.appendChild(el2("div", { class: "fun-err", role: "alert" }, el2("span", { text: state.error }), el2("button", { type: "button", onclick: () => {
+      if (state.pending) content.appendChild(el3("div", { class: "fun-inline-status", role: "status", text: "正在找这段回忆…" }));
+      if (state.error) content.appendChild(el3("div", { class: "fun-err", role: "alert" }, el3("span", { text: state.error }), el3("button", { type: "button", onclick: () => {
         void load();
       } }, "重试")));
-      if (state.trips?.length === 0) content.appendChild(el2("div", { class: "fun-note", text: "没有可回看的详细行程；较早记录可能已经归档。" }));
-      for (const trip of state.trips ?? []) content.appendChild(el2(
+      if (state.trips?.length === 0) content.appendChild(el3("div", { class: "fun-note", text: "没有可回看的详细行程；较早记录可能已经归档。" }));
+      for (const trip of state.trips ?? []) content.appendChild(el3(
         "details",
         { class: "fun-inspector", open: state.trips.length === 1 ? "open" : null, "data-trip-id": trip.id },
-        el2("summary", { text: `${trip.placeName} · ${trip.day || "日期不详"} · ${trip.summary || "行程记录"}` }),
+        el3("summary", { text: `${trip.placeName} · ${trip.day || "日期不详"} · ${trip.summary || "行程记录"}` }),
         tripDetails(trip)
       ));
       restore();
@@ -5536,7 +6227,7 @@ function mountPlaces2(ctx) {
   const root = ctx.root;
   root.replaceChildren();
   const box = shell(root);
-  const body = el2("div");
+  const body = el3("div");
   box.appendChild(body);
   let keyword = "";
   let quickFilter = "全部";
@@ -5548,34 +6239,34 @@ function mountPlaces2(ctx) {
   let loadSequence = 0;
   let currentData = null;
   const status = feedback2(box);
-  body.appendChild(el2("div", { class: "fun-loading", role: "status", text: "正在看看有哪些地方开着…" }));
+  body.appendChild(el3("div", { class: "fun-loading", role: "status", text: "正在看看有哪些地方开着…" }));
   const render = (data) => {
     const restoreFocus = rememberFocus(body);
     currentData = data;
     body.replaceChildren(heading("今天，想去哪儿？", "有些地方适合热闹，有些地方适合慢慢待着。"));
-    const pendingChoice = (choice) => choice ? el2(
+    const pendingChoice = (choice) => choice ? el3(
       "div",
       { class: "fun-choice" },
-      el2("div", { class: "fun-choice-title", text: choice.prompt || "待选择事件" }),
-      el2("ul", { class: "fun-list" }, choice.options.map((option) => el2("li", { text: option.label }))),
-      el2("p", { class: "fun-choice-note", text: "她可以选一项，也可以略过。" })
+      el3("div", { class: "fun-choice-title", text: choice.prompt || "待选择事件" }),
+      el3("ul", { class: "fun-list" }, choice.options.map((option) => el3("li", { text: option.label }))),
+      el3("p", { class: "fun-choice-note", text: "她可以选一项，也可以略过。" })
     ) : null;
     const draft = data.draft;
     if (draft) {
-      const draftAction = (method, label2) => el2("button", {
+      const draftAction = (method, label2) => el3("button", {
         type: "button",
         disabled: outingAction || method === "resume" && draft.canResume === false ? "disabled" : null,
         onclick: () => resolveDraft(method, draft.id)
       }, outingAction === method ? "处理中…" : label2);
-      body.appendChild(el2(
+      body.appendChild(el3(
         "section",
         { class: "fun-draft" },
-        el2("h3", { text: `未逛完 · ${draft.placeName}` }),
-        el2("div", { class: "fun-meta", text: `最后活动 ${draft.lastDay ? `${draft.lastDay} ` : ""}${draft.lastHm} · 逛了 ${draft.visited.length} 处` }),
-        el2("div", { class: "fun-meta", text: draft.visited.length ? `逛过：${draft.visited.map((v) => v.area).join("、")}` : "还没逛到哪儿" }),
+        el3("h3", { text: `未逛完 · ${draft.placeName}` }),
+        el3("div", { class: "fun-meta", text: `最后活动 ${draft.lastDay ? `${draft.lastDay} ` : ""}${draft.lastHm} · 逛了 ${draft.visited.length} 处` }),
+        el3("div", { class: "fun-meta", text: draft.visited.length ? `逛过：${draft.visited.map((v) => v.area).join("、")}` : "还没逛到哪儿" }),
         pendingChoice(draft.pendingChoice),
-        draft.canResume === false ? el2("div", { class: "fun-meta", text: "这处已不在地点清单中，可以按已有记录回家。" }) : null,
-        el2("div", { class: "fun-draft-actions" }, draftAction("resume", "继续逛"), draftAction("closeDraft", "按已有记录回家"))
+        draft.canResume === false ? el3("div", { class: "fun-meta", text: "这处已不在地点清单中，可以按已有记录回家。" }) : null,
+        el3("div", { class: "fun-draft-actions" }, draftAction("resume", "继续逛"), draftAction("closeDraft", "按已有记录回家"))
       ));
     }
     if (data.session) {
@@ -5584,46 +6275,46 @@ function mountPlaces2(ctx) {
       const leftAreas = venue ? venue.areas.filter((a) => !s.visited.some((v) => v.area === a)) : [];
       const leftText = venue?.state === "closed" ? "这处已经打烊" : leftAreas.length ? `还能逛：${leftAreas.slice(0, 5).join("、")}` : "这会儿开放的都逛过了";
       const progress = s.venueAreaCount ? `${s.visited.length}/${s.venueAreaCount}` : String(s.visited.length);
-      body.appendChild(el2(
+      body.appendChild(el3(
         "div",
         { class: "fun-live" },
-        el2("h3", { text: `正在${s.placeName}逛` }),
-        el2(
+        el3("h3", { text: `正在${s.placeName}逛` }),
+        el3(
           "div",
           { class: "fun-meta" },
           `${s.enteredHm} 进门 · 待了 ${s.stayedMin} 分钟 · 逛了 ${progress} 处`,
-          s.stale ? el2("span", { class: "fun-stale", text: " · 这一趟挂得有点久了" }) : null
+          s.stale ? el3("span", { class: "fun-stale", text: " · 这一趟挂得有点久了" }) : null
         ),
-        el2("div", { class: "fun-meta", text: `逛过：${s.visited.length ? s.visited.map((v) => v.area).join("、") : "还没逛到哪儿"}` }),
-        s.souvenirs.length ? el2("div", { class: "fun-chips" }, s.souvenirs.map((x) => el2("span", { class: "fun-chip fun-chip-on", text: `买了 ${x}` }))) : null,
-        s.photos.length ? el2("div", { class: "fun-chips" }, s.photos.map((x) => el2("span", { class: "fun-chip", text: `📷 ${x}` }))) : null,
-        s.ate && s.ate.length ? el2("div", { class: "fun-chips" }, s.ate.map((x) => el2("span", { class: "fun-chip fun-chip-ate", text: `${x.verb}了 ${x.item}` }))) : null,
-        s.events.length ? el2("ul", { class: "fun-list" }, s.events.slice(-3).map((e) => el2("li", { text: e }))) : null,
-        venue ? el2("div", { class: "fun-meta", text: leftText }) : null,
+        el3("div", { class: "fun-meta", text: `逛过：${s.visited.length ? s.visited.map((v) => v.area).join("、") : "还没逛到哪儿"}` }),
+        s.souvenirs.length ? el3("div", { class: "fun-chips" }, s.souvenirs.map((x) => el3("span", { class: "fun-chip fun-chip-on", text: `买了 ${x}` }))) : null,
+        s.photos.length ? el3("div", { class: "fun-chips" }, s.photos.map((x) => el3("span", { class: "fun-chip", text: `📷 ${x}` }))) : null,
+        s.ate && s.ate.length ? el3("div", { class: "fun-chips" }, s.ate.map((x) => el3("span", { class: "fun-chip fun-chip-ate", text: `${x.verb}了 ${x.item}` }))) : null,
+        s.events.length ? el3("ul", { class: "fun-list" }, s.events.slice(-3).map((e) => el3("li", { text: e }))) : null,
+        venue ? el3("div", { class: "fun-meta", text: leftText }) : null,
         pendingChoice(s.pendingChoice)
       ));
     } else if (!draft) {
-      body.appendChild(el2(
+      body.appendChild(el3(
         "div",
         { class: "fun-live fun-live-idle" },
-        el2("h3", { text: "这会儿没在逛" }),
-        el2("div", { class: "fun-meta", text: `现在 ${data.nowHm} · ${data.total} 处地方里 ${data.openCount} 处开着` }),
-        el2("div", { class: "fun-meta fun-dim", text: "她会自己挑一处进去；你在下面点一张卡也能看细节。" })
+        el3("h3", { text: "这会儿没在逛" }),
+        el3("div", { class: "fun-meta", text: `现在 ${data.nowHm} · ${data.total} 处地方里 ${data.openCount} 处开着` }),
+        el3("div", { class: "fun-meta fun-dim", text: "她会自己挑一处进去；你在下面点一张卡也能看细节。" })
       ));
     }
-    if (notice) body.appendChild(el2("div", {
+    if (notice) body.appendChild(el3("div", {
       class: "fun-meta fun-outing-result",
       role: notice.error ? "alert" : "status",
       tabindex: "-1",
       text: notice.text
     }));
-    if (data.upcomingWish) body.appendChild(el2("div", { class: "fun-upcoming-wish", text: data.upcomingWish }));
+    if (data.upcomingWish) body.appendChild(el3("div", { class: "fun-upcoming-wish", text: data.upcomingWish }));
     if (data.route) body.appendChild(routeSummary(data.route));
-    const recommendBox = el2("section", { class: "fun-recommendations", "aria-label": "此刻推荐" });
+    const recommendBox = el3("section", { class: "fun-recommendations", "aria-label": "此刻推荐" });
     body.appendChild(recommendBox);
-    body.appendChild(el2("div", { class: "fun-sec", text: "全部地方 · 找一处看看" }));
-    const management = el2("details", { class: "fun-management" }, el2("summary", { text: "地点管理与说明" }));
-    const input = el2("input", {
+    body.appendChild(el3("div", { class: "fun-sec", text: "全部地方 · 找一处看看" }));
+    const management = el3("details", { class: "fun-management" }, el3("summary", { text: "地点管理与说明" }));
+    const input = el3("input", {
       class: "fun-search",
       type: "search",
       placeholder: "搜地方名、别名或标签（庙会 / 室内 / 夜…）",
@@ -5635,16 +6326,16 @@ function mountPlaces2(ctx) {
       keyword = input.value;
       renderList();
     });
-    body.appendChild(el2("div", { class: "fun-bar" }, input));
-    management.appendChild(el2(
+    body.appendChild(el3("div", { class: "fun-bar" }, input));
+    management.appendChild(el3(
       "div",
       { class: "fun-hint" },
       `这里只负责看和出发。要改地点（名字、描写、时间、能逛的、纪念品、画风、封面、关联）或添加新地点，请到「地点册」。　预设 ${data.total - data.userVenueCount} 处，自己加了 ${data.userVenueCount} 处。` + (data.overriddenCount ? `　已改过 ${data.overriddenCount} 处预设，可在地点册恢复。` : "") + (data.feast ? "　吃喝的味道会去「鱼的每一天」拿（可在配置里关掉）。" : "　吃喝只记名字、不描述味道（可在配置里打开「去鱼的每一天拿」）。")
     ));
-    const filterBar = el2("div", { class: "fun-filters", role: "group", "aria-label": "地点快捷筛选" });
+    const filterBar = el3("div", { class: "fun-filters", role: "group", "aria-label": "地点快捷筛选" });
     const filterButtons = [];
     for (const label2 of ["全部", "现在开着", "室内", "户外", "夜游", "我的地点"]) {
-      const button2 = el2("button", { type: "button", "aria-pressed": String(quickFilter === label2), onclick: () => {
+      const button2 = el3("button", { type: "button", "aria-pressed": String(quickFilter === label2), onclick: () => {
         quickFilter = label2;
         for (const item of filterButtons) item.button.setAttribute("aria-pressed", String(item.label === label2));
         renderList();
@@ -5653,7 +6344,7 @@ function mountPlaces2(ctx) {
       filterBar.appendChild(button2);
     }
     body.appendChild(filterBar);
-    const listBox = el2("div");
+    const listBox = el3("div");
     body.appendChild(listBox);
     body.appendChild(management);
     function renderList() {
@@ -5664,7 +6355,7 @@ function mountPlaces2(ctx) {
       if (!kw && quickFilter === "全部" && recommendations.length) {
         const [hero, ...rest] = recommendations;
         const heroOpen = expanded === hero.id && expandedOrigin === "recommend";
-        const heroCard = el2(
+        const heroCard = el3(
           "div",
           {
             class: `fun-recommend-card fun-hero${heroOpen ? " fun-card-active" : ""}`,
@@ -5681,24 +6372,24 @@ function mountPlaces2(ctx) {
               }
             }
           },
-          el2(
+          el3(
             "div",
             { class: "fun-hero-body" },
-            el2(
+            el3(
               "div",
               { class: "fun-chips" },
-              el2("span", { class: "fun-chip fun-chip-on", text: "此刻推荐" }),
-              hero.crowdLabel ? el2("span", { class: "fun-chip", text: hero.crowdLabel }) : null,
-              hero.phase ? el2("span", { class: "fun-chip", text: hero.phase }) : null
+              el3("span", { class: "fun-chip fun-chip-on", text: "此刻推荐" }),
+              hero.crowdLabel ? el3("span", { class: "fun-chip", text: hero.crowdLabel }) : null,
+              hero.phase ? el3("span", { class: "fun-chip", text: hero.phase }) : null
             ),
-            el2("h3", { class: "fun-recommend-name", text: hero.name }),
-            el2("p", { class: "fun-recommend-reason", text: hero.wishReason || hero.revisitReason || `${hero.hours.open}–${hero.hours.close} · ${hero.crowdLabel} · ${hero.stateLabel}` }),
-            el2(
+            el3("h3", { class: "fun-recommend-name", text: hero.name }),
+            el3("p", { class: "fun-recommend-reason", text: hero.wishReason || hero.revisitReason || `${hero.hours.open}–${hero.hours.close} · ${hero.crowdLabel} · ${hero.stateLabel}` }),
+            el3(
               "div",
               { class: "fun-chips" },
-              el2("span", { class: "fun-chip", text: `${hero.hours.open}–${hero.hours.close}` }),
-              el2("span", { class: "fun-chip", text: hero.stateLabel }),
-              hero.tags?.length ? el2("span", { class: "fun-chip", text: hero.tags[0] }) : null
+              el3("span", { class: "fun-chip", text: `${hero.hours.open}–${hero.hours.close}` }),
+              el3("span", { class: "fun-chip", text: hero.stateLabel }),
+              hero.tags?.length ? el3("span", { class: "fun-chip", text: hero.tags[0] }) : null
             )
           ),
           sceneArt(hero)
@@ -5706,10 +6397,10 @@ function mountPlaces2(ctx) {
         recommendBox.appendChild(heroCard);
         if (heroOpen) recommendBox.appendChild(detail(hero));
         if (rest.length) {
-          recommendBox.appendChild(el2("p", { class: "fun-note", text: "几处开着的地方，点开只看细节；出发与选择仍由她自己决定。" }));
-          recommendBox.appendChild(el2("div", { class: "fun-recommend-grid" }, rest.map((p) => {
+          recommendBox.appendChild(el3("p", { class: "fun-note", text: "几处开着的地方，点开只看细节；出发与选择仍由她自己决定。" }));
+          recommendBox.appendChild(el3("div", { class: "fun-recommend-grid" }, rest.map((p) => {
             const selected = expanded === p.id && expandedOrigin === "recommend";
-            const cell2 = el2("div", { class: selected ? "fun-cell fun-cell-open" : "fun-cell" }, card(p, true));
+            const cell2 = el3("div", { class: selected ? "fun-cell fun-cell-open" : "fun-cell" }, card(p, true));
             if (selected) cell2.appendChild(detail(p));
             return cell2;
           })));
@@ -5729,20 +6420,20 @@ function mountPlaces2(ctx) {
       const closed = matched.filter((p) => p.state === "closed");
       const cell = (p) => {
         const isOpen = expanded === p.id && expandedOrigin === "list";
-        const wrap = el2("div", { class: isOpen ? "fun-cell fun-cell-open" : "fun-cell" });
+        const wrap = el3("div", { class: isOpen ? "fun-cell fun-cell-open" : "fun-cell" });
         wrap.appendChild(card(p));
         if (isOpen) wrap.appendChild(detail(p));
         return wrap;
       };
       const section = (title, items) => {
         if (!items.length) return;
-        listBox.appendChild(el2("div", { class: "fun-sec", text: title }));
-        listBox.appendChild(el2("div", { class: "fun-grid" }, items.map(cell)));
+        listBox.appendChild(el3("div", { class: "fun-sec", text: title }));
+        listBox.appendChild(el3("div", { class: "fun-grid" }, items.map(cell)));
       };
       section(kw || quickFilter !== "全部" ? `筛选结果 · 开着的（${open.length}）` : `开着的（${open.length}）`, open);
       section("已经关了", closed);
       if (!matched.length) {
-        listBox.appendChild(el2("div", { class: "fun-empty", text: kw ? `没有匹配「${keyword}」的地方，试试其他筛选。` : "这个筛选下还没有地方，换一项看看。" }));
+        listBox.appendChild(el3("div", { class: "fun-empty", text: kw ? `没有匹配「${keyword}」的地方，试试其他筛选。` : "这个筛选下还没有地方，换一项看看。" }));
       }
     }
     const card = (p, recommended = false) => {
@@ -5753,7 +6444,7 @@ function mountPlaces2(ctx) {
       else cls.push("fun-card-open");
       if (selected) cls.push("fun-card-active");
       const stateCls = p.state === "open" ? "fun-card-state-open" : p.state === "closingSoon" ? "fun-card-state-soon" : "";
-      const node2 = el2(
+      const node2 = el3(
         "div",
         {
           class: cls.join(" "),
@@ -5771,27 +6462,27 @@ function mountPlaces2(ctx) {
           }
         },
         sceneArt(p),
-        el2(
+        el3(
           "div",
           { class: "fun-card-head" },
-          el2("span", { class: recommended ? "fun-recommend-name" : "fun-card-name", text: p.name }),
-          p.phase ? el2("span", { class: "fun-chip fun-chip-phase", text: p.phase }) : null,
-          el2("span", { class: `fun-card-state ${stateCls}`, text: p.stateLabel }),
-          el2("span", { class: "fun-card-arrow", text: selected ? "⌃" : "⌄" })
+          el3("span", { class: recommended ? "fun-recommend-name" : "fun-card-name", text: p.name }),
+          p.phase ? el3("span", { class: "fun-chip fun-chip-phase", text: p.phase }) : null,
+          el3("span", { class: `fun-card-state ${stateCls}`, text: p.stateLabel }),
+          el3("span", { class: "fun-card-arrow", text: selected ? "⌃" : "⌄" })
         ),
-        recommended ? el2("div", { class: "fun-recommend-reason", text: p.wishReason || p.revisitReason || `${p.hours.open}–${p.hours.close} · ${p.crowdLabel} · ${p.phase || p.tags?.slice(0, 2).join(" / ") || "现在开着"}` }) : null,
-        recommended ? null : el2("div", { class: "fun-card-desc", text: p.desc }),
-        !recommended && p.wishReason ? el2("div", { class: "fun-meta", text: p.wishReason }) : null,
-        !recommended && p.revisitReason ? el2("div", { class: "fun-meta", text: p.revisitReason }) : null,
-        el2(
+        recommended ? el3("div", { class: "fun-recommend-reason", text: p.wishReason || p.revisitReason || `${p.hours.open}–${p.hours.close} · ${p.crowdLabel} · ${p.phase || p.tags?.slice(0, 2).join(" / ") || "现在开着"}` }) : null,
+        recommended ? null : el3("div", { class: "fun-card-desc", text: p.desc }),
+        !recommended && p.wishReason ? el3("div", { class: "fun-meta", text: p.wishReason }) : null,
+        !recommended && p.revisitReason ? el3("div", { class: "fun-meta", text: p.revisitReason }) : null,
+        el3(
           "div",
           { class: "fun-card-foot" },
-          el2("span", { text: `${p.hours.open}–${p.hours.close}` }),
-          el2("span", { text: p.crowdLabel }),
-          el2("span", { text: `${p.areaCount} 处可逛` }),
-          p.food ? el2("span", { class: "fun-chip fun-chip-ate", text: p.food.verb === "喝" ? "能喝" : "能吃" }) : null,
-          p.visitCount > 0 ? el2("span", { class: "fun-chip", text: `去过 ${p.visitCount} 次` }) : null,
-          p.recent ? el2("span", { class: "fun-chip", text: "刚去过" }) : null
+          el3("span", { text: `${p.hours.open}–${p.hours.close}` }),
+          el3("span", { text: p.crowdLabel }),
+          el3("span", { text: `${p.areaCount} 处可逛` }),
+          p.food ? el3("span", { class: "fun-chip fun-chip-ate", text: p.food.verb === "喝" ? "能喝" : "能吃" }) : null,
+          p.visitCount > 0 ? el3("span", { class: "fun-chip", text: `去过 ${p.visitCount} 次` }) : null,
+          p.recent ? el3("span", { class: "fun-chip", text: "刚去过" }) : null
         )
       );
       return node2;
@@ -5812,21 +6503,21 @@ function mountPlaces2(ctx) {
       }
     }
     const detail = (p) => {
-      const d = el2(
+      const d = el3(
         "div",
         { class: "fun-detail" },
-        el2(
+        el3(
           "div",
           { class: "fun-detail-top" },
-          el2(
+          el3(
             "h4",
             { text: p.name },
-            p.overridden ? el2("span", { class: "fun-chip fun-chip-on", text: "已改", style: { marginLeft: "6px" } }) : null
+            p.overridden ? el3("span", { class: "fun-chip fun-chip-on", text: "已改", style: { marginLeft: "6px" } }) : null
           ),
-          el2(
+          el3(
             "div",
             { class: "fun-detail-actions" },
-            el2("button", {
+            el3("button", {
               class: "fun-detail-close",
               type: "button",
               title: "收起",
@@ -5839,52 +6530,52 @@ function mountPlaces2(ctx) {
           )
         ),
         sceneArt(p, true),
-        el2("p", { class: "fun-dim", text: `${p.kindLabel} · ${p.crowdLabel} · ${p.hours.open}–${p.hours.close} · ${p.stateLabel}` }),
+        el3("p", { class: "fun-dim", text: `${p.kindLabel} · ${p.crowdLabel} · ${p.hours.open}–${p.hours.close} · ${p.stateLabel}` }),
         // 此刻的那段描写：有阶段的场所显示的是「这会儿的样子」，不是通用那段。
-        el2("p", { class: "fun-detail-desc", text: p.desc }),
+        el3("p", { class: "fun-detail-desc", text: p.desc }),
         // 时段一览：让她和主人都看得出「换个时间来是另一副样子」。
-        p.phases && p.phases.length > 1 ? el2(
+        p.phases && p.phases.length > 1 ? el3(
           "div",
           {},
-          el2("div", { class: "fun-sec", text: "不同时段" }),
-          el2("div", { class: "fun-phases" }, p.phases.map((ph) => el2("span", {
+          el3("div", { class: "fun-sec", text: "不同时段" }),
+          el3("div", { class: "fun-phases" }, p.phases.map((ph) => el3("span", {
             class: ph.label === p.phase ? "fun-chip fun-chip-phase fun-chip-on" : "fun-chip",
             title: `${ph.from}–${ph.to}`,
             text: `${ph.label} ${ph.from}–${ph.to}`
           })))
         ) : null,
         // 三块并成一排：能逛的 / 纪念品 / 拍照点，省纵向高度（原来三个小节摞起来很高）。
-        el2(
+        el3(
           "div",
           { class: "fun-detail-cols" },
-          el2(
+          el3(
             "div",
             { class: "fun-detail-col" },
-            el2("div", { class: "fun-sec", text: "能逛的" }),
-            el2("ul", { class: "fun-list" }, p.areas.map((a) => el2("li", { text: a })))
+            el3("div", { class: "fun-sec", text: "能逛的" }),
+            el3("ul", { class: "fun-list" }, p.areas.map((a) => el3("li", { text: a })))
           ),
-          el2(
+          el3(
             "div",
             { class: "fun-detail-col" },
-            el2("div", { class: "fun-sec", text: "纪念品" }),
-            el2("div", { class: "fun-chips" }, p.souvenirs.map((s) => el2("span", { class: "fun-chip" }, itemIcon(s), s))),
-            el2("div", { class: "fun-sec", text: "拍照点" }),
-            el2("div", { class: "fun-chips" }, p.photoSpots.map((s) => el2("span", { class: "fun-chip", text: s }))),
-            p.food ? el2(
+            el3("div", { class: "fun-sec", text: "纪念品" }),
+            el3("div", { class: "fun-chips" }, p.souvenirs.map((s) => el3("span", { class: "fun-chip" }, itemIcon(s), s))),
+            el3("div", { class: "fun-sec", text: "拍照点" }),
+            el3("div", { class: "fun-chips" }, p.photoSpots.map((s) => el3("span", { class: "fun-chip", text: s }))),
+            p.food ? el3(
               "div",
               {},
-              el2("div", { class: "fun-sec", text: `能${p.food.verb}的` }),
-              el2("div", { class: "fun-chips" }, p.food.items.map((s) => el2("span", { class: "fun-chip", text: s }))),
-              el2("div", { class: "fun-note", text: `味道不在这儿——装了「鱼的每一天」才有九维口感，没装就只知道${p.food.verb}了什么。` })
+              el3("div", { class: "fun-sec", text: `能${p.food.verb}的` }),
+              el3("div", { class: "fun-chips" }, p.food.items.map((s) => el3("span", { class: "fun-chip", text: s }))),
+              el3("div", { class: "fun-note", text: `味道不在这儿——装了「鱼的每一天」才有九维口感，没装就只知道${p.food.verb}了什么。` })
             ) : null
           )
         ),
-        el2(
+        el3(
           "div",
           { class: "fun-scene" },
-          p.hasScene ? el2("span", {}, "生图时 ", el2("b", { text: `scene 填「${p.scene}」` }), `，outfits 建议「${p.outfit}」`) : el2("span", {}, "素材库里没有这处的场景，生图时 ", el2("b", { text: "scene 不用填" }), "，把地方写进 prompt 就行")
+          p.hasScene ? el3("span", {}, "生图时 ", el3("b", { text: `scene 填「${p.scene}」` }), `，outfits 建议「${p.outfit}」`) : el3("span", {}, "素材库里没有这处的场景，生图时 ", el3("b", { text: "scene 不用填" }), "，把地方写进 prompt 就行")
         ),
-        el2("div", { class: "fun-note", text: "要改这处地点（名字、描写、时间、能逛的、纪念品、画风、封面、关联），请到「地点册」——那里是唯一的编辑器。" })
+        el3("div", { class: "fun-note", text: "要改这处地点（名字、描写、时间、能逛的、纪念品、画风、封面、关联），请到「地点册」——那里是唯一的编辑器。" })
       );
       d.appendChild(historyView(p.id));
       return d;
@@ -5936,7 +6627,7 @@ function mountBook(ctx) {
   const root = ctx.root;
   root.replaceChildren();
   const box = shell(root);
-  const body = el2("div");
+  const body = el3("div");
   box.appendChild(body);
   let bookTab = "all";
   let bookKeyword = "";
@@ -5945,7 +6636,7 @@ function mountBook(ctx) {
   let wishFormOpen = false;
   const expandedTrips = /* @__PURE__ */ new Set();
   const status = feedback2(box);
-  body.appendChild(el2("div", { class: "fun-loading", role: "status", text: "正在翻开纪念册…" }));
+  body.appendChild(el3("div", { class: "fun-loading", role: "status", text: "正在翻开纪念册…" }));
   const pending = /* @__PURE__ */ new Set();
   const errors = /* @__PURE__ */ new Map();
   let currentData = null;
@@ -5957,28 +6648,28 @@ function mountBook(ctx) {
     const places = data.places ?? [];
     const wishes = data.wishes ?? [];
     const adding = wishPending.has("add");
-    const section = el2("section", { class: "fun-wishes", "aria-label": "出游心愿" });
-    section.appendChild(el2(
+    const section = el3("section", { class: "fun-wishes", "aria-label": "出游心愿" });
+    section.appendChild(el3(
       "div",
       { class: "fun-bar" },
-      el2("span", { class: "fun-sec", text: "出游心愿" }),
-      el2("button", { type: "button", "aria-expanded": String(wishFormOpen), disabled: adding ? "disabled" : null, onclick: () => {
+      el3("span", { class: "fun-sec", text: "出游心愿" }),
+      el3("button", { type: "button", "aria-expanded": String(wishFormOpen), disabled: adding ? "disabled" : null, onclick: () => {
         wishFormOpen = !wishFormOpen;
         render(currentData);
       } }, wishFormOpen ? "收起表单" : "记个心愿")
     ));
-    const field = (label2, input) => el2(
+    const field = (label2, input) => el3(
       "label",
       { class: "fun-field" },
-      el2("span", { class: "fun-field-label", text: label2 }),
+      el3("span", { class: "fun-field-label", text: label2 }),
       input
     );
     const select = (className, placeholder, options, value) => {
-      const input = el2(
+      const input = el3(
         "select",
         { class: className, disabled: adding ? "disabled" : null },
-        el2("option", { value: "", text: placeholder }),
-        options.map(([id, name]) => el2("option", { value: id, text: name }))
+        el3("option", { value: "", text: placeholder }),
+        options.map(([id, name]) => el3("option", { value: id, text: name }))
       );
       input.value = value;
       return input;
@@ -5994,7 +6685,7 @@ function mountBook(ctx) {
       wishDraft.target
     );
     targetInput.disabled = adding || !targets.length;
-    const reasonInput = el2("input", { class: "fun-wish-reason", type: "text", placeholder: "可选，记下为什么想去", disabled: adding ? "disabled" : null });
+    const reasonInput = el3("input", { class: "fun-wish-reason", type: "text", placeholder: "可选，记下为什么想去", disabled: adding ? "disabled" : null });
     reasonInput.value = wishDraft.reason;
     placeInput.addEventListener("change", () => {
       wishDraft.placeId = placeInput.value;
@@ -6014,7 +6705,7 @@ function mountBook(ctx) {
     reasonInput.addEventListener("input", () => {
       wishDraft.reason = reasonInput.value;
     });
-    const errorNode = el2("div", { class: "fun-form-error", role: "alert", text: wishErrors.get("add") ?? "" });
+    const errorNode = el3("div", { class: "fun-form-error", role: "alert", text: wishErrors.get("add") ?? "" });
     const save = async () => {
       if (wishPending.has("add")) return;
       const payload = {
@@ -6035,51 +6726,51 @@ function mountBook(ctx) {
       wishDraft = { placeId: payload.placeId, type: payload.type, target: payload.target, reason: reasonInput.value };
       await changeWish("add", payload, data);
     };
-    if (wishFormOpen) section.appendChild(el2(
+    if (wishFormOpen) section.appendChild(el3(
       "div",
       { class: "fun-form fun-wish-form" },
-      el2("div", { class: "fun-form-note", text: "由你选择想去的地方，按保存才记下心愿；心愿不保证立即出发。" }),
-      el2("div", { class: "fun-form-grid" }, field("地点", placeInput), field("心愿类型", typeInput), field("目标", targetInput)),
+      el3("div", { class: "fun-form-note", text: "由你选择想去的地方，按保存才记下心愿；心愿不保证立即出发。" }),
+      el3("div", { class: "fun-form-grid" }, field("地点", placeInput), field("心愿类型", typeInput), field("目标", targetInput)),
       field("缘由（可选）", reasonInput),
       errorNode,
-      el2("button", { class: "fun-btn-primary", type: "button", disabled: adding ? "disabled" : null, onclick: save }, adding ? "保存中…" : "保存心愿")
+      el3("button", { class: "fun-btn-primary", type: "button", disabled: adding ? "disabled" : null, onclick: save }, adding ? "保存中…" : "保存心愿")
     ));
-    if (!wishes.length) section.appendChild(el2("div", { class: "fun-note", text: "还没有出游心愿，想好了再记下。" }));
+    if (!wishes.length) section.appendChild(el3("div", { class: "fun-note", text: "还没有出游心愿，想好了再记下。" }));
     const statusNames = { active: "待实现", paused: "已暂缓", completed: "已实现", cancelled: "已取消" };
-    const history = el2("details", {
+    const history = el3("details", {
       class: "fun-wish-history",
       open: wishes.some((w) => w.status !== "active" && (wishErrors.has(`wish:${w.id}`) || wishPending.has(`wish:${w.id}`))) ? "open" : null
-    }, el2("summary", { text: `已实现、暂缓与取消（${wishes.filter((w) => w.status !== "active").length}）` }));
+    }, el3("summary", { text: `已实现、暂缓与取消（${wishes.filter((w) => w.status !== "active").length}）` }));
     for (const wish of wishes) {
       const key = `wish:${wish.id}`;
       const busy = wishPending.has(key);
       const state = wish.status;
-      const actions = el2("div", { class: "fun-trip-actions" });
+      const actions = el3("div", { class: "fun-trip-actions" });
       if (state === "active" || state === "paused") {
-        actions.appendChild(el2("button", {
+        actions.appendChild(el3("button", {
           type: "button",
           disabled: busy ? "disabled" : null,
           onclick: () => changeWish(key, { action: state === "paused" ? "resume" : "pause", id: wish.id }, data)
         }, state === "paused" ? "恢复" : "暂缓"));
-        actions.appendChild(el2("button", {
+        actions.appendChild(el3("button", {
           type: "button",
           disabled: busy ? "disabled" : null,
           onclick: () => changeWish(key, { action: "cancel", id: wish.id }, data)
         }, "取消"));
       }
-      if (busy) actions.appendChild(el2("span", { class: "fun-dim", text: "保存中…" }));
-      if (wishErrors.has(key)) actions.appendChild(el2("span", { class: "fun-trip-error", role: "alert", text: wishErrors.get(key) }));
-      (state === "active" ? section : history).appendChild(el2(
+      if (busy) actions.appendChild(el3("span", { class: "fun-dim", text: "保存中…" }));
+      if (wishErrors.has(key)) actions.appendChild(el3("span", { class: "fun-trip-error", role: "alert", text: wishErrors.get(key) }));
+      (state === "active" ? section : history).appendChild(el3(
         "div",
         { class: "fun-wish fun-trip" },
-        el2(
+        el3(
           "div",
           { class: "fun-trip-head" },
-          el2("span", { class: "fun-trip-name", text: wish.placeName ?? places.find((p) => p.id === wish.placeId)?.name ?? wish.placeId }),
-          el2("span", { class: "fun-wish-status fun-dim", text: statusNames[state] ?? state ?? "状态未知" })
+          el3("span", { class: "fun-trip-name", text: wish.placeName ?? places.find((p) => p.id === wish.placeId)?.name ?? wish.placeId }),
+          el3("span", { class: "fun-wish-status fun-dim", text: statusNames[state] ?? state ?? "状态未知" })
         ),
-        el2("div", { class: "fun-trip-sum", text: `${wishTypes[wish.type] ?? wish.type}${wish.target ? ` · ${wish.target}` : ""}` }),
-        wish.reason ? el2("div", { class: "fun-wish-note fun-note", text: `缘由：${wish.reason}` }) : null,
+        el3("div", { class: "fun-trip-sum", text: `${wishTypes[wish.type] ?? wish.type}${wish.target ? ` · ${wish.target}` : ""}` }),
+        wish.reason ? el3("div", { class: "fun-wish-note fun-note", text: `缘由：${wish.reason}` }) : null,
         actions
       ));
     }
@@ -6109,40 +6800,40 @@ function mountBook(ctx) {
       render(currentData ?? data);
     }
   };
-  const bookRail = (activeWishes) => el2(
+  const bookRail = (activeWishes) => el3(
     "aside",
     { class: "fun-rail fun-book-rail", "aria-label": "下次想去" },
-    el2("h3", { text: "下次想去" }),
+    el3("h3", { text: "下次想去" }),
     activeWishes.length ? [
-      el2(
+      el3(
         "div",
         { class: "fun-rail-wish" },
-        el2("p", { text: activeWishes[0].reason || `${wishTypes[activeWishes[0].type] ?? "想去"}${activeWishes[0].target ? ` · ${activeWishes[0].target}` : ""}，${activeWishes[0].placeName ?? activeWishes[0].placeId}` }),
-        el2("span", { class: "fun-chip", text: `${activeWishes[0].placeName ?? activeWishes[0].placeId} · ${wishTypes[activeWishes[0].type] ?? activeWishes[0].type}` })
+        el3("p", { text: activeWishes[0].reason || `${wishTypes[activeWishes[0].type] ?? "想去"}${activeWishes[0].target ? ` · ${activeWishes[0].target}` : ""}，${activeWishes[0].placeName ?? activeWishes[0].placeId}` }),
+        el3("span", { class: "fun-chip", text: `${activeWishes[0].placeName ?? activeWishes[0].placeId} · ${wishTypes[activeWishes[0].type] ?? activeWishes[0].type}` })
       ),
-      activeWishes.length > 1 ? el2("p", { class: "fun-rail-more", text: `另外还记着 ${activeWishes.length - 1} 个心愿，去「心愿」页签里看。` }) : null
-    ] : el2("p", { text: "还没有记下的心愿。在「心愿」页签里记一个，她出门时会顺路想着。" }),
-    el2("div", { class: "fun-quote", text: "心愿只作提醒。\n什么时候出门，由她决定。" })
+      activeWishes.length > 1 ? el3("p", { class: "fun-rail-more", text: `另外还记着 ${activeWishes.length - 1} 个心愿，去「心愿」页签里看。` }) : null
+    ] : el3("p", { text: "还没有记下的心愿。在「心愿」页签里记一个，她出门时会顺路想着。" }),
+    el3("div", { class: "fun-quote", text: "心愿只作提醒。\n什么时候出门，由她决定。" })
   );
   const render = (data) => {
     const restoreFocus = rememberFocus(body);
     currentData = data;
     body.replaceChildren(heading("那些一起出门的日子。", "每一趟都留在这里，想起时再翻一翻。"));
-    if (data.session) body.appendChild(el2(
+    if (data.session) body.appendChild(el3(
       "div",
       { class: "fun-live" },
-      el2("h3", { text: "正在逛 · " + data.session.placeName }),
-      el2("div", { class: "fun-trip-sum", text: data.session.summary })
+      el3("h3", { text: "正在逛 · " + data.session.placeName }),
+      el3("div", { class: "fun-trip-sum", text: data.session.summary })
     ));
-    else if (data.trips?.length) body.appendChild(el2(
+    else if (data.trips?.length) body.appendChild(el3(
       "div",
       { class: "fun-live" },
-      el2("div", { class: "fun-meta", text: "最近一趟 · " + data.trips[0].day }),
-      el2("h3", { text: data.trips[0].placeName }),
-      el2("div", { class: "fun-trip-sum", text: data.trips[0].summary })
+      el3("div", { class: "fun-meta", text: "最近一趟 · " + data.trips[0].day }),
+      el3("h3", { text: data.trips[0].placeName }),
+      el3("div", { class: "fun-trip-sum", text: data.trips[0].summary })
     ));
-    const tabs = el2("nav", { class: "fun-tabs", "aria-label": "纪念册分类" });
-    for (const [id, label2] of [["all", "全部行程"], ["kept", "珍藏"], ["wishes", "心愿"]]) tabs.appendChild(el2("button", {
+    const tabs = el3("nav", { class: "fun-tabs", "aria-label": "纪念册分类" });
+    for (const [id, label2] of [["all", "全部行程"], ["kept", "珍藏"], ["wishes", "心愿"]]) tabs.appendChild(el3("button", {
       type: "button",
       "aria-pressed": String(bookTab === id),
       onclick: () => {
@@ -6158,11 +6849,11 @@ function mountBook(ctx) {
     }
     if (!data.total && !(data.keepsakeCount > 0)) {
       body.appendChild(tabs);
-      body.appendChild(el2("div", { class: "fun-empty", text: "纪念册还是空的——她收一次摊，这里就有一趟。" }));
+      body.appendChild(el3("div", { class: "fun-empty", text: "纪念册还是空的——她收一次摊，这里就有一趟。" }));
       restoreFocus();
       return;
     }
-    body.appendChild(el2(
+    body.appendChild(el3(
       "div",
       { class: "fun-stats" },
       stat(data.totalRecent ?? data.total, "近期行程"),
@@ -6171,43 +6862,43 @@ function mountBook(ctx) {
       stat(data.souvenirCount, "件纪念品"),
       stat(data.photoCount, "张照片")
     ));
-    if (data.mostVisited?.length) body.appendChild(el2(
+    if (data.mostVisited?.length) body.appendChild(el3(
       "details",
       { class: "fun-wish-history" },
-      el2("summary", { text: "常去的" }),
-      el2("div", { class: "fun-chips" }, data.mostVisited.slice(0, 8).map((m) => el2("span", { class: "fun-chip", text: `${m.name} ×${m.times}` })))
+      el3("summary", { text: "常去的" }),
+      el3("div", { class: "fun-chips" }, data.mostVisited.slice(0, 8).map((m) => el3("span", { class: "fun-chip", text: `${m.name} ×${m.times}` })))
     ));
     const activeWishes = (data.wishes ?? []).filter((w) => w.status === "active");
-    if (activeWishes.length) body.appendChild(el2(
+    if (activeWishes.length) body.appendChild(el3(
       "div",
       { class: "fun-note fun-wish-summary" },
       `记着 ${activeWishes.length} 个心愿：${activeWishes.slice(0, 3).map((w) => w.placeName ?? w.placeId).join("、")}${activeWishes.length > 3 ? " 等" : ""}。什么时候出门，由她决定。`
     ));
-    const layout = el2("div", { class: "fun-with-rail" });
-    const main = el2("div", { class: "fun-book-main" });
+    const layout = el3("div", { class: "fun-with-rail" });
+    const main = el3("div", { class: "fun-book-main" });
     layout.appendChild(main);
     layout.appendChild(bookRail(activeWishes));
     body.appendChild(layout);
     main.appendChild(tabs);
-    const search = el2("input", { class: "fun-book-search", type: "search", placeholder: "搜地点、同行人、日期、备注或沿途回忆", value: bookKeyword, "aria-label": "搜索纪念册", "data-focus-key": "book-search" });
+    const search = el3("input", { class: "fun-book-search", type: "search", placeholder: "搜地点、同行人、日期、备注或沿途回忆", value: bookKeyword, "aria-label": "搜索纪念册", "data-focus-key": "book-search" });
     const placeOptions = new Map((data.trips ?? []).map((trip) => [trip.placeId, trip.placeName]));
-    const place = el2(
+    const place = el3(
       "select",
       { class: "fun-book-place", "aria-label": "按地点筛选行程", "data-focus-key": "book-place" },
-      el2("option", { value: "", text: "所有地点" }),
-      [...placeOptions].map(([id, name]) => el2("option", { value: id, text: name }))
+      el3("option", { value: "", text: "所有地点" }),
+      [...placeOptions].map(([id, name]) => el3("option", { value: id, text: name }))
     );
     place.value = bookPlace;
     const days = [...new Set((data.trips ?? []).map((trip) => trip.day || "unknown"))];
-    const date2 = el2(
+    const date2 = el3(
       "select",
       { class: "fun-book-date", "aria-label": "按日期筛选行程", "data-focus-key": "book-date" },
-      el2("option", { value: "", text: "所有日期" }),
-      days.map((day) => el2("option", { value: day, text: day === "unknown" ? "日期不详" : day }))
+      el3("option", { value: "", text: "所有日期" }),
+      days.map((day) => el3("option", { value: day, text: day === "unknown" ? "日期不详" : day }))
     );
     date2.value = bookDate;
-    main.appendChild(el2("div", { class: "fun-album-filters" }, search, place, date2));
-    const results = el2("div", { class: "fun-book-results" });
+    main.appendChild(el3("div", { class: "fun-album-filters" }, search, place, date2));
+    const results = el3("div", { class: "fun-book-results" });
     main.appendChild(results);
     const allTrips = data.trips ?? [];
     const textFor = (trip) => [
@@ -6236,7 +6927,7 @@ function mountBook(ctx) {
         const linkedText = route ? [(route.stops ?? []).map((stop) => stop.placeName).join(" "), ...linked.map(textFor)].join(" ").toLowerCase() : "";
         return textFor(trip).includes(keyword) || linkedText.includes(keyword);
       });
-      if (keyword || bookPlace || bookDate) results.appendChild(el2("div", { class: "fun-note", role: "status", text: "找到 " + trips.length + " 趟行程；联程同时检索相连的地点与记录。" }));
+      if (keyword || bookPlace || bookDate) results.appendChild(el3("div", { class: "fun-note", role: "status", text: "找到 " + trips.length + " 趟行程；联程同时检索相连的地点与记录。" }));
       const appendTrip = (trip, parent) => {
         const open = expandedTrips.has(trip.id);
         const toggleKeep = async () => {
@@ -6255,39 +6946,39 @@ function mountBook(ctx) {
             render(currentData ?? data);
           }
         };
-        const card = el2(
+        const card = el3(
           "article",
           { class: "fun-trip fun-ticket", "data-trip-id": trip.id },
-          el2(
+          el3(
             "div",
             { class: "fun-ticket-date" },
-            el2("b", { text: String(Number(String(trip.day ?? "").slice(-2)) || "—") }),
-            el2("small", { text: (trip.day || "").slice(0, 7) || "日期不详" }),
-            el2("small", { text: trip.enteredHm || "时间不详" })
+            el3("b", { text: String(Number(String(trip.day ?? "").slice(-2)) || "—") }),
+            el3("small", { text: (trip.day || "").slice(0, 7) || "日期不详" }),
+            el3("small", { text: trip.enteredHm || "时间不详" })
           ),
-          el2(
+          el3(
             "div",
             { class: "fun-ticket-main" },
-            el2(
+            el3(
               "div",
               { class: "fun-trip-head" },
-              el2("span", { class: "fun-trip-name", text: trip.placeName }),
-              el2("span", { class: "fun-trip-when", text: (trip.enteredHm || "时间不详") + "–" + (trip.leftHm || "时间不详") + (trip.stayedMin ? " · " + trip.stayedMin + " 分钟" : "") })
+              el3("span", { class: "fun-trip-name", text: trip.placeName }),
+              el3("span", { class: "fun-trip-when", text: (trip.enteredHm || "时间不详") + "–" + (trip.leftHm || "时间不详") + (trip.stayedMin ? " · " + trip.stayedMin + " 分钟" : "") })
             ),
-            el2("div", { class: "fun-trip-sum", text: trip.summary }),
-            trip.company ? el2("div", { class: "fun-trip-extras", text: `同行 · ${trip.company}` }) : null,
-            trip.routeOrder ? el2("div", { class: "fun-note", text: "联程 · 第 " + trip.routeOrder + " 站" }) : null,
-            el2(
+            el3("div", { class: "fun-trip-sum", text: trip.summary }),
+            trip.company ? el3("div", { class: "fun-trip-extras", text: `同行 · ${trip.company}` }) : null,
+            trip.routeOrder ? el3("div", { class: "fun-note", text: "联程 · 第 " + trip.routeOrder + " 站" }) : null,
+            el3(
               "div",
               { class: "fun-trip-actions" },
-              el2("button", { type: "button", class: "fun-detail-toggle", "data-trip-id": trip.id, "aria-expanded": String(open), onclick: () => {
+              el3("button", { type: "button", class: "fun-detail-toggle", "data-trip-id": trip.id, "aria-expanded": String(open), onclick: () => {
                 if (open) expandedTrips.delete(trip.id);
                 else expandedTrips.add(trip.id);
                 renderResults();
                 [...results.querySelectorAll(".fun-detail-toggle")].find((button2) => button2.getAttribute("data-trip-id") === trip.id)?.focus?.();
               } }, open ? "收起详情" : "查看详情"),
-              el2("button", { type: "button", disabled: pending.has(trip.id) ? "disabled" : null, onclick: toggleKeep }, pending.has(trip.id) ? "保存中…" : trip.kept ? "取消珍藏" : "珍藏"),
-              errors.has(trip.id) ? el2("span", { class: "fun-trip-error", role: "alert", text: errors.get(trip.id) }) : null
+              el3("button", { type: "button", disabled: pending.has(trip.id) ? "disabled" : null, onclick: toggleKeep }, pending.has(trip.id) ? "保存中…" : trip.kept ? "取消珍藏" : "珍藏"),
+              errors.has(trip.id) ? el3("span", { class: "fun-trip-error", role: "alert", text: errors.get(trip.id) }) : null
             )
           )
         );
@@ -6301,7 +6992,7 @@ function mountBook(ctx) {
         if (route) {
           if (drawnRoutes.has(route.id)) continue;
           drawnRoutes.add(route.id);
-          const group = el2("section", { class: "fun-route-group", "data-route-id": route.id });
+          const group = el3("section", { class: "fun-route-group", "data-route-id": route.id });
           group.appendChild(routeSummary(route, allTrips, (selected) => {
             expandedTrips.add(selected.id);
             bookKeyword = "";
@@ -6313,20 +7004,20 @@ function mountBook(ctx) {
           }));
           const members = (route.tripIds ?? []).map((id) => trips.find((member) => member.id === id)).filter(Boolean);
           for (const member of members) {
-            group.appendChild(el2("div", { class: "fun-date", text: member.day || "日期不详" }));
+            group.appendChild(el3("div", { class: "fun-date", text: member.day || "日期不详" }));
             appendTrip(member, group);
           }
           results.appendChild(group);
           previousDay = null;
         } else {
           if (trip.day !== previousDay) {
-            results.appendChild(el2("div", { class: "fun-date", text: trip.day || "日期不详" }));
+            results.appendChild(el3("div", { class: "fun-date", text: trip.day || "日期不详" }));
             previousDay = trip.day;
           }
           appendTrip(trip, results);
         }
       }
-      if (!trips.length) results.appendChild(el2("div", { class: "fun-empty", text: bookKeyword || bookPlace || bookDate ? "没有匹配的行程，试试其他地点、日期或搜索词。" : bookTab === "kept" ? "还没有珍藏的行程。" : "还没有可回看的行程。" }));
+      if (!trips.length) results.appendChild(el3("div", { class: "fun-empty", text: bookKeyword || bookPlace || bookDate ? "没有匹配的行程，试试其他地点、日期或搜索词。" : bookTab === "kept" ? "还没有珍藏的行程。" : "还没有可回看的行程。" }));
     };
     search.addEventListener("input", () => {
       bookKeyword = search.value;
@@ -6343,11 +7034,11 @@ function mountBook(ctx) {
     renderResults();
     restoreFocus();
   };
-  const stat = (n, label2) => el2(
+  const stat = (n, label2) => el3(
     "div",
     { class: "fun-stat" },
-    el2("b", { text: String(n) }),
-    el2("span", { text: label2 })
+    el3("b", { text: String(n) }),
+    el3("span", { text: label2 })
   );
   const load = async (propagate = false) => {
     try {
@@ -6368,16 +7059,16 @@ function mountShelf(ctx) {
   const root = ctx.root;
   root.replaceChildren();
   const box = shell(root);
-  const body = el2("div");
+  const body = el3("div");
   box.appendChild(body);
   const status = feedback2(box);
   let currentData = null;
-  body.appendChild(el2("div", { class: "fun-loading", role: "status", text: "正在整理纪念品架…" }));
-  const stat = (n, label2) => el2(
+  body.appendChild(el3("div", { class: "fun-loading", role: "status", text: "正在整理纪念品架…" }));
+  const stat = (n, label2) => el3(
     "div",
     { class: "fun-stat" },
-    el2("b", { text: String(n) }),
-    el2("span", { text: label2 })
+    el3("b", { text: String(n) }),
+    el3("span", { text: label2 })
   );
   const pct = (part) => `${part.done}/${part.total}`;
   const memoryTrip = tripLookup(ctx, "trip", "id", "回看这趟行程");
@@ -6385,23 +7076,23 @@ function mountShelf(ctx) {
     if (Array.isArray(data.items) && data.items.length) return data.items;
     return (data.byPlace ?? []).flatMap((group) => (group.items ?? []).map((item) => ({ ...item, placeName: item.placeName || group.placeName })));
   };
-  const keepsakeCard = (it) => el2(
+  const keepsakeCard = (it) => el3(
     "details",
     { class: "fun-keepsake" },
-    el2(
+    el3(
       "summary",
       null,
       itemIcon(it.name),
-      el2("strong", { text: it.name }),
-      el2("span", { class: "fun-keepsake-place", text: `${it.placeName || "未记地点"}${it.firstDay ? ` · ${it.firstDay}` : ""}` }),
-      el2("span", { class: "fun-keepsake-count", text: it.times > 1 ? `收藏 ${it.times} 次` : "收藏 1 次" })
+      el3("strong", { text: it.name }),
+      el3("span", { class: "fun-keepsake-place", text: `${it.placeName || "未记地点"}${it.firstDay ? ` · ${it.firstDay}` : ""}` }),
+      el3("span", { class: "fun-keepsake-count", text: it.times > 1 ? `收藏 ${it.times} 次` : "收藏 1 次" })
     ),
-    it.archivedCount ? el2("div", { class: "fun-note", text: `${it.archivedCount} 次收藏仅保留账本，详细行程已不在近期记录中。` }) : null,
-    ...(it.memories ?? []).map((m) => el2(
+    it.archivedCount ? el3("div", { class: "fun-note", text: `${it.archivedCount} 次收藏仅保留账本，详细行程已不在近期记录中。` }) : null,
+    ...(it.memories ?? []).map((m) => el3(
       "div",
       { class: "fun-trip-sum" },
-      el2("div", { text: `${m.day || "日期不详"} · ${m.summary}` }),
-      m.note ? el2("div", { text: `你记的：${m.note}` }) : null,
+      el3("div", { text: `${m.day || "日期不详"} · ${m.summary}` }),
+      m.note ? el3("div", { text: `你记的：${m.note}` }) : null,
       m.id ? memoryTrip(m.id) : null
     ))
   );
@@ -6409,9 +7100,9 @@ function mountShelf(ctx) {
     currentData = data;
     body.replaceChildren(heading("带回来的小东西。", "一件纪念品，连着一处地方，也连着那一天。"));
     if (!data.total) {
-      body.appendChild(el2("div", { class: "fun-empty", text: "架子上还什么都没有——她买过纪念品，这里就有了。" }));
+      body.appendChild(el3("div", { class: "fun-empty", text: "架子上还什么都没有——她买过纪念品，这里就有了。" }));
     }
-    body.appendChild(el2(
+    body.appendChild(el3(
       "div",
       { class: "fun-stats" },
       stat(data.total, "样东西"),
@@ -6419,41 +7110,41 @@ function mountShelf(ctx) {
       stat(data.places, "处地方"),
       stat(data.completePlaces, "处逛遍")
     ));
-    body.appendChild(el2("div", { class: "fun-note", text: "收藏账本长期保留；详细行程可查看最近 40 趟与珍藏行程。进度按当前场所清单统计，移除或改名不删除旧回忆。" }));
+    body.appendChild(el3("div", { class: "fun-note", text: "收藏账本长期保留；详细行程可查看最近 40 趟与珍藏行程。进度按当前场所清单统计，移除或改名不删除旧回忆。" }));
     const keepsakes = shelfKeepsakes(data);
     const shelves = (data.byPlace ?? []).filter((group) => (group.items ?? []).length);
     if (keepsakes.length) {
-      body.appendChild(el2("div", { class: "fun-sec", text: "展示柜" }));
-      body.appendChild(el2("div", { class: "fun-shelf-cabinet" }, keepsakes.map(keepsakeCard)));
-      if (shelves.length) body.appendChild(el2(
+      body.appendChild(el3("div", { class: "fun-sec", text: "展示柜" }));
+      body.appendChild(el3("div", { class: "fun-shelf-cabinet" }, keepsakes.map(keepsakeCard)));
+      if (shelves.length) body.appendChild(el3(
         "div",
         { class: "fun-chips fun-shelf-places" },
-        shelves.map((group) => el2("span", { class: "fun-chip", text: `${group.placeName} ${group.items.length} 样` }))
+        shelves.map((group) => el3("span", { class: "fun-chip", text: `${group.placeName} ${group.items.length} 样` }))
       ));
     }
     const visited = (data.progress ?? []).filter((p) => p.visits > 0);
     if (visited.length) {
-      body.appendChild(el2(
+      body.appendChild(el3(
         "div",
         { class: "fun-sec-row" },
-        el2("div", { class: "fun-sec", text: "快要逛遍的地方" }),
-        el2("span", { class: "fun-note", text: `逛过的 ${visited.length} 处 · 按当前地点内容统计` })
+        el3("div", { class: "fun-sec", text: "快要逛遍的地方" }),
+        el3("span", { class: "fun-note", text: `逛过的 ${visited.length} 处 · 按当前地点内容统计` })
       ));
-      body.appendChild(el2("div", { class: "fun-progress-grid" }, visited.map((p) => {
+      body.appendChild(el3("div", { class: "fun-progress-grid" }, visited.map((p) => {
         const left = p.areas.left.length;
-        return el2(
+        return el3(
           "div",
           { class: "fun-trip fun-progress-card" },
-          el2(
+          el3(
             "div",
             { class: "fun-trip-head" },
-            el2("span", { class: "fun-trip-name", text: p.placeName }),
-            el2("span", { class: "fun-trip-when", text: `去过 ${p.visits} 次 · ${p.percent}%` })
+            el3("span", { class: "fun-trip-name", text: p.placeName }),
+            el3("span", { class: "fun-trip-when", text: `去过 ${p.visits} 次 · ${p.percent}%` })
           ),
-          el2("progress", { class: "fun-progress", max: "100", value: String(p.percent), "aria-label": `${p.placeName}探索进度 ${p.percent}%` }),
-          el2("div", { class: "fun-meta", text: `逛过 ${pct(p.areas)}${p.souvenirs.total ? ` · 纪念品 ${pct(p.souvenirs)}` : ""}${p.photos.total ? ` · 拍过 ${pct(p.photos)}` : ""}` }),
-          p.phases?.length ? el2("div", { class: "fun-note fun-visited-phases", text: `去过的时段：${p.phases.join("、")}` }) : null,
-          left ? el2("div", { class: "fun-trip-sum", text: `还差：${p.areas.left.slice(0, 6).join("、")}${left > 6 ? ` 等 ${left} 处` : ""}` }) : el2("div", { class: "fun-trip-sum", text: "这一处已经逛遍了。" })
+          el3("progress", { class: "fun-progress", max: "100", value: String(p.percent), "aria-label": `${p.placeName}探索进度 ${p.percent}%` }),
+          el3("div", { class: "fun-meta", text: `逛过 ${pct(p.areas)}${p.souvenirs.total ? ` · 纪念品 ${pct(p.souvenirs)}` : ""}${p.photos.total ? ` · 拍过 ${pct(p.photos)}` : ""}` }),
+          p.phases?.length ? el3("div", { class: "fun-note fun-visited-phases", text: `去过的时段：${p.phases.join("、")}` }) : null,
+          left ? el3("div", { class: "fun-trip-sum", text: `还差：${p.areas.left.slice(0, 6).join("、")}${left > 6 ? ` 等 ${left} 处` : ""}` }) : el3("div", { class: "fun-trip-sum", text: "这一处已经逛遍了。" })
         );
       })));
     }
@@ -6474,6 +7165,7 @@ function mountShelf(ctx) {
 }
 var webui_default = {
   panels: {
+    home: { mount: mountHome },
     places: { mount: mountPlaces2 },
     book: { mount: mountBook },
     shelf: { mount: mountShelf },

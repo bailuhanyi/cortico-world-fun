@@ -1,8 +1,9 @@
 import { mountStories } from './stories.js';
 import { mountFishStory } from './story-mount.js';
+import { mountHome } from './home/webui.js';
 import { mountPlaces as mountLocations } from './places/webui.js';
 /**
- * 娱乐时间面板的浏览器端（Coo WebUI 扩展面板）。
+ * 从0开始的肥鱼大冒险面板的浏览器端（Coo WebUI 扩展面板）。
  *
  * 约定（照 feed-world 的做法，见宿主 client-panel）：
  *   · 默认导出 `{ panels: { <panelId>: { mount(ctx) } } }`
@@ -388,7 +389,7 @@ function errorCard(err, retry, retained = false) {
 
 function heading(title, subtitle) {
   return el('header', { class: 'fun-heading' },
-    el('p', { class: 'fun-kicker', text: `娱乐时间 · ${title}` }),
+    el('p', { class: 'fun-kicker', text: `从0开始的肥鱼大冒险 · ${title}` }),
     el('h2', { text: title }),
     subtitle ? el('p', { class: 'fun-heading-lead', text: subtitle }) : null);
 }
@@ -1371,6 +1372,7 @@ function mountShelf(ctx) {
 
 export default {
   panels: {
+    home: { mount: mountHome },
     places: { mount: mountPlaces },
     book: { mount: mountBook },
     shelf: { mount: mountShelf },

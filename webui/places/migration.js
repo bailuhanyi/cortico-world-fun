@@ -147,7 +147,7 @@ export function createMigrationView({ document, places, snapshot, run, call, tel
       preview.alreadyImported ? note('此来源已迁入过。请核对既有映射后选择处理方式。') : null,
       impactBlock(preview), list(preview.items).map(decisionRow),
       node('label', { class: 'fpl-check' }, homeChoice, home ? `将「${home.name}」设为本地住所` : '此备份没有可选的住所'),
-      field('从旧世界补录默认画风（可选）', style, '旧导出不包含全局画风。补录只用于所选旧地点的空白画风，不会更改娱乐时间的全局画风。'),
+      field('从旧世界补录默认画风（可选）', style, '旧导出不包含全局画风。补录只用于所选旧地点的空白画风，不会更改从0开始的肥鱼大冒险的全局画风。'),
       row(button('查看迁入结果预览', reviewPlan, { class: 'fpl-primary' }), button('更换备份', clearFile)));
   }
   async function commit() {
@@ -204,7 +204,7 @@ export function createMigrationView({ document, places, snapshot, run, call, tel
       })),
       note(review.useHome ? `住所将设为「${approvedHome ?? preview.sourceHomeId}」。` : '保留本地住所。'),
       note(defaultStyle.trim() ? `用「${defaultStyle.trim()}」补充所选旧地点的空白画风；保留本地全局画风设置。` : '未提供旧默认画风；保留本地全局画风设置。'),
-      impactBlock({ ...data, warnings: proposed?.warnings ?? data.warnings }), node('label', { class: 'fpl-check' }, approve, '我已核对地点选择、住所和画风，确认写入娱乐时间。'),
+      impactBlock({ ...data, warnings: proposed?.warnings ?? data.warnings }), node('label', { class: 'fpl-check' }, approve, '我已核对地点选择、住所和画风，确认写入从0开始的肥鱼大冒险。'),
       row(commitButton, button('返回修改选择', () => { review = undefined; redraw(); documentFocus('fpl-plan-heading'); })));
   }
   function recovery() {
@@ -232,14 +232,14 @@ export function createMigrationView({ document, places, snapshot, run, call, tel
     if (!receipt) return null;
     const records = list(receipt.mappings);
     return node('section', { class: 'fpl-card fpl-stack' }, node('h4', {}, receipt.duplicate ? '这份迁入已处理' : '迁入完成'),
-      note(records.length ? `已处理 ${records.length} 条地点映射。` : '状态已由娱乐时间保存。'),
+      note(records.length ? `已处理 ${records.length} 条地点映射。` : '状态已由从0开始的肥鱼大冒险保存。'),
       records.length ? node('ul', {}, records.map((entry) => node('li', {}, `${entry.sourceId}${entry.targetId ? ` → ${places().find((p) => p.id === entry.targetId)?.name ?? entry.targetId}` : ` · ${actionNames[entry.action] || '已处理'}`}`))) : null,
       list(receipt.warnings).map((warning) => note(typeof warning === 'string' ? warning : warning?.message)));
   }
   function render() {
     focusTarget = undefined;
     return node('section', { class: 'fpl-stack' }, node('h3', { tabindex: -1 }, '从鱼的小世界迁入'),
-      note('使用鱼的小世界导出的 little-world v1 文件。地点和封面会写入娱乐时间，旧世界仍保留原样。草稿、视图偏好和历史图片归档不在这份迁入范围内。'),
+      note('使用鱼的小世界导出的 little-world v1 文件。地点和封面会写入从0开始的肥鱼大冒险，旧世界仍保留原样。草稿、视图偏好和历史图片归档不在这份迁入范围内。'),
       migrationReceipt(), review ? reviewPanel() : preview ? choices() : sourceForm(), recovery());
   }
   return { render };

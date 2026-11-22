@@ -279,8 +279,26 @@ export function mountPanel(root, ctx) {
     if (current.state === 'draft') return '先继续行程，再选择下一步。';
     if (state.autoAuthorized) return '鱼正在考虑这些有效选项。你可以随时关闭右侧开关接管。';
     if (canSubstitute) return '鱼这一步没法自己决定：你可以替她选一个，点下去会先问你确认；也可以先收尾，或者点右侧「再来一段」。';
-    if (current.pending?.actor === 'joint') return '双方都明确提交才会前进；等待与超时都不算同意。';
+    const pending = current.pending;
+    if (pending?.actor === 'joint') {
+      const votes = pending.votes ?? {};
+      if (!votes.owner) return '两席各投一票，同票才出发：你先选，选完等鱼自己投她那一票。';
+      if (!votes.fish) return '你这一票已经记下了。这一票要鱼自己投：到聊天里让她说，或者打开右侧「鱼自己游玩」由她决定。两票相同才会前进。';
+      return '两边的票不一样，这一轮重新来：你可以改选，鱼也会被要求重选。同票才前进，等待不算同意。';
+    }
     return '选一条你想走的路。点击后会等待保存确认。';
+  }
+
+  /** 「两席」各自的票：面板只展示；你这席在这里点，鱼那一席在聊天里由她自己提交。 */
+  function jointBoard(pending) {
+    const votes = pending?.votes ?? {};
+    const labelOf = (id) => list(pending?.options).find((option) => option.id === id)?.label ?? '';
+    const seat = (who, name) => {
+      const picked = labelOf(votes[who]);
+      return node('div', { class: `sw-vote${picked ? ' sw-vote-done' : ''}` },
+        node('small', {}, name), node('strong', {}, picked || '还没投'));
+    };
+    return node('div', { class: 'sw-votes', 'aria-label': '共同决定的两席票' }, seat('owner', '你这一席'), seat('fish', '鱼那一席'));
   }
 
   /** 没有待选项时的那一个主动作（继续 / 往前走 / 回家）。 */
@@ -415,7 +433,7 @@ export function mountPanel(root, ctx) {
     const ownerTurn = manually && current.actor !== 'fish';
     const left = node('article', { class: 'sw-card sw-play-main' });
     left.append(node('div', { class: 'sw-play-head' }, node('div', {}, node('div', { class: 'sw-kicker' }, isDraft ? '等待继续' : '当前行程'),
-      node('h2', {}, text(current.title, text(current.placeName, '正在出游')))), badge(isDraft ? '等待继续' : current.step === 'blocked' ? '暂时受阻' : state.autoAuthorized ? '鱼自己游玩中' : '由你亲自选择', isDraft || current.step === 'blocked')));
+      node('h2', {}, text(current.title, text(current.placeName, '正在出游')))), badge(isDraft ? '等待继续' : current.step === 'blocked' ? '暂时受阻' : state.autoAuthorized ? '鱼自己游玩中' : current.actor === 'fish' ? '等鱼提交' : '由你亲自选择', isDraft || current.step === 'blocked')));
     const events = list(current.events);
     const choices = list(current.choices);
     left.append(node('div', { class: 'sw-play-context' }, `此刻 · ${text(current.area, current.placeName)}`,
@@ -432,7 +450,14 @@ export function mountPanel(root, ctx) {
         node('ul', { class: 'sw-event-history' }, earlier.map((event) => node('li', {}, node('p', { class: 'sw-prose' }, text(event)))))));
       reading.append(node('ul', { class: 'sw-event-history' }, events.slice(-3).map((event) => node('li', {}, node('p', { class: 'sw-prose' }, text(event))))));
     } else reading.append(node('p', { class: 'sw-prose' }, current.step === 'move' ? '路就在眼前。走近一点，看看会遇见什么。' : '这一趟的故事，将随着真实的行动在这里展开。'));
-    if (current.actor) reading.append(note(`当前行动者：${current.actor === 'fish' ? '鱼' : '你'}${pending?.actor === 'joint' ? ` · 共同决定：${pending.jointResolution === 'require-agreement' ? '双方必须明确同意；分歧保持待定' : pending.jointResolution === 'owner-final' ? '分歧按你的明确选择' : '分歧按鱼的明确选择'}` : ''}。等待不会当作同意。`));
+    if (current.actor) {
+      const joint = pending?.actor === 'joint' ? pending : null;
+      const picked = (id) => list(joint?.options).find((option) => option.id === id)?.label ?? '';
+      const seats = joint
+        ? ` · 你${joint.votes?.owner ? `已选「${picked(joint.votes.owner)}」` : '还没投'}，鱼${joint.votes?.fish ? `已选「${picked(joint.votes.fish)}」` : '还没投'}`
+        : '';
+      reading.append(note(`当前行动者：${current.actor === 'fish' ? '鱼' : '你'}${pending?.actor === 'joint' ? ` · 共同决定：${pending.jointResolution === 'require-agreement' ? '双方必须明确同意；分歧保持待定' : pending.jointResolution === 'owner-final' ? '分歧按你的明确选择' : '分歧按鱼的明确选择'}` : ''}${seats}。等待不会当作同意。`));
+    }
     for (const reference of list(current.references)) reading.append(note(reference));
     if (current.blocked) reading.append(node('div', { class: 'sw-notice sw-notice-error' }, icon('info'), node('p', {}, text(current.blocked, '当前无法推进，请核对场所与故事条件。'))));
     if (current.complete) reading.append(node('div', { class: 'sw-reason' }, '这一段故事已经走到结尾。确认回家后，会按实际发生的内容收进回忆。'));
@@ -441,9 +466,16 @@ export function mountPanel(root, ctx) {
     const action = node('div', { class: 'sw-play-action', 'aria-label': '当前这一步' });
     if (pending) {
       const { block, canSubstitute } = pendingPicker(state, current, 'sw-choices');
-      action.append(node('div', { class: 'sw-kicker' }, '现在轮到你了'));
+      const joint = pending.actor === 'joint';
+      // 共同决定里「现在轮到鱼」不是笔误：选项这时候点不了，票要她自己投。
+      action.append(node('div', { class: 'sw-kicker' }, joint && current.actor === 'fish' ? '现在轮到鱼' : '现在轮到你了'));
       if (pending.prompt) action.append(node('p', { class: 'sw-prose' }, text(pending.prompt)));
+      if (joint) action.append(jointBoard(pending));
       action.append(block, note(optionsHint(state, current, canSubstitute)));
+      if (joint && current.actor === 'fish' && canAct(state)) {
+        action.append(actionRow(button('刷新，看鱼投了没', () => { void controller.refresh(); },
+          { small: true, quiet: true, key: 'joint-refresh', disabled: Boolean(state.busy) })));
+      }
     } else {
       const advance = advanceButton(state, current, { block: true });
       action.append(node('div', { class: 'sw-kicker' }, isDraft || current.step === 'resume' ? '下一步' : current.step === 'close' ? '收尾' : '下一处'));
@@ -463,7 +495,8 @@ export function mountPanel(root, ctx) {
       ? (snapshot.autonomy.canContinue ? '这一段走完了，可以再来一段' : '这一段走完了，等你收尾')
       : running ? '这一趟，由鱼自己决定'
         : checked ? (current.actor === 'owner' ? '轮到你选择；选完鱼会接着走' : '鱼会接着往下走')
-          : '下一步，等你来选择';
+          : current.actor === 'fish' ? '这一步等鱼提交，可以去聊天里让她说'
+            : '下一步，等你来选择';
     modeCard.append(node('div', { class: 'sw-mode' }, node('div', {}, node('strong', {}, '鱼自己游玩'), node('small', {}, modeSubtitle)),
       autoplaySwitch(state)));
     modeCard.append(note(checked
@@ -515,9 +548,10 @@ export function mountPanel(root, ctx) {
       node('p', { class: 'sw-imm-lead' }, text(events.at(-1), current.step === 'move' ? '路就在眼前。走近一点，看看会遇见什么。' : '这一趟的故事，将随着真实的行动在这里展开。')),
       pending?.prompt ? node('p', { class: 'sw-imm-ask' }, text(pending.prompt)) : null,
       current.actor === 'joint' || pending?.actor === 'joint'
-        ? note('共同决定：双方都明确提交后才会前进；等待与超时都不算同意。') : null));
+        ? note(`共同决定：${current.actor === 'fish' ? '现在轮到鱼投她那一票' : '现在等你投这一票'}；两边同票才会前进，等待与超时都不算同意。`) : null));
     if (pending) {
       const { block, canSubstitute } = pendingPicker(state, current, 'sw-imm-choices');
+      if (pending.actor === 'joint') wrap.append(jointBoard(pending));
       wrap.append(block, note(optionsHint(state, current, canSubstitute)));
     } else {
       const advance = advanceButton(state, current, { block: true });
@@ -713,6 +747,7 @@ export function mountPanel(root, ctx) {
   function buildPrivateSettings() {
     const mask = '••••••••';
     const model = { saved: false, supported: true, loaded: false, busy: '', imageSource: '', imageTouched: false, imagesEnabled: false, revision: 0,
+      workflow: '', workflowTouched: false,
       modelName: '', savedModel: '', modelTouched: false, modelRevision: 0,
       apiUrl: { value: '', touched: false, revision: 0 }, apiKey: { value: '', touched: false, revision: 0 } };
     const status = node('p', { class: 'sw-note', role: 'status', 'aria-live': 'polite' });
@@ -743,6 +778,15 @@ export function mountPanel(root, ctx) {
     });
     const source = node('input', { type: 'text', maxlength: '300', 'data-focus': 'settings-imageSource', 'aria-label': t.storyImageSource, autocomplete: 'off' });
     source.addEventListener('input', () => { model.imageSource = source.value; model.imageTouched = true; ++model.revision; paint(); });
+    const workflow = node('textarea', { rows: '6', spellcheck: 'false', class: 'sw-workflow-json',
+      'data-focus': 'settings-workflow', 'aria-label': t.storyImageWorkflowLabel, placeholder: t.storyImageWorkflowPlaceholder });
+    workflow.addEventListener('input', () => { model.workflow = workflow.value; model.workflowTouched = true; paint(); });
+    const workflowBadge = node('span', { class: 'sw-badge sw-settings-state', 'data-settings-workflow-state': '' });
+    const workflowBox = node('details', { class: 'sw-settings-workflow' },
+      node('summary', {}, node('span', {}, t.storyImageWorkflowTitle), workflowBadge),
+      node('p', { class: 'sw-card-note' }, t.storyImageWorkflowSummary),
+      node('label', { class: 'sw-setting-field' }, t.storyImageWorkflowLabel, workflow),
+      note(t.storyImageWorkflowHint));
     const save = button(t.settingsSave, async () => {
       if (model.busy) return;
       const args = { imageSource: model.imageSource.trim() };
@@ -763,6 +807,14 @@ export function mountPanel(root, ctx) {
         } catch { error.textContent = t.storyDmApiInvalid; return; }
       }
       if (!validImageSource(args.imageSource)) { error.textContent = t.storyImageInvalid; return; }
+      if (model.workflowTouched) {
+        args.workflow = model.workflow.trim();
+        if (args.workflow) {
+          try { JSON.parse(args.workflow); } catch { error.textContent = t.storyImageWorkflowInvalid; return; }
+          if (!args.workflow.includes('{{prompt}}')) { error.textContent = t.storyImageWorkflowNoPrompt; return; }
+          if (args.workflow.length > 32 * 1024) { error.textContent = t.storyImageWorkflowInvalid; return; }
+        }
+      }
       const revision = model.revision;
       const modelRevision = model.modelRevision;
       const privateRevisions = { apiUrl: model.apiUrl.revision, apiKey: model.apiKey.revision };
@@ -773,7 +825,7 @@ export function mountPanel(root, ctx) {
         if (disposed || ctx.signal?.aborted) return;
         if (!result?.ok) {
           if (result) applySafeView(result);
-          if (result?.partial !== 'dm') throw new Error();
+          if (result?.partial !== 'dm') { error.textContent = result?.error || t.settingsFailure; return; }
           if (model.modelRevision === modelRevision) {
             model.modelTouched = false;
             if (Object.hasOwn(args, 'model')) model.savedModel = model.modelName = modelInput.value = args.model;
@@ -798,6 +850,10 @@ export function mountPanel(root, ctx) {
           model.imageTouched = false;
           source.value = model.imageSource = savedImageSource;
         }
+        if (Object.hasOwn(args, 'workflow') && model.workflow.trim() === args.workflow) {
+          model.workflowTouched = false;
+          workflow.value = model.workflow = savedWorkflow;
+        }
         status.textContent = t.settingsSaved;
       } catch { if (!disposed) error.textContent = t.settingsFailure; }
       finally { if (!disposed) { model.busy = ''; paint(); for (const field of Object.values(fields)) field.repaint(); } }
@@ -805,6 +861,7 @@ export function mountPanel(root, ctx) {
     const cancel = button(t.settingsCancel, () => {
       clearPrivate(); model.modelName = model.savedModel; modelInput.value = model.savedModel;
       model.imageTouched = false; source.value = model.imageSource = savedImageSource;
+      model.workflowTouched = false; workflow.value = model.workflow = savedWorkflow;
       ++model.revision; error.textContent = ''; status.textContent = t.settingsCancelled; paint();
     }, { quiet: true, key: 'settings-cancel' });
     const clear = button(t.storyDmApiClear, async () => {
@@ -820,6 +877,7 @@ export function mountPanel(root, ctx) {
     }, { danger: true, key: 'settings-clear' });
     const reload = button(t.settingsReload, () => void load(), { quiet: true, key: 'settings-reload' });
     let savedImageSource = '';
+    let savedWorkflow = '';
     function applySafeView(result) {
       // Deliberately read only public status, never credential values from a response.
       if (typeof result.dm?.saved === 'boolean') model.saved = result.dm.saved;
@@ -827,6 +885,10 @@ export function mountPanel(root, ctx) {
       if (typeof result.imageSource === 'string') {
         savedImageSource = result.imageSource;
         if (!model.imageTouched) source.value = model.imageSource = savedImageSource;
+      }
+      if (typeof result.imageWorkflow === 'string') {
+        savedWorkflow = result.imageWorkflow;
+        if (!model.workflowTouched) workflow.value = model.workflow = savedWorkflow;
       }
       if (typeof result.dm?.model === 'string') {
         model.savedModel = result.dm.model;
@@ -839,7 +901,7 @@ export function mountPanel(root, ctx) {
       model.modelName = ''; model.modelTouched = false; modelInput.value = '';
     }
     function paint() {
-      const dirty = model.apiUrl.touched || model.apiKey.touched || model.imageTouched || model.modelTouched;
+      const dirty = model.apiUrl.touched || model.apiKey.touched || model.imageTouched || model.modelTouched || model.workflowTouched;
       saved.textContent = dirty ? t.storyDmApiPending : model.saved ? t.storyDmApiSaved : t.storyDmApiUnset;
       support.textContent = model.supported ? '' : t.storyDmApiUnsupported;
       save.disabled = Boolean(model.busy) || !model.loaded || !dirty;
@@ -848,6 +910,9 @@ export function mountPanel(root, ctx) {
       reload.disabled = Boolean(model.busy);
       fields.apiUrl.input.disabled = !model.supported;
       fields.apiKey.input.disabled = !model.supported;
+      const hasWorkflow = Boolean(model.workflow.trim());
+      workflowBadge.textContent = hasWorkflow ? t.storyImageWorkflowOn : t.storyImageWorkflowOff;
+      workflowBadge.className = hasWorkflow ? 'sw-badge sw-settings-state sw-settings-state-on' : 'sw-badge sw-settings-state';
       container.setAttribute('aria-busy', String(Boolean(model.busy)));
     }
     function setImageEnabled(enabled) {
@@ -880,6 +945,7 @@ export function mountPanel(root, ctx) {
       node('div', { class: 'sw-settings-subhead' }, node('div', {}, node('h3', {}, t.storyImageTitle), node('p', { class: 'sw-card-summary' }, t.storyImageSummary)), imageBadge),
       node('label', { class: 'sw-setting-field' }, t.storyImageSource, source),
       node('details', { class: 'sw-settings-help' }, node('summary', {}, t.storyImageHelpSummary), note(t.storyImageSourceHint)),
+      workflowBox,
       note(t.storyImageSettingsHint));
     const container = node('div', { class: 'sw-settings-stack sw-private-settings' }, dmCard, imageCard);
     paint();
@@ -928,15 +994,19 @@ export function mountPanel(root, ctx) {
     finally { imageBusy = false; if (!disposed) render(); }
   }
 
+  /** 设置页的一个分区：标题 + 一句人话 + 内容。只分组和改名，不改任何存取逻辑。 */
+  function settingsPart(title, intro, ...children) {
+    return node('section', { class: 'sw-settings-part' },
+      node('div', { class: 'sw-settings-part-head' }, node('h3', {}, title), intro ? node('p', {}, intro) : null),
+      ...children);
+  }
+
   function settings(state) {
     if (!nodeLimitSettings) nodeLimitSettings = buildNodeLimitSettings();
     void nodeLimitSettings.load();
     if (!privateSettings) { privateSettings = buildPrivateSettings(); void privateSettings.load(); }
     privateSettings.setImageEnabled(state?.snapshot?.images?.enabled === true);
-    return node('div', { class: 'sw-stack' }, node('div', { class: 'sw-lead' }, node('h2', {}, t.settingsTitle), node('p', {}, t.settingsIntro)),
-    nodeLimitSettings.node,
-    privateSettings.node,
-    node('div', { class: 'sw-settings-grid' }, RESOURCE_SLOTS.filter((slot) => slot.id !== 'creek-letter-ending').map((slot) => {
+    const slots = RESOURCE_SLOTS.filter((slot) => slot.id !== 'creek-letter-ending').map((slot) => {
       const file = node('input', { type: 'file', accept: 'image/png,image/jpeg,image/webp', hidden: true, 'aria-label': `导入${slot.title}插画` });
       file.addEventListener('change', async () => {
         const picked = file.files?.[0]; if (!picked || importing) return;
@@ -951,17 +1021,24 @@ export function mountPanel(root, ctx) {
         node('div', { class: 'sw-card-pad' }, node('code', {}, slot.id), node('p', {}, slot.description), file,
           actionRow(button(importing === slot.id ? '正在读取…' : '选择本地图', () => file.click(), { icon: 'image', small: true, disabled: Boolean(importing), key: `import-${slot.id}` }),
             artwork.get(slot.id) ? button('恢复示意', () => artwork.clear(slot.id), { quiet: true, small: true, key: `clear-${slot.id}` }) : null)));
-    })),
-    node('section', { class: 'sw-card sw-card-pad' }, node('div', { class: 'sw-side-title' }, icon('image'), t.storyImageTitle),
-      node('p', { class: 'sw-card-note' }, state?.snapshot?.images?.message ?? t.storyImageUnavailable),
-      actionRow(button(imageBusy ? t.storyImagePending : t.storyImageGenerate, () => void requestImage(),
-        { disabled: imageBusy || !state?.snapshot?.images?.enabled && !state?.snapshot?.images?.generationAvailable, key: 'story-image' })), imageOutput),
-    node('section', { class: 'sw-card sw-card-pad' }, node('div', { class: 'sw-side-title' }, icon('info'), '关于本地插画'),
-      node('p', { class: 'sw-card-note' }, '仅接受 PNG、JPEG、WebP，每张不超过 2 MB、1600 万像素。文件类型与内容会经过检查，不接受 SVG。图片不会上传；请只导入你有权使用的素材。'),
-      note(t.localStorageHint),
-      note('清理浏览器数据可能移除插画。图片加载失败时会回到文字与示意场景，操作入口照常保留。')),
-    node('section', { class: 'sw-card sw-card-pad' }, node('div', { class: 'sw-side-title' }, icon('settings'), '地点、日程与故事创作'),
-      node('p', { class: 'sw-card-note' }, '地点、住所与画风：娱乐时间的「地点册」。场所与分支：娱乐时间。今日安排与生活记录：鱼的每一天。')));
+    });
+    return node('div', { class: 'sw-stack' }, node('div', { class: 'sw-lead' }, node('h2', {}, t.settingsTitle), node('p', {}, t.settingsIntro)),
+      settingsPart(t.settingsPartLength, t.settingsPartLengthHint, nodeLimitSettings.node),
+      settingsPart(t.settingsPartPrivate, t.settingsPartPrivateHint, privateSettings.node),
+      settingsPart(t.settingsPartImage, t.settingsPartImageHint,
+        node('section', { class: 'sw-card sw-card-pad' }, node('div', { class: 'sw-side-title' }, icon('image'), t.storyImageTitle),
+          node('p', { class: 'sw-card-note' }, state?.snapshot?.images?.message ?? t.storyImageUnavailable),
+          actionRow(button(imageBusy ? t.storyImagePending : t.storyImageGenerate, () => void requestImage(),
+            { disabled: imageBusy || !state?.snapshot?.images?.enabled && !state?.snapshot?.images?.generationAvailable, key: 'story-image' })), imageOutput)),
+      settingsPart(t.settingsPartArtwork, t.settingsPartArtworkHint,
+        node('div', { class: 'sw-settings-grid' }, slots),
+        node('section', { class: 'sw-card sw-card-pad' }, node('div', { class: 'sw-side-title' }, icon('info'), t.settingsArtworkAbout),
+          node('p', { class: 'sw-card-note' }, '仅接受 PNG、JPEG、WebP，每张不超过 2 MB、1600 万像素。文件类型与内容会经过检查，不接受 SVG。图片不会上传；请只导入你有权使用的素材。'),
+          note(t.localStorageHint),
+          note('清理浏览器数据可能移除插画。图片加载失败时会回到文字与示意场景，操作入口照常保留。'))),
+      settingsPart(t.settingsPartElsewhere, null,
+        node('section', { class: 'sw-card sw-card-pad' }, node('div', { class: 'sw-side-title' }, icon('settings'), t.settingsElsewhereTitle),
+          node('p', { class: 'sw-card-note' }, t.settingsElsewhereNote))));
   }
 
   /** 这一段的「第几步」：两个值一变，就说明发生了新的事，可以自动滚到底。 */

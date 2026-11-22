@@ -160,7 +160,7 @@ test('migration requires decisions, never maps a missing or duplicate target, an
 test('text identifies a place style, old default, local default, or no style', () => {
   assert.equal(styleDescription({ style: '水彩', styleSource: 'place' }), '地点画风');
   assert.equal(styleDescription({ effectiveStyle: '旧画风', styleSource: 'source-default' }), '补录的旧世界默认画风');
-  assert.equal(styleDescription({ effectiveStyle: '当前兜底', styleSource: 'local-default' }), '娱乐时间默认画风');
+  assert.equal(styleDescription({ effectiveStyle: '当前兜底', styleSource: 'local-default' }), '从0开始的肥鱼大冒险默认画风');
   assert.equal(styleDescription({}), '未设置');
 });
 

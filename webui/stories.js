@@ -722,7 +722,7 @@ export function mountStories(ctx) {
   box.replaceChildren(
     el('header', { class: 'fun-story-heading fun-story-head' },
       el('div', { class: 'fun-story-head-main' },
-        el('p', { class: 'fun-story-kicker' }, '娱乐时间 · 给下一次出游，写一个故事。'),
+        el('p', { class: 'fun-story-kicker' }, '从0开始的肥鱼大冒险 · 给下一次出游，写一个故事。'),
         el('h2', {}, '给下一次出游，写一个故事。'),
         el('p', { class: 'fun-story-note' }, '故事库、创作与试玩放在一起；平时只看作品，编辑时再展开。')),
       el('div', { class: 'fun-story-head-actions' }, newButton)),

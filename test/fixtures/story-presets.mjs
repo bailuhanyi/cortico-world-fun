@@ -106,7 +106,7 @@ const drafts = [
     id: 'duo-cafe-date',
     title: '咖啡店的双人约会',
     description: '在咖啡店里一起安排一段安静的约会。',
-    metadata: { author: '娱乐时间示例', release: '1.0.0', genre: '日常约会', synopsis: '一张靠窗的双人座空了下来。两个人先一起决定坐在哪里，再由鱼明确选择接下来的小安排。', participation: 'duo', durationMinutes: 20, requirements: ['双人故事；owner 与 fish 轮流提交明确选择'], jointResolution: 'require-agreement' },
+    metadata: { author: '从0开始的肥鱼大冒险示例', release: '1.0.0', genre: '日常约会', synopsis: '一张靠窗的双人座空了下来。两个人先一起决定坐在哪里，再由鱼明确选择接下来的小安排。', participation: 'duo', durationMinutes: 20, requirements: ['双人故事；owner 与 fish 轮流提交明确选择'], jointResolution: 'require-agreement' },
     placeId: 'cafe', start: 'owner-turn', nodes: [
       { id: 'owner-turn', area: '角落的双人座', actor: 'owner', event: '靠窗的双人座刚好空下来，桌上留着两张干净的杯垫。', prompt: '你想和鱼坐在窗边，还是留在角落慢慢聊？', choices: [
         { id: 'window-seat', label: '坐到靠窗的位置', result: '你们把杯垫移到窗边。', next: 'joint-turn' },

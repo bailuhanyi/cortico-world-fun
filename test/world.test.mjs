@@ -45,7 +45,7 @@ test('definition 的 create() 必须纯：不读盘、不建目录、不起定�
 test('describe 里 events 是空数组：这个 World 不推事件', () => {
   assert.deepEqual(funDefinition.describe.events, []);
   assert.equal(funDefinition.id, 'fun');
-  assert.equal(funDefinition.label, '娱乐时间');
+  assert.equal(funDefinition.label, '从0开始的肥鱼大冒险');
   for (const t of funDefinition.describe.tools) {
     assert.ok(t.summary?.zh, `${t.name} 缺中文 summary`);
     assert.ok(t.summary?.en, `${t.name} 缺英文 summary`);
@@ -89,7 +89,7 @@ test('配置段缺键会被补齐（宿主 /api/config 不合并 defaults）', a
   await world.start({ log: { info() {}, warn() {} } });
   assert.equal(persisted.length, 1);
   assert.deepEqual(Object.keys(persisted[0]).sort(),
-    ['funAskReport', 'funAutoCalls', 'funAutoSteps', 'funSessionTTLMin', 'funStoryDM', 'funStoryFree', 'funStoryFreeTurns', 'funStoryImages', 'funStoryTextOn', 'funTasteFromFeast']);
+    ['funAskReport', 'funAutoCalls', 'funAutoSteps', 'funSessionTTLMin', 'funStoryAutoImages', 'funStoryDM', 'funStoryFree', 'funStoryFreeTurns', 'funStoryImages', 'funStoryTextOn', 'funTasteFromFeast']);
   assert.equal(persisted[0].funAskReport, true);
   assert.equal(persisted[0].funSessionTTLMin, 90);
   assert.equal(persisted[0].funAutoSteps, 20);
@@ -107,13 +107,14 @@ test('缺键补齐：盘上已有的值一个都不覆盖', async () => {
       enabled: true, funOn: false, funSessionTTLMin: 30,
       funAskReport: false, funTasteFromFeast: false, funStoryImages: false, funStoryDM: true,
       funStoryTextOn: true, funStoryFree: false, funStoryFreeTurns: 40, funAutoSteps: 20, funAutoCalls: 6,
+      funStoryAutoImages: true,
     },
     dataDir: dir,
     timezone: TZ,
     persist: (patch) => { persisted.push(patch); },
   });
   await world.start({ log: { info() {}, warn() {} } });
-  assert.deepEqual(persisted, [], '十项都在，不该补任何东西');
+  assert.deepEqual(persisted, [], '十一项都在，不该补任何东西');
 });
 
 test('fun_places：按开放时段排，正文带开没开和人多少', async () => {
@@ -1156,7 +1157,7 @@ test('保存续逛或草稿回家失败时仍保留原记录', async () => {
 test('webUi：没在逛时给场所数和灯；在逛时多一个正在逛的徽章', async () => {
   const b = await boot();
   const idle = b.world.webUi('zh');
-  assert.equal(idle.label, '娱乐时间');
+  assert.equal(idle.label, '从0开始的肥鱼大冒险');
   assert.equal(idle.lamps[0].state, 'online');
   assert.ok(idle.config.length === 1);
   assert.ok(idle.promptDocs[0].path.endsWith('ENV_PROMPT.md'));

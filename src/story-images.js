@@ -4,6 +4,12 @@ import { join } from 'node:path';
 
 export const STORY_IMAGE_TIMEOUT_MS = 30_000;
 export const STORY_IMAGE_MAX_BYTES = 8 * 1024 * 1024;
+/** 自定义工作流是用户自己贴的 ComfyUI「API 格式」JSON。 */
+export const STORY_WORKFLOW_MAX_CHARS = 32 * 1024;
+export const STORY_WORKFLOW_PROMPT_TOKEN = '{{prompt}}';
+export const STORY_WORKFLOW_SEED_TOKEN = '{{seed}}';
+const STORY_WORKFLOW_MAX_NODES = 200;
+const WORKFLOW_NODE_KEYS = new Set(['class_type', 'inputs', '_meta']);
 const JSON_MAX_BYTES = 1024 * 1024;
 const ID = /^[a-f0-9-]{36}\.(png|jpg|webp)$/;
 const UNKNOWN = '未验证是否安装鱼的生图包；主对话若无 imggen_draw 应提示未安装。';
@@ -31,6 +37,105 @@ export function validateStoryImageSource(value) {
   } catch {
     return { ok: false, error: '直连仅支持显式填写的 loopback HTTP/HTTPS ComfyUI 根地址；不允许凭据、查询、片段或宿主工具/API 路径。' };
   }
+}
+
+/**
+ * 用户贴进来的 ComfyUI「Save (API Format)」工作流。
+ * 只接受 API 格式（节点 ID → { class_type, inputs }），不做任何节点语义推断；
+ * 唯一要求是文本里至少有一个 {{prompt}} 占位符，出图按第一个返回 images 的节点取。
+ */
+export function validateStoryWorkflow(value) {
+  if (value === undefined || value === null) return { ok: true, workflow: '' };
+  if (typeof value !== 'string') return { ok: false, error: '工作流要贴 ComfyUI 的 API 格式 JSON 文本。' };
+  const text = value.trim();
+  if (!text) return { ok: true, workflow: '' };
+  if (text.length > STORY_WORKFLOW_MAX_CHARS) {
+    return { ok: false, error: `工作流 JSON 最多 ${Math.round(STORY_WORKFLOW_MAX_CHARS / 1024)} KB，请删掉不用的节点。` };
+  }
+  let parsed;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return { ok: false, error: '工作流 JSON 解析失败：请在 ComfyUI 里用「Save (API Format)」导出，别贴界面格式的工作流。' };
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    return { ok: false, error: '工作流必须是以节点 ID 为键的对象（API 格式）。' };
+  }
+  const entries = Object.entries(parsed);
+  if (!entries.length) return { ok: false, error: '工作流是空的。' };
+  if (entries.length > STORY_WORKFLOW_MAX_NODES) {
+    return { ok: false, error: `工作流节点太多（最多 ${STORY_WORKFLOW_MAX_NODES} 个）。` };
+  }
+  for (const [id, node] of entries) {
+    if (!/^[A-Za-z0-9_.-]{1,40}$/.test(id)) return { ok: false, error: `节点 ID 不合法：${bounded(id, 40)}。` };
+    if (!node || typeof node !== 'object' || Array.isArray(node)) return { ok: false, error: `节点 ${id} 必须是对象。` };
+    for (const key of Object.keys(node)) {
+      if (!WORKFLOW_NODE_KEYS.has(key)) return { ok: false, error: `节点 ${id} 里有多余的键：${bounded(key, 40)}（只接受 class_type / inputs）。` };
+    }
+    if (typeof node.class_type !== 'string' || !node.class_type || node.class_type.length > 100) {
+      return { ok: false, error: `节点 ${id} 缺少 class_type。` };
+    }
+    if (!node.inputs || typeof node.inputs !== 'object' || Array.isArray(node.inputs)) {
+      return { ok: false, error: `节点 ${id} 缺少 inputs 对象。` };
+    }
+  }
+  if (!text.includes(STORY_WORKFLOW_PROMPT_TOKEN)) {
+    return { ok: false, error: `工作流里要有一个 ${STORY_WORKFLOW_PROMPT_TOKEN} 占位符，用来放这一段的正向提示词。` };
+  }
+  return { ok: true, workflow: text };
+}
+
+function fillWorkflowTokens(value, tokens, state) {
+  if (typeof value === 'string') {
+    let out = value;
+    for (const [token, replacement] of Object.entries(tokens)) {
+      if (!out.includes(token)) continue;
+      out = out.split(token).join(String(replacement));
+      if (token === STORY_WORKFLOW_PROMPT_TOKEN) state.prompted = true;
+    }
+    return out;
+  }
+  if (Array.isArray(value)) return value.map((item) => fillWorkflowTokens(item, tokens, state));
+  if (value && typeof value === 'object') {
+    const out = {};
+    for (const [key, item] of Object.entries(value)) out[key] = fillWorkflowTokens(item, tokens, state);
+    return out;
+  }
+  return value;
+}
+
+/**
+ * 把占位符填进工作流，并给采样器一个随机 seed（除非用户自己写了 {{seed}}）。
+ * 返回可直接 POST /prompt 的 graph。
+ */
+export function materializeWorkflow(workflow, { prompt = '', seed } = {}) {
+  const checked = validateStoryWorkflow(workflow);
+  if (!checked.ok || !checked.workflow) throw error(checked.error ?? '工作流无效。');
+  const graph = JSON.parse(checked.workflow);
+  const state = { prompted: false };
+  const filled = fillWorkflowTokens(graph, { [STORY_WORKFLOW_PROMPT_TOKEN]: prompt, [STORY_WORKFLOW_SEED_TOKEN]: seed ?? '' }, state);
+  if (!state.prompted) throw error(`工作流里没有可用的 ${STORY_WORKFLOW_PROMPT_TOKEN} 占位符。`);
+  const requested = Number(seed);
+  const value = Number.isSafeInteger(requested) && requested >= 0 ? requested : randomInt(0, 2 ** 32);
+  for (const node of Object.values(filled)) {
+    const inputs = node?.inputs;
+    if (!inputs) continue;
+    if (typeof inputs.seed === 'number') inputs.seed = value;
+    else if (typeof inputs.noise_seed === 'number') inputs.noise_seed = value;
+  }
+  return filled;
+}
+
+/** 自定义工作流的 SaveImage 节点 ID 由用户决定，取第一个带回图片的输出。 */
+function firstOutputImage(outputs) {
+  if (!outputs || typeof outputs !== 'object') return null;
+  for (const node of Object.values(outputs)) {
+    const images = Array.isArray(node?.images) ? node.images : [];
+    for (const image of images) {
+      if (image && typeof image === 'object' && typeof image.filename === 'string' && image.filename) return image;
+    }
+  }
+  return null;
 }
 
 function imageType(bytes) {
@@ -107,6 +212,7 @@ function workflow(checkpoint, prompt) {
 export class StoryImages {
   #dir;
   #source = '';
+  #workflow = '';
   #fetch;
   #detect;
   #timeout;
@@ -128,10 +234,13 @@ export class StoryImages {
     try {
       const file = join(this.#dir, 'settings.json');
       const stat = await lstat(file);
-      if (!stat.isFile() || stat.size > 4096) return this.status();
+      // settings.json 里放得下来源 + 自定义工作流（工作流上限 32 KB）。
+      if (!stat.isFile() || stat.size > STORY_WORKFLOW_MAX_CHARS + 8192) return this.status();
       const parsed = JSON.parse(await readFile(file, 'utf8'));
       const result = validateStoryImageSource(parsed?.source);
       if (result.ok) this.#source = result.source;
+      const workflow = validateStoryWorkflow(parsed?.workflow);
+      if (workflow.ok) this.#workflow = workflow.workflow;
     } catch { /* Missing or malformed independent settings fall back to delegation. */ }
     return this.status();
   }
@@ -146,8 +255,11 @@ export class StoryImages {
   status(enabled = false) {
     const kind = validateStoryImageSource(this.#source).kind;
     const pluginStatus = enabled === true && kind === 'plugin' ? this.#pluginStatus() : 'unknown';
+    const custom = kind === 'comfyui' && Boolean(this.#workflow);
     const message = !enabled ? OFF : kind === 'comfyui'
-      ? '可选直连本机 ComfyUI（固定 512×512）；总计最多 30 秒、图片最多 8 MiB，失败可继续文字故事。图片保存在本 World dataDir/fun/story-images，通过图片 ID 读取。'
+      ? custom
+        ? '可选直连本机 ComfyUI，当前使用你自己贴的工作流（模型与节点由你负责）；总计最多 30 秒、图片最多 8 MiB，失败可继续文字故事。图片保存在本 World dataDir/fun/story-images。'
+        : '可选直连本机 ComfyUI（固定 512×512）；总计最多 30 秒、图片最多 8 MiB，失败可继续文字故事。图片保存在本 World dataDir/fun/story-images，通过图片 ID 读取。'
       : kind === 'delegate' ? '由主对话或指定插件执行图片委派；fun 不调用该插件，图片由执行方保存。'
         : pluginStatus === 'absent' ? '未安装鱼的生图包，无法使用 imggen_draw；请安装后由主对话执行，文字故事可继续。'
           : pluginStatus === 'installed' ? '已确认安装鱼的生图包；fun 只返回 imggen_draw 参数，由主对话调用，图片由生图包保存。'
@@ -155,22 +267,28 @@ export class StoryImages {
     return { enabled: enabled === true, state: !enabled ? 'off' : pluginStatus === 'absent' ? 'unavailable'
       : kind === 'comfyui' ? 'direct' : 'delegated', message,
       generationAvailable: enabled === true && (kind === 'comfyui' ? typeof this.#fetch === 'function'
-        : kind === 'delegate' || pluginStatus === 'installed'), source: this.#source, pluginStatus, busy: Boolean(this.#active) };
+        : kind === 'delegate' || pluginStatus === 'installed'), source: this.#source, workflow: this.#workflow,
+      hasWorkflow: Boolean(this.#workflow), pluginStatus, busy: Boolean(this.#active) };
   }
 
-  async configure({ source } = {}) {
+  async configure({ source, workflow } = {}) {
     const checked = validateStoryImageSource(source);
     if (!checked.ok) return checked;
+    // workflow 没传就保持原样；传空字符串表示清掉，回到内置工作流。
+    const custom = workflow === undefined ? null : validateStoryWorkflow(workflow);
+    if (custom && !custom.ok) return custom;
+    const nextWorkflow = custom ? custom.workflow : this.#workflow;
     // Invalidate immediately, including while the independent settings write is queued.
     this.cancel();
     const save = async () => {
       const temp = join(this.#dir, `settings-${randomUUID()}.tmp`);
       try {
         await mkdir(this.#dir, { recursive: true });
-        await writeFile(temp, JSON.stringify({ source: checked.source }) + '\n', { flag: 'wx', mode: 0o600 });
+        await writeFile(temp, `${JSON.stringify({ source: checked.source, workflow: nextWorkflow })}\n`, { flag: 'wx', mode: 0o600 });
         await rename(temp, join(this.#dir, 'settings.json'));
         this.cancel();
         this.#source = checked.source;
+        this.#workflow = nextWorkflow;
         return { ok: true, ...this.status() };
       } catch {
         await unlink(temp).catch(() => {});
@@ -253,14 +371,21 @@ export class StoryImages {
       current();
       try { return JSON.parse(bytes.toString('utf8')); } catch { throw error('ComfyUI 响应格式无效。'); }
     };
-    const catalog = await json('/object_info/CheckpointLoaderSimple');
-    const spec = catalog?.CheckpointLoaderSimple?.input?.required?.ckpt_name;
-    const checkpoints = spec?.[0];
-    if (!Array.isArray(checkpoints) || !checkpoints.length) throw error('ComfyUI 未提供可用 checkpoint；请先在本地安装兼容模型。');
-    const checkpoint = checkpoints.includes(spec?.[1]?.default) ? spec[1].default : checkpoints[0];
-    if (typeof checkpoint !== 'string' || !checkpoint || checkpoint.length > 300 || /[\x00-\x1f]/.test(checkpoint)) throw error('ComfyUI checkpoint 格式无效。');
+    const catalog = this.#workflow ? null : await json('/object_info/CheckpointLoaderSimple');
+    let graph;
+    if (this.#workflow) {
+      // 自定义工作流自带模型与节点，不再询问 /object_info。
+      graph = materializeWorkflow(this.#workflow, { prompt: [info.scene, info.outfits, info.prompt].filter(Boolean).join('\n') });
+    } else {
+      const spec = catalog?.CheckpointLoaderSimple?.input?.required?.ckpt_name;
+      const checkpoints = spec?.[0];
+      if (!Array.isArray(checkpoints) || !checkpoints.length) throw error('ComfyUI 未提供可用 checkpoint；请先在本地安装兼容模型。');
+      const checkpoint = checkpoints.includes(spec?.[1]?.default) ? spec[1].default : checkpoints[0];
+      if (typeof checkpoint !== 'string' || !checkpoint || checkpoint.length > 300 || /[\x00-\x1f]/.test(checkpoint)) throw error('ComfyUI checkpoint 格式无效。');
+      graph = workflow(checkpoint, [info.scene, info.outfits, info.prompt].filter(Boolean).join('\n'));
+    }
     const submitted = await json('/prompt', { method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ client_id: randomUUID(), prompt: workflow(checkpoint, [info.scene, info.outfits, info.prompt].filter(Boolean).join('\n')) }) });
+      body: JSON.stringify({ client_id: randomUUID(), prompt: graph }) });
     if (typeof submitted?.prompt_id !== 'string' || !/^[a-zA-Z0-9_-]{1,100}$/.test(submitted.prompt_id)) throw error('ComfyUI 未返回有效任务标识。');
     let image;
     while (!image) {
@@ -268,7 +393,7 @@ export class StoryImages {
       const history = await json(`/history/${encodeURIComponent(submitted.prompt_id)}`);
       const job = history?.[submitted.prompt_id];
       if (job?.status?.status_str === 'error') throw error('ComfyUI 生成失败；请检查本地模型与工作流，文字故事可继续。');
-      image = job?.outputs?.['7']?.images?.[0];
+      image = firstOutputImage(job?.outputs);
       if (!image) {
         if (job?.status?.completed === true) throw error('ComfyUI 任务完成但未返回图片，响应格式无效。');
         await pause(this.#poll, signal);

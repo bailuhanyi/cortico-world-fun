@@ -124,7 +124,7 @@ try {
   console.log('3) 作者与元数据');
   const authorName = typeof published.author === 'string' ? published.author : published.author?.name;
   ok(authorName === '青', `作者是「青」（实际 ${JSON.stringify(published.author)}）`);
-  ok(published.cortico?.displayName === '娱乐时间', 'displayName 是娱乐时间');
+  ok(published.cortico?.displayName === '从0开始的肥鱼大冒险', 'displayName 是从0开始的肥鱼大冒险');
   ok(published.cortico?.api === 6, 'api 是 6');
   ok(files.includes('describe.json'), 'describe.json 在包里（市场读它）');
   ok(files.includes('CHANGELOG.md'), 'CHANGELOG.md 在包里');
@@ -199,7 +199,7 @@ try {
   const lists = new Map();
   for (const id of declared ?? []) {
     const { getMethods } = ui.panels.find((panel) => panel.id === id);
-    const readMethod = id === 'story' ? 'status' : 'list';
+    const readMethod = id === 'story' ? 'status' : (id === 'home' ? 'state' : 'list');
     const hasRead = Array.isArray(getMethods) && getMethods.includes(readMethod);
     ok(hasRead, `${id} 在 getMethods 中声明 ${readMethod}`);
     if (!hasRead) continue;

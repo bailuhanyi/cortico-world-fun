@@ -27,7 +27,7 @@ export function dom(document) {
 export function styleDescription(place) {
   if (place.styleSource === 'place' || place.style?.trim()) return '地点画风';
   if (place.styleSource === 'source-default') return '补录的旧世界默认画风';
-  if (place.effectiveStyle) return '娱乐时间默认画风';
+  if (place.effectiveStyle) return '从0开始的肥鱼大冒险默认画风';
   return '未设置';
 }
 

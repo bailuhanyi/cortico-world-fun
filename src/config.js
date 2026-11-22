@@ -1,5 +1,5 @@
 /**
- * 娱乐时间的配置段与文案。
+ * 从0开始的肥鱼大冒险的配置段与文案。
  *
  * 段名是 `config.json` 的 `worlds.fun`。WebUI 热改就地写这个对象，
  * World 每次用时现读，所以这里只有默认值与 schema，不持有副本。
@@ -15,7 +15,7 @@
  */
 
 export const ID = 'fun';
-export const LABEL = '娱乐时间';
+export const LABEL = '从0开始的肥鱼大冒险';
 
 /** `worlds.fun` 段的默认值；`enabled` 由框架的 World 开关管理。 */
 export const DEFAULTS = Object.freeze({
@@ -41,6 +41,11 @@ export const DEFAULTS = Object.freeze({
   funTasteFromFeast: true,
   /** 剧情图片独立开关；来源在故事面板设置，默认回执委派，显式本地URL可选直连。 */
   funStoryImages: false,
+  /**
+   * 不用点按钮：每一处新的场景都自动准备一份「委派参数」递给她，画不画由她定。
+   * 只对委派型来源生效（直连 ComfyUI 要花算力，仍然只由面板按钮触发）。
+   */
+  funStoryAutoImages: true,
   /** 可选文本主持；默认沿用宿主，面板可配置本机加密的独立接口。 */
   funStoryDM: false,
   /** 文字通道（QQ/控制台聊天）能不能开局和推进故事；面板永远可玩。 */
@@ -56,14 +61,14 @@ export const DEFAULTS = Object.freeze({
 });
 
 const ZH = {
-  label: '娱乐时间',
-  lamp: '娱乐时间',
+  label: '从0开始的肥鱼大冒险',
+  lamp: '从0开始的肥鱼大冒险',
   stopped: '未启动',
   badgeSession: '正在逛',
   badgePlaces: '能去哪儿',
-  prompt: '娱乐时间 World 的环境说明：她可以真去逛二十处地方——游乐场、海洋馆、庙会、漫展、电影院、动物园、公园、电玩城、KTV、博物馆、猫咖、爬山、咖啡店、奶茶店、餐厅、图书馆、夜市、澡堂、旧货市场、江边。还能在面板上自己加地方、改预设。进门、逛摊位、买纪念品、拍照、回家；回家回执把这一趟收成一句话，交给她记进自己的日程。不调别的 World 的工具、不读别人的状态。',
+  prompt: '从0开始的肥鱼大冒险 World 的环境说明：她可以真去逛二十处地方——游乐场、海洋馆、庙会、漫展、电影院、动物园、公园、电玩城、KTV、博物馆、猫咖、爬山、咖啡店、奶茶店、餐厅、图书馆、夜市、澡堂、旧货市场、江边。还能在面板上自己加地方、改预设。进门、逛摊位、买纪念品、拍照、回家；回家回执把这一趟收成一句话，交给她记进自己的日程。不调别的 World 的工具、不读别人的状态。',
   config: {
-    title: '娱乐时间',
+    title: '从0开始的肥鱼大冒险',
     funOn: '开着',
     funOnDesc: '总开关。关掉之后不往提示词里注入场所清单；工具和面板照旧可用，她想逛随时能逛。',
     funSessionTTLMin: '一趟逛多久',
@@ -75,7 +80,7 @@ const ZH = {
     funStoryDM: '可选文本主持',
     funStoryDMDesc: '默认关闭。去「出游」面板的设置区填写接口地址、API Key 和模型名（地址与 Key 是密码输入，不回显；模型名留空则由接口用自己的默认模型）。地址与 Key 都留空沿用宿主 cognition.request；都填写则由本插件直连 OpenAI 兼容 POST /chat/completions，密钥仅存在本机，不传给宿主或其他插件。Windows 使用 DPAPI 当前用户加密，其他平台禁用凭据保存；换机器或重装需重填。可立即清除。主持只提议合法选项，当前行动者明确提交才执行。每趟 6 次、每步 2 次（含重试、失败、取消），未知 token 不估算。',
     funStoryTextOn: '文字通道也能玩故事',
-    funStoryTextOnDesc: '默认关闭。开启后，QQ 或控制台聊天里也能开始和推进故事（fun_story_start / fun_story_act 才生效）；关掉时只能在娱乐时间面板里点，六个只读查询不受影响。\n\n注意：World 拿不到消息来源，所以这是「允许文字通道」的总开关，不能只对 QQ 生效。面板任何时候都能玩。',
+    funStoryTextOnDesc: '默认关闭。开启后，QQ 或控制台聊天里也能开始和推进故事（fun_story_start / fun_story_act 才生效）；关掉时只能在从0开始的肥鱼大冒险面板里点，六个只读查询不受影响。\n\n注意：World 拿不到消息来源，所以这是「允许文字通道」的总开关，不能只对 QQ 生效。面板任何时候都能玩。',
     funStoryFree: '自由模式（场景包）',
     funStoryFreeDesc: '默认关闭。开启后可以使用 version 3「场景包」：作者只写大方向、正史、人物和结局条件，具体怎么演交给主持即兴。主持只能修改作者登记过的状态，结局由程序按条件判定；旧的选项式故事完全不受影响，两种模式可以同时存在。',
     funStoryFreeTurns: '自由模式一段走多少回合',
@@ -88,6 +93,7 @@ const ZH = {
     storyDmApiInvalid: '接口地址与密钥必须成对设置或成对清空；不支持的加密环境不会保存。',
     storyDmApiHint: '请到「出游」面板设置区填写。地址和密钥仅存本机 DPAPI 密文；模型名按你的服务商填，留空则不发送 model。都不会进入普通配置或故事导出，保存后只显示掩码。',
     funStoryImages: '剧情图片生成',    funStoryImagesDesc: '独立开关，默认关闭。去「出游」面板设置区填写一个来源。留空：本插件给主对话 imggen_draw 的 scene/outfits/prompt，由主对话调用「鱼的生图包」，需要该插件；无法确认安装时明确标注，未装则跳过。填本机 loopback URL：本插件按 ComfyUI HTTP 协议直连，需运行 ComfyUI 并有可用 checkpoint；30 秒或超过 8 MiB/格式错误即失败，保留原插画。填其他插件名/说明：只生成委派回执，由主对话或该插件执行，需要你自行准备该能力。委派图片由执行插件管理，直连图片存本插件 dataDir/fun/story-images。关闭不发图片请求，只用预制或显式导入插画；文字故事始终不等图片。',
+    funStoryAutoImages: '不用点按钮：自动准备配图参数', funStoryAutoImagesDesc: '默认开启。每走到新的一处（或故事翻到新的一页），本插件自动把这一屏的 scene/outfits/prompt 准备好递给她，她下一轮说话时就能看到，想画就画、不想画不用管；45 分钟后自动过期，不会反复催。只对委派型来源生效——直连本机 ComfyUI 会花算力，仍然只由面板上的「生成／委派当前场景图片」触发。总开关「剧情图片生成」关着时这一项不起作用。',
     storyImageSource: '图片来源（留空为鱼的生图包）',
     storyImageSourceHint: '留空由主对话调用 imggen_draw；本机 URL 由本插件直连 ComfyUI；其他文本交主对话委派。不会调用其他 World 的工具或读取其私有状态。',
     storyImageDelegated: '已生成委派说明，等待主对话或指定插件执行。', storyImageDirect: '显式本机 URL：由本插件直连 ComfyUI。',
@@ -102,14 +108,14 @@ const ZH = {
 };
 
 const EN = {
-  label: 'Fun time',
-  lamp: 'Fun time',
+  label: 'Adventures of Fat Fish from Scratch',
+  lamp: 'Adventures of Fat Fish from Scratch',
   stopped: 'not running',
   badgeSession: 'Out',
   badgePlaces: 'Places',
-  prompt: 'The Fun Time world: she can actually go out — amusement park, aquarium, temple fair, fan convention. Walk in, wander the stalls, buy a souvenir, take a photo; the closing receipt turns the trip into one line she can log into her own day, and image generation draws the scene and outfit she actually wore.',
+  prompt: 'Adventures of Fat Fish from Scratch: she can actually go out — amusement park, aquarium, temple fair, fan convention. Walk in, wander the stalls, buy a souvenir, take a photo; the closing receipt turns the trip into one line she can log into her own day, and image generation draws the scene and outfit she actually wore.',
   config: {
-    title: 'Fun time',
+    title: 'Adventures of Fat Fish from Scratch',
     funOn: 'Enabled',
     funOnDesc: 'Master switch. Off: no venue list in the prompt; the tools and panel still work, she can go any time.',
     funSessionTTLMin: 'A trip lasts',
@@ -121,7 +127,7 @@ const EN = {
     funStoryDM: 'Optional text DM',
     funStoryDMDesc: 'Off by default. In Fish Story World settings enter the API URL, Key and model name (URL and Key are password fields, never echoed; leave the model blank to use the endpoint’s own default). Leave URL and Key blank for host cognition.request, or set both for this plugin to call OpenAI-compatible POST /chat/completions directly. Credentials stay on this machine, never sent to the host or other plugins. Windows DPAPI CurrentUser encryption only; saving is disabled elsewhere. Re-enter after changing machines or reinstalling; clear immediately at any time. The current actor must explicitly submit a valid proposal. Limits: 6 calls per run, 2 attempts per step, including retries, failures and cancellations; unknown tokens remain unknown.',
     funStoryTextOn: 'Play stories from text',
-    funStoryTextOnDesc: 'Off by default. On: stories can be started and advanced from QQ or console chat (fun_story_start / fun_story_act). Off: only the Fun Time panel can play; the six read-only queries still work.\n\nA World cannot see which channel called it, so this is one switch for all text channels — it cannot be QQ-only. The panel always works.',
+    funStoryTextOnDesc: 'Off by default. On: stories can be started and advanced from QQ or console chat (fun_story_start / fun_story_act). Off: only the Adventures of Fat Fish from Scratch panel can play; the six read-only queries still work.\n\nA World cannot see which channel called it, so this is one switch for all text channels — it cannot be QQ-only. The panel always works.',
     funStoryFree: 'Free mode (scene packs)',
     funStoryFreeDesc: 'Off by default. On: version 3 scene packs become playable. The author writes only the premise, canon, cast and ending conditions; the host DM improvises. The DM may change only registered state, and endings are decided by the program. Option-based stories are untouched; both modes can coexist.',
     funStoryFreeTurns: 'Free-mode turns per run',
@@ -135,6 +141,8 @@ const EN = {
     storyDmApiHint: 'Use Fish Story World settings. Only local DPAPI ciphertext is stored; the model name is plain and optional (blank sends no model). No credentials enter ordinary configuration or story exports, and saved fields show masks only.',
     funStoryImages: 'Story image generation',
     funStoryImagesDesc: 'Separate opt-in, off by default. Enter one source in Fish Story World settings. Blank: this plugin returns imggen_draw scene/outfits/prompt for the main conversation to call Fish Image Studio; that plugin is required, installation uncertainty is explicit and absence skips images. Loopback URL: this plugin calls the local ComfyUI HTTP API; a running server and available checkpoint are required. A 30-second timeout, images over 8 MiB or invalid formats keep the original artwork. Other plugin name/instructions: a receipt delegates execution to that plugin or the main conversation, and you must provide that capability. Delegated images belong to the executing plugin; direct images go to this plugin dataDir/fun/story-images. Off means no image requests, only prebuilt or explicitly imported art. Text never waits for images.',
+    funStoryAutoImages: 'Prepare image parameters without a click',
+    funStoryAutoImagesDesc: 'On by default. Every time the outing reaches a new spot (or the story turns a page), this plugin prepares that scene’s scene/outfits/prompt for her automatically, so she sees it on her next turn and may draw if she feels like it; the offer expires after 45 minutes and is never nagged. Delegation sources only — a direct local ComfyUI call costs compute and still needs the panel button. Has no effect while the master “Story image generation” switch is off.',
     storyImageSource: 'Image source (blank: Fish Image Studio)',
     storyImageSourceHint: 'Blank delegates imggen_draw to the main conversation; a local URL connects this plugin to ComfyUI; other text delegates to the named plugin. No tools or private state of other Worlds are accessed.',
     storyImageDelegated: 'Drawing instructions are ready for the main conversation or selected plugin.', storyImageDirect: 'Explicit local URL: this plugin connects to ComfyUI.',
@@ -234,6 +242,9 @@ export function configGroup(language = 'zh') {
         },
         [`${K}.funStoryImages`]: {
           type: 'boolean', title: t.funStoryImages, description: t.funStoryImagesDesc, 'x-hot': true,
+        },
+        [`${K}.funStoryAutoImages`]: {
+          type: 'boolean', title: t.funStoryAutoImages, description: t.funStoryAutoImagesDesc, 'x-hot': true,
         },
         [`${K}.funStoryTextOn`]: {
           type: 'boolean', title: t.funStoryTextOn, description: t.funStoryTextOnDesc, 'x-hot': true,

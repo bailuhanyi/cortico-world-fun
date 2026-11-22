@@ -117,6 +117,24 @@ test('decide snapshot with a changed stamp never reaches auto', async () => {
   assert.ok(h.calls.filter((call) => call.method === 'status').length >= 2);
   controller.dispose();
 });
+test('共同决定：用户投完票后，面板说清轮到鱼、并摆出两席的票', async () => {
+  const initial = snapshot();
+  initial.trip.actor = 'fish';
+  initial.trip.pending = { id: 'choice-joint', event: '两处都可以去', prompt: '两席各自明确选一项。', actor: 'joint', jointResolution: 'require-agreement',
+    votes: { owner: 'follow' }, options: [{ id: 'follow', label: '沿溪寻找' }, { id: 'keep', label: '先把信收好' }] };
+  const h = harness(null, initial);
+  globalThis.document = h.env.document; globalThis.window = h.env.window;
+  const root = document.createElement('div');
+  const mounted = mountPanel(root, h.ctx); await flush();
+  root.querySelector('[data-focus="nav-play"]').click();
+  assert.match(root.textContent, /现在轮到鱼/);
+  assert.match(root.textContent, /等鱼提交/);
+  assert.equal(root.querySelector('[data-focus="option-follow"]').disabled, true, '鱼那一票不能在这里代投');
+  assert.match(root.textContent, /沿溪寻找/);
+  assert.match(root.textContent, /还没投/, '鱼那一席要显示还没投');
+  assert.ok(root.querySelector('[data-focus="joint-refresh"]'), '可以手动刷新看鱼投了没');
+  mounted.dispose();
+});
 test('unmount pauses with keepalive and cannot submit a late decide', async () => {
   const decision = deferred(); const h = harness((method) => method === 'decide' ? decision.promise : undefined);
   const controller = createStoryController(h.ctx, () => {}, h.env); await flush();

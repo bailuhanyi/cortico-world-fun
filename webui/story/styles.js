@@ -48,4 +48,25 @@ export const STYLES = `
 .sw-drawer-body{flex:1 1 auto;min-height:0;overflow-y:auto;padding:14px 18px 18px}
 @container (max-width:650px){.sw-play{--sw-play-h:min(72vh,680px)}.sw-play>.sw-aside{position:static;max-height:none;overflow:visible}.sw-imm .sw-scene{min-height:220px}.sw-imm-lead{font-size:15px}}
 @media (prefers-contrast:more){.sw{--sw-muted:var(--sw-ink)}.sw-badge,.sw-btn,.sw-card{border-width:2px}}
+/* 自定义工作流：折叠区 + 等宽 textarea */
+.sw-settings-workflow{margin:12px 0 0;border:1px solid var(--sw-line);border-radius:10px;padding:11px 13px;background:var(--sw-soft)}
+.sw-settings-workflow>summary{cursor:pointer;font-weight:650;font-size:13px;display:flex;align-items:center;gap:8px;list-style:none}
+.sw-settings-workflow>summary::-webkit-details-marker{display:none}
+.sw-settings-workflow>summary .sw-badge{margin-left:auto;font-weight:500}
+.sw-settings-workflow[open]>summary{margin-bottom:8px}
+.sw-workflow-json{margin-top:6px;width:100%;min-height:150px;border:1px solid var(--sw-line);border-radius:8px;background:var(--sw-paper);color:inherit;font:12px/1.55 ui-monospace,Consolas,monospace;padding:8px 10px;resize:vertical}
+.sw-workflow-json:focus-visible{outline:3px solid color-mix(in srgb,var(--sw-green) 65%,white);outline-offset:2px}
+.sw-settings-image-card .sw-setting-field{margin-bottom:0}
+/* 共同决定：两席各一票，票面摆在选项上方，谁还没投一眼看得见 */
+.sw-votes{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:14px 0 4px}
+.sw-vote{border:1px dashed var(--sw-line);border-radius:9px;padding:8px 11px;background:var(--sw-paper);min-width:0}
+.sw-vote small{display:block;font-size:10px;letter-spacing:.04em;color:var(--sw-muted)}
+.sw-vote strong{display:block;font-size:12px;margin-top:2px;overflow-wrap:anywhere}
+.sw-vote-done{border-style:solid;border-color:color-mix(in srgb,var(--sw-green) 38%,var(--sw-line));background:var(--sw-soft)}
+.sw-imm .sw-votes{grid-template-columns:1fr 1fr;max-width:520px;margin:12px auto 0}
+/* 设置页的分区：一节只讲一件事，标题是名词，副句说人话 */
+.sw-settings-part{display:flex;flex-direction:column;gap:12px;min-width:0}
+.sw-settings-part-head h3{font-size:15px;letter-spacing:.01em}
+.sw-settings-part-head p{font-size:11.5px;line-height:1.7;color:var(--sw-muted);margin-top:4px;max-width:64ch}
+.sw-settings-part+.sw-settings-part{padding-top:20px;border-top:1px solid color-mix(in srgb,var(--sw-line) 70%,transparent)}
 `;

@@ -1,4 +1,4 @@
-﻿# install.ps1 ---- 把「娱乐时间」装进 Coo（Windows）
+﻿# install.ps1 ---- 把「从0开始的肥鱼大冒险」装进 Coo（Windows）
 #
 # 用法：
 #   powershell -ExecutionPolicy Bypass -File .\install.ps1 -CooRoot "E:\Coopanion"
@@ -173,7 +173,7 @@ if (-not $WhatIf) {
 
 Say ""
 Say "下一步（这三步是联动的另一半，脚本不会替你自动做）："
-Say "  1) 重启 Coo（完全退出再打开），面板 → 世界 →「娱乐时间」应为 active"
+Say "  1) 重启 Coo（完全退出再打开），面板 → 世界 →「从0开始的肥鱼大冒险」应为 active"
 Say "  2) 补素材库场景：node tools/apply-library.mjs --root <素材库> --write"
 Say "  3) 鱼那边加一行：node tools/patch-lifeFreeMenu.mjs --config <config.json> --write"
 Say ""
