@@ -3927,18 +3927,18 @@ function pictureData(file, maxBytes, FileReaderClass = globalThis.FileReader) {
 
 // webui/home/layout.js
 var HOME_LAYOUT = Object.freeze({
-  idle: { x: 0.52, y: 0.93, scale: 0.52 },
-  reading: { x: 0.4, y: 0.92, scale: 0.4 },
-  watching: { x: 0.6, y: 0.93, scale: 0.4 },
-  cards: { x: 0.34, y: 0.93, scale: 0.42 },
-  gaming: { x: 0.5, y: 0.955, scale: 0.38 },
-  chatting: { x: 0.62, y: 0.93, scale: 0.4 },
-  cooking: { x: 0.13, y: 0.93, scale: 0.52 },
-  painting: { x: 0.3, y: 0.93, scale: 0.5 },
-  looking_outside: { x: 0.21, y: 0.93, scale: 0.52 },
-  sleeping: { x: 0.45, y: 0.94, scale: 0.34 }
+  idle: { x: 0.52, y: 0.93, scale: 0.4 },
+  reading: { x: 0.4, y: 0.92, scale: 0.3 },
+  watching: { x: 0.6, y: 0.93, scale: 0.3 },
+  cards: { x: 0.34, y: 0.93, scale: 0.3 },
+  gaming: { x: 0.5, y: 0.955, scale: 0.28 },
+  chatting: { x: 0.62, y: 0.93, scale: 0.32 },
+  cooking: { x: 0.13, y: 0.93, scale: 0.4 },
+  painting: { x: 0.3, y: 0.93, scale: 0.36 },
+  looking_outside: { x: 0.21, y: 0.93, scale: 0.4 },
+  sleeping: { x: 0.45, y: 0.94, scale: 0.26 }
 });
-var HOME_FALLBACK = Object.freeze({ x: 0.52, y: 0.93, scale: 0.52 });
+var HOME_FALLBACK = Object.freeze({ x: 0.52, y: 0.93, scale: 0.4 });
 var positionOf = (activity) => HOME_LAYOUT[activity] ?? HOME_FALLBACK;
 
 // webui/home/styles.js
@@ -4058,11 +4058,6 @@ var HOME_STYLES = `
 .fhm-import input{font-size:10.5px;max-width:150px}
 .fhm-snaps textarea{width:100%;margin-top:6px;font:inherit;font-size:11px;padding:5px 8px;border-radius:8px;
   border:1px solid var(--f-line,#e3e4e3);background:var(--f-soft,#f3efe9);color:var(--f-ink,#1b1a1e)}
-.fhm-auto{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:8px 2px 0;padding:7px 10px;border-radius:10px;
-  border:1px solid color-mix(in srgb,var(--f-warm,#e0862f) 40%,var(--f-line,#e3e4e3));
-  background:color-mix(in srgb,var(--f-warm,#e0862f) 7%,var(--f-card,#fbfbfb));font-size:11.5px;color:var(--f-ink,#1b1a1e)}
-.fhm-auto button{font:inherit;font-size:11px;padding:3px 10px;border-radius:999px;cursor:pointer;
-  border:1px solid var(--f-line,#e3e4e3);background:var(--f-card,#fbfbfb);color:var(--f-ink,#1b1a1e)}
 
 .fhm-pending{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:8px 2px 0;padding:7px 10px;border-radius:10px;
   border:1px solid var(--f-line,#e3e4e3);background:color-mix(in srgb,var(--f-card,#fbfbfb) 88%,var(--f-soft,#f3efe9))}
@@ -4137,6 +4132,7 @@ var HOME_STYLES = `
 // webui/home/webui.js
 var MAX_IMAGE_BYTES2 = 8 * 1024 * 1024;
 var ACCEPT = "image/png,image/jpeg,image/gif,image/webp,.png,.jpg,.jpeg,.gif,.webp";
+var PICKER_EXTENSIONS = [".png", ".jpg", ".jpeg", ".gif", ".webp"];
 var artCache = /* @__PURE__ */ new Map();
 var KEEPSAKE_SLOTS = {
   ticket: { left: 50, top: 40, icon: "🎫" },
@@ -4247,12 +4243,15 @@ function mountHome(ctx) {
   }
   async function loadArt(slot, activity) {
     const key = slot === "background" ? snapshot?.art?.background : slot === "foreground" ? snapshot?.art?.foreground : slot === "painting" ? snapshot?.art?.painting : snapshot?.art?.characters?.[activity] ?? snapshot?.art?.characters?.idle;
-    if (!key) return null;
-    if (artCache.has(key)) return artCache.get(key);
+    const builtin = snapshot?.art?.builtin ?? [];
+    const useBuiltin = slot === "character" && !key && (builtin.includes(activity) || builtin.includes("idle"));
+    if (!key && !useBuiltin) return null;
+    const cacheKey = key || `builtin:${activity}`;
+    if (artCache.has(cacheKey)) return artCache.get(cacheKey);
     try {
       const result = await call("art", { slot, activity });
       const image = result?.image?.dataUrl ?? null;
-      if (image) artCache.set(key, image);
+      if (image) artCache.set(cacheKey, image);
       return image;
     } catch {
       return null;
@@ -4449,7 +4448,8 @@ function mountHome(ctx) {
         if (src && live()) frame.setAttribute("src", src);
       });
     }
-    const hasCharacter = Boolean(snapshot.art?.characters?.[snapshot.room.activity] ?? snapshot.art?.characters?.idle);
+    const builtin = snapshot.art?.builtin ?? [];
+    const hasCharacter = Boolean(snapshot.art?.characters?.[snapshot.room.activity] ?? snapshot.art?.characters?.idle) || builtin.includes(snapshot.room.activity) || builtin.includes("idle");
     const spot = effectiveSpot(snapshot.room.activity);
     const shadow = el2(document2, "div", {
       class: "fhm-char-shadow",
@@ -4642,7 +4642,7 @@ function mountHome(ctx) {
       return;
     }
     try {
-      const picked = await ctx.pickPath();
+      const picked = await ctx.pickPath({ kind: "file", title: "选一张图挂到画架", extensions: PICKER_EXTENSIONS });
       const path = typeof picked === "string" ? picked : picked?.path ?? picked?.filePath ?? "";
       if (!path) return;
       await write("setPainting", { path, revision: snapshot.revision }, "挂到画架上了。");
@@ -4797,7 +4797,7 @@ function mountHome(ctx) {
       el2(document2, "h3", { text: "布置房间" }),
       el2(document2, "p", {
         class: "fhm-dress-note",
-        text: "背景 1920×1080；角色图十个活动同一张画布、底边对齐（见素材单）。单张不超过 8 MiB，支持 PNG / JPG / WebP / GIF。批量导入按文件名认领：bg-* 背景、ch-idle* 待机、act-<活动>* 对应活动；chibi-* 与其他会列进未使用。"
+        text: "没传角色图时用内置的 Q 版立绘（十个活动都有，透明边已裁掉）；想换就传自己的图。背景 1920×1080；角色图十个活动同一张画布、底边对齐。单张不超过 8 MiB，支持 PNG / JPG / WebP / GIF。批量导入按文件名认领：bg-* 背景、ch-idle* 待机、act-<活动>* 对应活动；chibi-* 与其他会列进未使用（内置已经有了，不用再导）。"
       })
     );
     const bgRow = el2(
@@ -4891,6 +4891,7 @@ function mountHome(ctx) {
     }
     for (const activity of snapshot.activities) {
       const has = Boolean(snapshot.art?.characters?.[activity.id]);
+      const usingBuiltin = !has && ((snapshot.art?.builtin ?? []).includes(activity.id) || (snapshot.art?.builtin ?? []).includes("idle"));
       box.append(el2(
         document2,
         "div",
@@ -4904,7 +4905,7 @@ function mountHome(ctx) {
             void upload("character", activity.id, event.target);
           }
         }),
-        el2(document2, "span", { class: "fhm-row-name", text: has ? "已设置" : "未设置" }),
+        el2(document2, "span", { class: "fhm-row-name", text: has ? "已设置" : usingBuiltin ? "内置 Q 版" : "未设置" }),
         el2(document2, "button", {
           type: "button",
           text: "清空",
@@ -5146,21 +5147,6 @@ function mountHome(ctx) {
         class: "fhm-wish",
         text: `心愿 · ${w.placeName}${w.target ? ` · ${w.target}` : ""}${w.reason ? `：${w.reason}` : ""}`
       }));
-    }
-    if (snapshot.trip?.auto && snapshot.trip.mode !== "home") {
-      nodes.push(el2(
-        document2,
-        "div",
-        { class: "fhm-auto" },
-        el2(document2, "span", { text: "这趟是她自己出去的。" }),
-        el2(document2, "button", {
-          type: "button",
-          text: "撤销这次出门",
-          onclick: () => {
-            void write("undoAutoGo", {}, "已经把她叫回来了。");
-          }
-        })
-      ));
     }
     return nodes;
   }

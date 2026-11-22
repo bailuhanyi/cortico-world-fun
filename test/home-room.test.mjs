@@ -3,7 +3,7 @@ import test from 'node:test';
 import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { blankRoom, defaultActivityAt, HomeRoom, HomeRoomError, phaseAtHour } from '../src/home-room.js';
+import { ACTIVITIES, blankRoom, defaultActivityAt, HomeRoom, HomeRoomError, phaseAtHour } from '../src/home-room.js';
 
 const PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
 const OTHER_PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
@@ -24,10 +24,15 @@ test('空房间：读出来是发呆，而且只读不建目录', async (t) => {
   assert.equal(snapshot.room.label, '发呆');
   assert.equal(snapshot.room.since, null);
   assert.equal(snapshot.damaged, false);
-  assert.deepEqual(snapshot.art, { background: '', characters: {}, hotspots: [], foreground: '', painting: '' });
+  assert.deepEqual(snapshot.art, {
+    background: '', characters: {}, hotspots: [], foreground: '', painting: '', builtin: [...ACTIVITIES],
+  });
   assert.deepEqual(snapshot.placements, {});
   await assert.rejects(stat(join(dir, 'fun')), { code: 'ENOENT' });
   assert.equal(await room.readArt('background'), null);
+  const builtin = await room.readArt('character', 'idle');
+  assert.equal(builtin.builtin, 'idle', '没传图的角色走内置 Q 版');
+  assert.match(builtin.dataUrl, /^data:image\/webp;base64,/);
 });
 
 test('切活动写盘：revision 加一、备注一起存、再读回来一致', async (t) => {
@@ -41,7 +46,11 @@ test('切活动写盘：revision 加一、备注一起存、再读回来一致',
   assert.equal(stored.room.activity, 'reading');
   assert.equal(stored.version, 2);
   assert.deepEqual(stored.placements, {}, '新写的就是 v2，带空 placements');
-  assert.deepEqual(await room.snapshot(), { ...next, damaged: false, warning: '' });
+  // snapshot 比写入回执多一份「内置立绘有哪些」的清单，其余字段必须逐字一致。
+  const snapshot = await room.snapshot();
+  const { builtin, ...art } = snapshot.art;
+  assert.deepEqual(builtin, [...ACTIVITIES]);
+  assert.deepEqual({ ...snapshot, art }, { ...next, damaged: false, warning: '' });
 });
 
 test('同一个活动再点一次不升 revision、不重写盘', async (t) => {
@@ -92,13 +101,17 @@ test('换新背景时旧背景（已无人引用）会被清掉', async (t) => {
   assert.deepEqual(await readdir(art), [second.art.background]);
 });
 
-test('角色图缺失时回落到 idle，没有 idle 就是没有图（不是错误）', async (t) => {
+test('角色图：传过用自己的、没传读内置 Q 版；清理后回到内置，不是破图', async (t) => {
   const { room } = await home(t);
+  const builtin = await room.readArt('character', 'gaming');
+  assert.equal(builtin.builtin, 'gaming');
   const set = await room.setCharacter('idle', dataUrl(PNG), 0);
   assert.deepEqual(await room.readArt('character', 'gaming'), await room.readArt('character', 'idle'));
   assert.equal(set.art.characters.gaming, undefined);
   await room.clearCharacter('idle', set.revision);
-  assert.equal(await room.readArt('character', 'gaming'), null);
+  const back = await room.readArt('character', 'gaming');
+  assert.equal(back.builtin, 'gaming', '清掉自传图后回到内置 Q 版');
+  assert.equal(await room.readArt('background'), null, '其他槽位没有内置');
 });
 
 test('不是真图片、超限、或者槽位不认识，都拒绝', async (t) => {

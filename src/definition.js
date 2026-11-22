@@ -109,13 +109,23 @@ export const funDefinition = {
   /**
    * 自描述：可能出现的全部工具与事件，不进提示词。
    *
-   * **events 是空数组，这是有意的**——这个 World 不推任何事件。
-   * 出门的时机由「鱼的每一天」的 lifeFreeMenu 那一行顺手一提，或她自己 fun_start。
-   * 两套叫醒会互相抢时间轴；写成空数组也让认证那边一眼看得出它不主动打扰。
+   * 方案 B 起多了一个内部事件 `fun.home.free`：到她「自己出门的时段」时，
+   * 本 World 推一条只有她看得到的提醒，叫她先看当天的日程（feast_life_now）再决定
+   * 出不出门。**它只负责叫醒**——不读「鱼的每一天」的日程、不挑地方、不替她出门。
+   * 关着 `funHomeAutoGo` 或时段留空时，这条路径根本不注册。
    */
   describe: {
     tools: describeTools(FUN_TOOL_DECLS),
-    events: [],
+    events: [
+      {
+        type: 'fun.home.free',
+        description: {
+          zh: '到她自己的时段：一条 internal 事件提醒她「这会儿是你自己的时间」，请她先看当天日程（feast_life_now）；这一段自由就用 fun_start / fun_go 自己出门，回来 feast_life_play 记一笔；写着上班、通勤或睡觉就不出门。origin 是 internal，不是主人发的消息；去不去、去哪儿由她定，本插件不挑地方。',
+          en: 'One of her own-time slots came due: an internal event says this stretch is hers and asks her to check that day\'s schedule (feast_life_now) first. If the stretch is free she may head out with fun_start / fun_go and log it with feast_life_play; if it says work, commute or sleep she stays in. Internal origin, not an owner message; whether and where to go is her call — the plugin never picks a place.',
+        },
+        trigger: 'flush',
+      },
+    ],
   },
 };
 

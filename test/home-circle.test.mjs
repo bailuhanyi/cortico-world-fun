@@ -4,7 +4,7 @@
  * 重点守：
  *   · 快照只存 digest，不复制图片字节；图没了列表要能看出来；
  *   · 导入只在空房间、图片逐张校验、失败回滚；
- *   · 自动出门默认关、关着时定时器根本不注册、开着时最多一次、可撤销。
+ *   · 「允许她自己出门」只是提示词许可：默认关、没有定时器、出门回执提示写进日程。
  */
 import assert from 'node:assert/strict';
 import test from 'node:test';
@@ -108,64 +108,89 @@ test('导出/导入：只含引用不含字节；只允许空房间；缺图失�
   void sourceDir;
 });
 
-test('自动出门：默认关且不注册；开了才注册，走同一 fun_go 并标 auto；撤销可回', async (t) => {
-  assert.equal(DEFAULTS.funHomeAutoGo, false);
+test('自己出门：开关+时段才叫醒；叫醒只说「看日程」，不替她挑地方', async (t) => {
+  assert.equal(DEFAULTS.funHomeAutoGo, false, '默认关');
+  assert.equal(DEFAULTS.funHomeAutoSlots, '10:30,15:30,19:30');
   const group = configGroup('zh');
-  assert.equal(group.schema.properties['worlds.fun.funHomeAutoGo'].type, 'boolean');
-  assert.match(group.schema.properties['worlds.fun.funHomeAutoGo'].description, /10:00–20:00/);
+  const on = group.schema.properties['worlds.fun.funHomeAutoGo'];
+  const slots = group.schema.properties['worlds.fun.funHomeAutoSlots'];
+  assert.equal(on.type, 'boolean');
+  assert.equal(slots.type, 'string');
+  assert.match(on.description, /时段/);
+  assert.match(slots.description, /HH:MM/);
 
-  const offDir = await mkdtemp(join(tmpdir(), 'fun-home-auto-off-'));
-  const off = new FunWorld({ cfg: { ...DEFAULTS, enabled: true }, dataDir: offDir, timezone: TZ, now: () => NOON });
-  await off.start({ log: { info() {}, warn() {} } });
-  assert.equal(off.autoGoRegistered, false, '关着时没有注册定时器');
-  const skipped = await off.runAutoGo();
-  assert.equal(skipped.ok, false);
-  assert.equal(skipped.skipped, 'off');
-  await assert.rejects(readFile(join(offDir, 'fun', 'state.json')), { code: 'ENOENT' }, '关着时 state.json 没有变化');
-  await off.stop();
-  t.after(() => rm(offDir, { recursive: true, force: true }));
+  let clock = Date.parse('2026-11-22T10:30:00+08:00');
+  const pushes = [];
+  const host = {
+    log: { info() {}, warn() {} },
+    pushEvent: (event, options) => { pushes.push({ event, options }); },
+  };
 
-  const onDir = await mkdtemp(join(tmpdir(), 'fun-home-auto-on-'));
-  const on = new FunWorld({
-    cfg: { ...DEFAULTS, enabled: true, funHomeAutoGo: true }, dataDir: onDir, timezone: TZ, now: () => NOON,
+  // 关着：这条路径不叫醒。
+  const offDir = await mkdtemp(join(tmpdir(), 'fun-home-selfgo-off-'));
+  const off = new FunWorld({ cfg: { ...DEFAULTS, enabled: true }, dataDir: offDir, timezone: TZ, now: () => clock });
+  await off.start(host);
+  t.after(async () => { await off.stop(); await rm(offDir, { recursive: true, force: true }); });
+  assert.equal((await off.runAutoInvite()).skipped, 'off');
+  assert.equal(pushes.length, 0);
+
+  // 开着：到点推一条 internal 事件，同一天同一时段只推一次。
+  const onDir = await mkdtemp(join(tmpdir(), 'fun-home-selfgo-on-'));
+  const world = new FunWorld({
+    cfg: { ...DEFAULTS, enabled: true, funHomeAutoGo: true }, dataDir: onDir, timezone: TZ, now: () => clock,
   });
-  await on.start({ log: { info() {}, warn() {} } });
-  t.after(async () => { await on.stop(); await rm(onDir, { recursive: true, force: true }); });
-  assert.equal(on.autoGoRegistered, true, '开着时注册定时器');
-  const first = await on.runAutoGo();
-  assert.equal(first.ok, true, first.text);
-  const stored = JSON.parse(await readFile(join(onDir, 'fun', 'state.json'), 'utf8'));
-  assert.equal(stored.session.auto, true, '行程标了 auto');
-  assert.equal(stored.session.placeName.length > 0, true);
-  const again = await on.runAutoGo();
-  assert.equal(again.ok, false, '正在出门时不重复');
-  assert.equal(again.skipped, 'trip');
+  await world.start(host);
+  t.after(async () => { await world.stop(); await rm(onDir, { recursive: true, force: true }); });
+  assert.match(world.envPromptVars().fun_places_block, /主人允许你自己出门/);
 
-  const homeTool = on.tools().find((tool) => tool.name === 'fun_home').handler;
-  await homeTool({});
-  const trips = await on.webUi('zh').invoke('book', 'list', []);
-  assert.equal(trips.trips[0].auto, true, '回忆里能看出是自动的');
-  const later = await on.runAutoGo();
-  assert.equal(later.skipped, 'already', '当天已经自动出去过一次');
+  const first = await world.runAutoInvite();
+  assert.equal(first.ok, true, first.text);
+  assert.equal(pushes.length, 1);
+  const [{ event, options }] = pushes;
+  assert.equal(event.type, 'fun.home.free');
+  assert.equal(event.origin, 'internal');
+  assert.equal(event.source, 'fun');
+  assert.equal(options.deliver, true);
+  assert.match(event.text, /feast_life_now/, '先看日程');
+  assert.match(event.text, /feast_life_play/, '回来记一笔');
+  assert.match(event.text, /不会自己把你送出门/);
+  await assert.rejects(readFile(join(onDir, 'fun', 'state.json')), { code: 'ENOENT' }, '叫醒不改行程');
+
+  clock = Date.parse('2026-11-22T10:31:00+08:00');
+  assert.equal((await world.runAutoInvite()).skipped, 'noslot', '同一时段不重复叫');
+  clock = Date.parse('2026-11-22T12:00:00+08:00');
+  assert.equal((await world.runAutoInvite()).skipped, 'noslot', '不是时段不叫');
+  clock = Date.parse('2026-11-22T15:31:00+08:00');
+  assert.equal((await world.runAutoInvite()).ok, true, '下一个时段照叫，一天不限一次');
+  clock = Date.parse('2026-11-23T10:30:00+08:00');
+  assert.equal((await world.runAutoInvite()).ok, true, '跨天重来');
+  assert.equal(pushes.length, 3);
+
+  // 已经在外面：不叫。
+  clock = Date.parse('2026-11-23T15:30:00+08:00');
+  const go = world.tools().find((tool) => tool.name === 'fun_go').handler;
+  await go({ place: '咖啡店' });
+  assert.equal((await world.runAutoInvite()).skipped, 'trip');
+  assert.equal(pushes.length, 3);
 });
 
-test('撤销这次出门：调 fun_home 收摊，不留下进行中的行程', async (t) => {
-  const dir = await mkdtemp(join(tmpdir(), 'fun-home-auto-undo-'));
+test('出门回执提示写进日程；面板不再有撤销自动出门', async (t) => {
+  const dir = await mkdtemp(join(tmpdir(), 'fun-home-selfgo-trip-'));
   const world = new FunWorld({
     cfg: { ...DEFAULTS, enabled: true, funHomeAutoGo: true }, dataDir: dir, timezone: TZ, now: () => NOON,
   });
   await world.start({ log: { info() {}, warn() {} } });
   t.after(async () => { await world.stop(); await rm(dir, { recursive: true, force: true }); });
-  assert.equal((await world.runAutoGo()).ok, true);
+
+  const go = world.tools().find((tool) => tool.name === 'fun_go').handler;
+  const entered = await go({ place: '咖啡店' });
+  assert.equal(entered.failed, undefined, entered.text);
+  assert.match(entered.text, /feast_life_adjust/, '出门回执要提示写进当天日程');
+  assert.match(entered.text, /feast_life_play/);
+
   const state = await world.webUi('zh').invoke('home', 'state', []);
   assert.equal(state.trip.mode, 'out');
-  assert.equal(state.trip.auto, true);
-  const undone = await world.webUi('zh').invoke('home', 'undoAutoGo', [{}]);
-  assert.equal(undone.ok, true, undone.error);
-  assert.equal(undone.trip.mode, 'home');
-  const stored = JSON.parse(await readFile(join(dir, 'fun', 'state.json'), 'utf8'));
-  assert.equal(stored.session, null);
-  assert.equal(stored.trips[0].auto, true);
-  const none = await world.webUi('zh').invoke('home', 'undoAutoGo', [{}]);
-  assert.equal(none.ok, false, '没有自动行程时明确失败');
+  assert.equal(state.trip.auto, false, '不再有自动出门标记');
+  const undo = await world.webUi('zh').invoke('home', 'undoAutoGo', [{}]);
+  assert.equal(undo.ok, false, 'undoAutoGo 已经移除');
 });

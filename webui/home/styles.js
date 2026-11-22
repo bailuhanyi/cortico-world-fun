@@ -121,11 +121,6 @@ export const HOME_STYLES = `
 .fhm-import input{font-size:10.5px;max-width:150px}
 .fhm-snaps textarea{width:100%;margin-top:6px;font:inherit;font-size:11px;padding:5px 8px;border-radius:8px;
   border:1px solid var(--f-line,#e3e4e3);background:var(--f-soft,#f3efe9);color:var(--f-ink,#1b1a1e)}
-.fhm-auto{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:8px 2px 0;padding:7px 10px;border-radius:10px;
-  border:1px solid color-mix(in srgb,var(--f-warm,#e0862f) 40%,var(--f-line,#e3e4e3));
-  background:color-mix(in srgb,var(--f-warm,#e0862f) 7%,var(--f-card,#fbfbfb));font-size:11.5px;color:var(--f-ink,#1b1a1e)}
-.fhm-auto button{font:inherit;font-size:11px;padding:3px 10px;border-radius:999px;cursor:pointer;
-  border:1px solid var(--f-line,#e3e4e3);background:var(--f-card,#fbfbfb);color:var(--f-ink,#1b1a1e)}
 
 .fhm-pending{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:8px 2px 0;padding:7px 10px;border-radius:10px;
   border:1px solid var(--f-line,#e3e4e3);background:color-mix(in srgb,var(--f-card,#fbfbfb) 88%,var(--f-soft,#f3efe9))}

@@ -423,6 +423,9 @@ export class HomeRoom {
   #artDir;
   #snapDir;
   #now;
+  /** 内置 Q 版立绘的目录（随包走，不进用户数据目录）。 */
+  #builtinDir = new URL('../assets/home/', import.meta.url);
+  #builtinIds = null;
 
   constructor({ dataDir, now = () => Date.now() } = {}) {
     this.#dir = join(dataDir, 'fun', 'home');
@@ -435,6 +438,33 @@ export class HomeRoom {
   roomFile() { return this.#file; }
   artDir() { return this.#artDir; }
   snapshotsDir() { return this.#snapDir; }
+
+  /** 内置 Q 版立绘有哪几个活动（目录只扫一次；没带素材就当没有）。 */
+  async builtinIds() {
+    if (this.#builtinIds) return this.#builtinIds;
+    let names = [];
+    try { names = await readdir(this.#builtinDir); } catch { /* 没带素材：走纯 CSS 房间 */ }
+    this.#builtinIds = ACTIVITIES.filter((id) => names.some((name) => name.startsWith(`chibi-${id}.`)));
+    return this.#builtinIds;
+  }
+
+  /** 一张内置立绘；这个活动没有就退回 idle，不编图。 */
+  async #builtinArt(activity) {
+    const ids = await this.builtinIds();
+    if (!ids.length) return null;
+    const id = ids.includes(activity) ? activity : (ids.includes('idle') ? 'idle' : ids[0]);
+    for (const ext of ['webp', 'png']) {
+      try {
+        const bytes = await readFile(new URL(`chibi-${id}.${ext}`, this.#builtinDir));
+        const mime = mimeOfBytes(bytes) || (ext === 'webp' ? 'image/webp' : 'image/png');
+        return { dataUrl: `data:${mime};base64,${bytes.toString('base64')}`, mime, bytes: bytes.length, builtin: id };
+      } catch (error) {
+        if (error?.code === 'ENOENT') continue;
+        throw error;
+      }
+    }
+    return null;
+  }
 
   /** 读盘；缺失 = 全新的空房间，坏文件 = 只读模式（绝不拿空状态覆盖）。 */
   async #load() {
@@ -482,7 +512,9 @@ export class HomeRoom {
 
   async snapshot() {
     const { state, damaged, warning } = await this.#load();
-    return { ...this.#public(state), damaged, warning };
+    const pub = this.#public(state);
+    pub.art.builtin = await this.builtinIds();
+    return { ...pub, damaged, warning };
   }
 
   /** 一张图的数据；没有这张就返回 null（缺图不是错误）。 */
@@ -494,7 +526,11 @@ export class HomeRoom {
     else if (slot === 'painting') ref = state.art.painting;
     else if (slot === 'character') ref = state.art.characters[activity] ?? state.art.characters.idle ?? '';
     else fail('INVALID_ROOM', '只支持背景、前景、画架和角色图。');
-    if (!ref) return null;
+    if (!ref) {
+      // 没传过角色图就用内置 Q 版立绘；其他槽位缺图就是缺图。
+      if (slot !== 'character') return null;
+      return await this.#builtinArt(activity);
+    }
     const path = join(this.#artDir, ref);
     let entry;
     try {

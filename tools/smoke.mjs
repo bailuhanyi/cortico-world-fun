@@ -44,7 +44,8 @@ ok(typeof funDefinition.defaults === 'function', 'defaults 是函数');
 ok(typeof funDefinition.preflight === 'function', 'preflight 是函数');
 ok(typeof funDefinition.create === 'function', 'create 是函数');
 ok(Array.isArray(funDefinition.describe?.tools), 'describe.tools 是数组');
-ok(Array.isArray(funDefinition.describe?.events) && funDefinition.describe.events.length === 0, 'describe.events 为空（不推事件）');
+ok(Array.isArray(funDefinition.describe?.events) && funDefinition.describe.events.length === 1
+  && funDefinition.describe.events[0].type === 'fun.home.free', 'describe.events 只有「自己出门时段」那一个叫醒');
 
 console.log('2) defaults / preflight');
 const d = funDefinition.defaults();

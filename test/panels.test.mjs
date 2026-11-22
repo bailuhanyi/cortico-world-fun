@@ -325,7 +325,10 @@ test('家：出门中只读显示，切姿势不改行程，也不写旧存档',
   // 固定 now 是 14:00 → 时段默认「读书」；room.json 里仍不写这个活动。
   assert.equal(idle.room.activity, 'reading');
   assert.equal(idle.room.source, 'default');
-  assert.equal((await decl.invoke('home', 'art', [{ slot: 'character' }])).image, null);
+  // 没传角色图时给内置 Q 版立绘（不是 null）：面板据此画人，不留破图标。
+  const art = await decl.invoke('home', 'art', [{ slot: 'character' }]);
+  assert.equal(art.image.builtin, 'idle');
+  assert.match(art.image.dataUrl, /^data:image\/webp;base64,/);
 
   await tool('fun_go')({ place: '海洋馆' });
   const before = await readFile(stateFile);

@@ -78,6 +78,7 @@ async function mountHomePanel(t, prepare, options = {}) {
       pending += 1;
       try { return await call(method, args?.[0]); } finally { pending -= 1; }
     },
+    ...(options.pickPath ? { pickPath: options.pickPath } : {}),
   });
   await mounted.ready;
   await flush();
@@ -115,23 +116,29 @@ test('没素材也能打开：CSS 房间、十个活动、时段默认活动', a
   assert.equal(active.length, 1);
   // 21:30 属于 21:00–23:59 → 刷视频；这是服务端算的，没写进 room.json。
   assert.equal(active[0].textContent, '刷视频');
-  assert.equal(h.root.querySelectorAll('img').length, 0, '缺图时不要留一个破图标');
+  await h.settle();
+  const imgs = h.root.querySelectorAll('img');
+  assert.equal(imgs.length, 1, '没传图时画内置 Q 版立绘');
+  assert.equal(imgs[0].className, 'fhm-char');
+  for (let i = 0; i < 50 && !imgs[0].getAttribute('src'); i += 1) await flush();
+  assert.match(imgs[0].getAttribute('src') ?? '', /^data:image\/webp;base64,/, '内置立绘要真的取到图，不留破图标');
 });
 
 test('十个站位都带缩放，且按素材实测表落地板', () => {
   assert.deepEqual(Object.keys(HOME_LAYOUT).sort(), ['cards', 'chatting', 'cooking', 'gaming', 'idle',
     'looking_outside', 'painting', 'reading', 'sleeping', 'watching']);
+  // 0.7.1：内置 Q 版立绘裁掉透明边后整体调小（旧值是按带留白的半写实立绘量的）。
   const expected = {
-    idle: [0.52, 0.93, 0.52], reading: [0.40, 0.92, 0.40], watching: [0.60, 0.93, 0.40],
-    cards: [0.34, 0.93, 0.42], gaming: [0.50, 0.955, 0.38], chatting: [0.62, 0.93, 0.40],
-    cooking: [0.13, 0.93, 0.52], painting: [0.30, 0.93, 0.50],
-    looking_outside: [0.21, 0.93, 0.52], sleeping: [0.45, 0.94, 0.34],
+    idle: [0.52, 0.93, 0.40], reading: [0.40, 0.92, 0.30], watching: [0.60, 0.93, 0.30],
+    cards: [0.34, 0.93, 0.30], gaming: [0.50, 0.955, 0.28], chatting: [0.62, 0.93, 0.32],
+    cooking: [0.13, 0.93, 0.40], painting: [0.30, 0.93, 0.36],
+    looking_outside: [0.21, 0.93, 0.40], sleeping: [0.45, 0.94, 0.26],
   };
   for (const [id, [x, y, scale]] of Object.entries(expected)) {
     assert.equal(HOME_LAYOUT[id].x, x, `${id} x`);
     assert.equal(HOME_LAYOUT[id].y, y, `${id} y`);
     assert.equal(HOME_LAYOUT[id].scale, scale, `${id} scale`);
-    assert.ok(HOME_LAYOUT[id].scale >= 0.3 && HOME_LAYOUT[id].scale <= 0.55, `${id} 比例在素材范围内`);
+    assert.ok(HOME_LAYOUT[id].scale >= 0.2 && HOME_LAYOUT[id].scale <= 0.45, `${id} 比例在 Q 版范围内`);
   }
 });
 
@@ -327,7 +334,7 @@ test('位置微调：只保存改过的活动，能单个/全部还原', async (
   await h.settle();
   const write = h.calls.find((call) => call.method === 'savePlacements');
   assert.ok(write);
-  assert.deepEqual(write.args[0].placements, { reading: { x: 0.42, y: 0.92, scale: 0.4 } });
+  assert.deepEqual(write.args[0].placements, { reading: { x: 0.42, y: 0.92, scale: 0.3 } });
 
   h.buttons().find((item) => item.getAttribute('aria-label') === '还原「读书」的位置').click();
   await h.settle();
@@ -352,20 +359,6 @@ test('快照：存一张、列表可见、能删；删了不影响当前房间',
   assert.match(h.root.textContent, /还没有快照/);
 });
 
-test('自动出门：票笺写「自己出去」，撤销会调 fun_home', async (t) => {
-  const h = await mountHomePanel(t, async ({ world }) => {
-    const result = await world.runAutoGo();
-    assert.equal(result.ok, true, result.text);
-  }, { cfg: { funHomeAutoGo: true }, now: NOON });
-  assert.match(h.root.textContent, /这趟是她自己出去的/);
-  assert.ok(h.root.textContent.includes('撤销这次出门'));
-  h.button('撤销这次出门').click();
-  await h.settle();
-  const call = h.calls.find((item) => item.method === 'undoAutoGo');
-  assert.ok(call, '撤销要走面板 RPC');
-  assert.doesNotMatch(h.root.textContent, /这趟是她自己出去的/);
-});
-
 test('布置页有画架选图与备份导出/导入入口', async (t) => {
   const h = await mountHomePanel(t);
   h.button('布置房间').click();
@@ -373,6 +366,30 @@ test('布置页有画架选图与备份导出/导入入口', async (t) => {
   assert.ok(h.buttons().some((item) => item.getAttribute('aria-label') === '选一张本地图挂到画架'));
   assert.ok(h.buttons().some((item) => item.textContent === '导出备份'));
   assert.ok(h.root.querySelectorAll('input').some((item) => item.getAttribute('aria-label') === '导入房间备份'));
+});
+
+test('画架选图：选择器必须收到 kind=file，选中的图落到 art.painting', async (t) => {
+  const seen = [];
+  let pickedFile = '';
+  const h = await mountHomePanel(t, async ({ dir }) => {
+    pickedFile = join(dir, 'wall.png');
+    await writeFile(pickedFile, Buffer.from(PNG, 'base64'));
+  }, {
+    pickPath: async (options) => { seen.push(options); return pickedFile; },
+  });
+  h.button('布置房间').click();
+  await h.settle();
+  h.button('选一张本地图').click();
+  await flush();
+  await h.settle();
+  // Coo 的 /api/path-picker 只认 kind: file | directory，缺了会回 400「kind 必须是 file 或 directory」。
+  assert.equal(seen.length, 1, '点一次只该弹一次选择器');
+  assert.equal(seen[0]?.kind, 'file');
+  assert.deepEqual(seen[0]?.extensions, ['.png', '.jpg', '.jpeg', '.gif', '.webp']);
+  const write = h.calls.find((item) => item.method === 'setPainting');
+  assert.equal(write?.args?.[0]?.path, pickedFile);
+  assert.match(h.root.textContent, /挂到画架上了。/);
+  assert.doesNotMatch(h.root.textContent, /kind 必须/);
 });
 
 test('前景层：可选图叠在角色前面', async (t) => {

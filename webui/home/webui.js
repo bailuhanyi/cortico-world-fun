@@ -17,6 +17,8 @@ import { HOME_STYLES } from './styles.js';
 
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 const ACCEPT = 'image/png,image/jpeg,image/gif,image/webp,.png,.jpg,.jpeg,.gif,.webp';
+/** 画架选图：和 attachPainting 认的 MIME 一致。 */
+const PICKER_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.gif', '.webp'];
 /** 按内容寻址的图片引用缓存：切回面板不重复拉同一张图。 */
 const artCache = new Map();
 /** 纪念品固定摆位：票根/杂项→书架、杯子→茶几、玩偶→沙发边、花草→窗台。 */
@@ -140,12 +142,16 @@ export function mountHome(ctx) {
       : slot === 'foreground' ? snapshot?.art?.foreground
         : slot === 'painting' ? snapshot?.art?.painting
           : (snapshot?.art?.characters?.[activity] ?? snapshot?.art?.characters?.idle);
-    if (!key) return null;
-    if (artCache.has(key)) return artCache.get(key);
+    // 没传过角色图时服务端会回内置 Q 版：没有 key 也要去取，缓存按内置活动记。
+    const builtin = snapshot?.art?.builtin ?? [];
+    const useBuiltin = slot === 'character' && !key && (builtin.includes(activity) || builtin.includes('idle'));
+    if (!key && !useBuiltin) return null;
+    const cacheKey = key || `builtin:${activity}`;
+    if (artCache.has(cacheKey)) return artCache.get(cacheKey);
     try {
       const result = await call('art', { slot, activity });
       const image = result?.image?.dataUrl ?? null;
-      if (image) artCache.set(key, image);
+      if (image) artCache.set(cacheKey, image);
       return image;
     } catch {
       return null;
@@ -355,8 +361,10 @@ export function mountHome(ctx) {
       loadArt('painting').then((src) => { if (src && live()) frame.setAttribute('src', src); });
     }
 
+    const builtin = snapshot.art?.builtin ?? [];
     const hasCharacter = Boolean(snapshot.art?.characters?.[snapshot.room.activity]
-      ?? snapshot.art?.characters?.idle);
+      ?? snapshot.art?.characters?.idle)
+      || builtin.includes(snapshot.room.activity) || builtin.includes('idle');
     const spot = effectiveSpot(snapshot.room.activity);
     // 接触阴影：有图没图都在，角色才不像贴纸。位置跟脚底走，大小跟缩放走。
     const shadow = el(document, 'div', {
@@ -556,7 +564,8 @@ export function mountHome(ctx) {
       return;
     }
     try {
-      const picked = await ctx.pickPath();
+      // 宿主的 pickPath 必须带 kind：Coo 校验 kind 只能是 file 或 directory，缺了直接 400。
+      const picked = await ctx.pickPath({ kind: 'file', title: '选一张图挂到画架', extensions: PICKER_EXTENSIONS });
       const path = typeof picked === 'string' ? picked : (picked?.path ?? picked?.filePath ?? '');
       if (!path) return;
       await write('setPainting', { path, revision: snapshot.revision }, '挂到画架上了。');
@@ -678,7 +687,7 @@ export function mountHome(ctx) {
       el(document, 'h3', { text: '布置房间' }),
       el(document, 'p', {
         class: 'fhm-dress-note',
-        text: '背景 1920×1080；角色图十个活动同一张画布、底边对齐（见素材单）。单张不超过 8 MiB，支持 PNG / JPG / WebP / GIF。批量导入按文件名认领：bg-* 背景、ch-idle* 待机、act-<活动>* 对应活动；chibi-* 与其他会列进未使用。',
+        text: '没传角色图时用内置的 Q 版立绘（十个活动都有，透明边已裁掉）；想换就传自己的图。背景 1920×1080；角色图十个活动同一张画布、底边对齐。单张不超过 8 MiB，支持 PNG / JPG / WebP / GIF。批量导入按文件名认领：bg-* 背景、ch-idle* 待机、act-<活动>* 对应活动；chibi-* 与其他会列进未使用（内置已经有了，不用再导）。',
       }));
 
     const bgRow = el(document, 'div', { class: 'fhm-row' },
@@ -740,6 +749,8 @@ export function mountHome(ctx) {
 
     for (const activity of snapshot.activities) {
       const has = Boolean(snapshot.art?.characters?.[activity.id]);
+      const usingBuiltin = !has && ((snapshot.art?.builtin ?? []).includes(activity.id)
+        || (snapshot.art?.builtin ?? []).includes('idle'));
       box.append(el(document, 'div', { class: 'fhm-row' },
         el(document, 'span', { class: 'fhm-row-name', text: activity.label }),
         el(document, 'input', {
@@ -748,7 +759,7 @@ export function mountHome(ctx) {
           'aria-label': `选择「${activity.label}」的角色图`,
           onchange: (event) => { void upload('character', activity.id, event.target); },
         }),
-        el(document, 'span', { class: 'fhm-row-name', text: has ? '已设置' : '未设置' }),
+        el(document, 'span', { class: 'fhm-row-name', text: has ? '已设置' : (usingBuiltin ? '内置 Q 版' : '未设置') }),
         el(document, 'button', {
           type: 'button',
           text: '清空',
@@ -935,15 +946,6 @@ export function mountHome(ctx) {
         class: 'fhm-wish',
         text: `心愿 · ${w.placeName}${w.target ? ` · ${w.target}` : ''}${w.reason ? `：${w.reason}` : ''}`,
       }));
-    }
-    if (snapshot.trip?.auto && snapshot.trip.mode !== 'home') {
-      nodes.push(el(document, 'div', { class: 'fhm-auto' },
-        el(document, 'span', { text: '这趟是她自己出去的。' }),
-        el(document, 'button', {
-          type: 'button',
-          text: '撤销这次出门',
-          onclick: () => { void write('undoAutoGo', {}, '已经把她叫回来了。'); },
-        })));
     }
     return nodes;
   }
