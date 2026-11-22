@@ -115,7 +115,7 @@ export function mountHome(ctx) {
   let busy = false;
   let snapshot = null;
   let ticker = null;
-  const view = { editing: false, noteDraft: null, planDraft: null, feedback: '', tone: '', batch: null };
+  const view = { editing: false, noteDraft: null, planDraft: null, feedback: '', tone: '', batch: null, copyFallback: '' };
   const live = () => !disposed && !ctx.signal?.aborted;
 
   function call(method, payload) {
@@ -469,6 +469,38 @@ export function mountHome(ctx) {
     return box;
   }
 
+  async function copyPending() {
+    const text = snapshot.pendingLine;
+    if (!text) return;
+    try {
+      const clipboard = document.defaultView?.navigator?.clipboard ?? globalThis.navigator?.clipboard;
+      if (!clipboard?.writeText) throw new Error('no clipboard');
+      await clipboard.writeText(text);
+      view.copyFallback = '';
+      tell('已复制「待记一条」。', 'ok');
+    } catch {
+      // 拿不到剪贴板（无权限 / 宿主没给）就退回只读文本框，不假装复制成功。
+      view.copyFallback = text;
+      tell('剪贴板用不了，这行可以直接选中复制。', '');
+    }
+    render();
+  }
+
+  function renderPending() {
+    if (!snapshot.pendingLine) return null;
+    const row = el(document, 'div', { class: 'fhm-pending' },
+      el(document, 'span', { class: 'fhm-pending-label', text: '待记一条' }),
+      el(document, 'span', { class: 'fhm-pending-text', text: snapshot.pendingLine }),
+      el(document, 'button', { type: 'button', text: '记一笔', onclick: () => { void copyPending(); } }),
+      el(document, 'span', { class: 'fhm-fine', text: '只复制文本，不会自动记录' }));
+    if (view.copyFallback) {
+      const box = el(document, 'textarea', { readonly: '', rows: '1', 'aria-label': '待记一条文本' });
+      box.value = view.copyFallback;
+      row.append(box);
+    }
+    return row;
+  }
+
   function renderEntry() {
     const nodes = [];
     if (snapshot.resume) {
@@ -533,7 +565,7 @@ export function mountHome(ctx) {
       'data-tone': view.tone,
       text: snapshot.warning || view.feedback,
     });
-    const nodes = [head, feedback, renderStage(), ...renderEntry(), renderChips(), renderActions(), renderPlan()];
+    const nodes = [head, feedback, renderStage(), ...renderEntry(), renderChips(), renderActions(), renderPlan(), renderPending()];
     const dress = renderDress();
     if (dress) nodes.push(dress);
     nodes.push(el(document, 'p', { class: 'fhm-foot', text: '出门在「去哪儿」，故事在「出游」。这里只记她在家里的样子。' }));

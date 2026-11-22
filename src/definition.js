@@ -31,6 +31,14 @@ const TOOL_SUMMARIES = {
     zh: '结束行程并返回本次摘要与记录提示。',
     en: 'End the trip and return its summary and logging prompt.',
   },
+  fun_home_state: {
+    zh: '只读查看房间状态与可复制的「待记一条」；不含图片，不写盘。',
+    en: 'Read the room state and a copyable "one line to log"; no images, no writes.',
+  },
+  fun_home_activity: {
+    zh: '切换她在家的十个固定活动之一，可附备注；revision 冲突不自动重试。',
+    en: 'Switch one of her ten fixed home activities, optionally with a note; no retry on revision conflicts.',
+  },
   fun_start: {
     zh: '查看当前推荐地点；详细筛选用 fun_places。',
     en: 'Show current place recommendations; use fun_places for filters.',

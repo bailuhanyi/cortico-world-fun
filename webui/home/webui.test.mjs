@@ -245,6 +245,18 @@ test('未完行程：显示票笺与继续，继续用同一个 id', async (t) =
   assert.match(h.root.textContent, /出门中 · 海洋馆/);
 });
 
+test('记一笔：拿不到剪贴板就退回只读文本，不产生写请求', async (t) => {
+  const h = await mountHomePanel(t);
+  assert.match(h.root.textContent, /待记一条/);
+  assert.match(h.root.textContent, /11 月 22 日 21:30 · 在家刷视频/);
+  h.button('记一笔').click();
+  await h.settle();
+  const box = h.root.querySelectorAll('textarea').find((item) => item.getAttribute('aria-label') === '待记一条文本');
+  assert.ok(box, '没有剪贴板时要出现只读文本框');
+  assert.match(box.value, /11 月 22 日 21:30 · 在家刷视频/);
+  assert.equal(h.calls.filter((call) => !['state', 'art'].includes(call.method)).length, 0, '复制不是写操作');
+});
+
 test('今天想做什么：≤60 字、只写非空；旁边写明不会变成经历', async (t) => {
   const h = await mountHomePanel(t);
   const plan = h.root.querySelectorAll('textarea').find((item) => item.getAttribute('aria-label') === '今天想做什么');

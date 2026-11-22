@@ -4029,6 +4029,16 @@ var HOME_STYLES = `
 .fhm-plan button:hover{border-color:var(--f-accent,#00a870)}
 .fhm-plan .fhm-fine{margin-left:0}
 
+.fhm-pending{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:8px 2px 0;padding:7px 10px;border-radius:10px;
+  border:1px solid var(--f-line,#e3e4e3);background:color-mix(in srgb,var(--f-card,#fbfbfb) 88%,var(--f-soft,#f3efe9))}
+.fhm-pending-label{font-size:11px;letter-spacing:.04em;color:var(--f-dim,#6b6b70)}
+.fhm-pending-text{flex:1 1 260px;min-width:0;font-size:12px;line-height:1.5;color:var(--f-ink,#1b1a1e);word-break:break-word}
+.fhm-pending button{font:inherit;font-size:11.5px;padding:3px 10px;border-radius:999px;cursor:pointer;
+  border:1px solid var(--f-line,#e3e4e3);background:var(--f-card,#fbfbfb);color:var(--f-ink,#1b1a1e)}
+.fhm-pending button:hover{border-color:var(--f-accent,#00a870)}
+.fhm-pending textarea{flex:1 1 100%;min-height:30px;font:inherit;font-size:12px;padding:4px 8px;border-radius:8px;
+  border:1px solid var(--f-line,#e3e4e3);background:var(--f-soft,#f3efe9);color:var(--f-ink,#1b1a1e);resize:vertical}
+
 .fhm-chips{display:flex;gap:6px;flex-wrap:nowrap;overflow-x:auto;padding:10px 2px 4px;scrollbar-width:thin}
 .fhm-chip{flex:none;font-size:12px;line-height:1.5;padding:4px 11px;border-radius:999px;cursor:pointer;
   border:1px solid var(--f-line,#e3e4e3);background:var(--f-card,#fbfbfb);color:var(--f-dim,#6b6b70);font:inherit;font-size:12px}
@@ -4164,7 +4174,7 @@ function mountHome(ctx) {
   let busy = false;
   let snapshot = null;
   let ticker = null;
-  const view = { editing: false, noteDraft: null, planDraft: null, feedback: "", tone: "", batch: null };
+  const view = { editing: false, noteDraft: null, planDraft: null, feedback: "", tone: "", batch: null, copyFallback: "" };
   const live = () => !disposed && !ctx.signal?.aborted;
   function call(method, payload) {
     return ctx.invoke(method, payload === void 0 ? [] : [payload]);
@@ -4539,6 +4549,41 @@ function mountHome(ctx) {
     ));
     return box;
   }
+  async function copyPending() {
+    const text2 = snapshot.pendingLine;
+    if (!text2) return;
+    try {
+      const clipboard = document2.defaultView?.navigator?.clipboard ?? globalThis.navigator?.clipboard;
+      if (!clipboard?.writeText) throw new Error("no clipboard");
+      await clipboard.writeText(text2);
+      view.copyFallback = "";
+      tell("已复制「待记一条」。", "ok");
+    } catch {
+      view.copyFallback = text2;
+      tell("剪贴板用不了，这行可以直接选中复制。", "");
+    }
+    render();
+  }
+  function renderPending() {
+    if (!snapshot.pendingLine) return null;
+    const row = el2(
+      document2,
+      "div",
+      { class: "fhm-pending" },
+      el2(document2, "span", { class: "fhm-pending-label", text: "待记一条" }),
+      el2(document2, "span", { class: "fhm-pending-text", text: snapshot.pendingLine }),
+      el2(document2, "button", { type: "button", text: "记一笔", onclick: () => {
+        void copyPending();
+      } }),
+      el2(document2, "span", { class: "fhm-fine", text: "只复制文本，不会自动记录" })
+    );
+    if (view.copyFallback) {
+      const box = el2(document2, "textarea", { readonly: "", rows: "1", "aria-label": "待记一条文本" });
+      box.value = view.copyFallback;
+      row.append(box);
+    }
+    return row;
+  }
   function renderEntry() {
     const nodes = [];
     if (snapshot.resume) {
@@ -4620,7 +4665,7 @@ function mountHome(ctx) {
       "data-tone": view.tone,
       text: snapshot.warning || view.feedback
     });
-    const nodes = [head, feedback3, renderStage(), ...renderEntry(), renderChips(), renderActions(), renderPlan()];
+    const nodes = [head, feedback3, renderStage(), ...renderEntry(), renderChips(), renderActions(), renderPlan(), renderPending()];
     const dress = renderDress();
     if (dress) nodes.push(dress);
     nodes.push(el2(document2, "p", { class: "fhm-foot", text: "出门在「去哪儿」，故事在「出游」。这里只记她在家里的样子。" }));

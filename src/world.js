@@ -181,6 +181,36 @@ export const FUN_TOOL_DECLS = [
     },
   },
   {
+    // 注意：`fun_home` 已经是「回家」这个写工具，不能再拿它当只读房间工具。
+    // 只读的房间状态单独叫 `fun_home_state`；写活动叫 `fun_home_activity`。
+    name: 'fun_home_state',
+    tags: ['read', 'snapshot'],
+    description: '查看家里的房间状态：活动、备注、今天想做什么、待记一条、住所名、在不在外面。只读，不含图片字节。',
+    parameters: {
+      type: 'object',
+      properties: {},
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'fun_home_activity',
+    tags: ['write'],
+    description: '切换她在家的活动（十个固定 id），可附一句备注。expectedRevision 与当前不一致时返回原因，不自动重试。',
+    parameters: {
+      type: 'object',
+      properties: {
+        activity: {
+          type: 'string',
+          description: '十个活动之一：idle / reading / watching / cards / gaming / painting / cooking / looking_outside / sleeping / chatting。',
+        },
+        note: { type: 'string', description: '一句房间备注，最多 120 字，可选。' },
+        expectedRevision: { type: 'integer', minimum: 0, description: 'fun_home_state 返回的 revision。' },
+      },
+      required: ['activity', 'expectedRevision'],
+      additionalProperties: false,
+    },
+  },
+  {
     name: 'fun_start',
     tags: ['read'],
     description: '查看当前推荐地点；详细筛选用 fun_places。',
@@ -680,6 +710,8 @@ export class FunWorld {
         if ((this.#state.session ?? this.#state.draft)?.storyRun?.participation === 'duo') return { failed: true, text: '双人故事由用户在故事面板明确结束，鱼不能代替用户回家。' };
         return await this.#homeTool(args);
       }
+      case 'fun_home_state': return await this.#homeStateTool();
+      case 'fun_home_activity': return await this.#homeActivityTool(args);
       case 'fun_start': return this.#startTool();
       case 'fun_route': return await this.#routeTool(args);
       case 'fun_view': return this.#viewTool(args);
@@ -2902,6 +2934,7 @@ export class FunWorld {
       elapsedMinutes: byDefault ? null : snapshot.room.elapsedMinutes,
       defaultActivity,
     };
+    const pendingLine = this.#pendingLine(room, trip);
     return {
       ok: true,
       revision: snapshot.revision,
@@ -2918,8 +2951,62 @@ export class FunWorld {
         ? { id: activeWish.id, placeName: activeWish.placeName, target: activeWish.target ?? '', reason: activeWish.reason ?? '' }
         : null,
       keepsakes,
+      pendingLine,
       activities: ACTIVITIES.map((id) => ({ id, label: ACTIVITY_LABELS[id], hint: ACTIVITY_HINTS[id] })),
     };
+  }
+
+  /**
+   * 「待记一条」：房间这一刻的可复制文本，**不是经历**。
+   * 有备注才加最后一段；在外面就写地点和进度。日期时间按 World 自己的时区算。
+   */
+  #pendingLine(room, trip) {
+    const now = this.#now();
+    const day = dayIn(this.timezone, now);
+    const [, month, date] = day.split('-');
+    const where = trip.mode === 'home'
+      ? `在家${room.label}`
+      : `在${trip.placeName}${trip.total ? `（逛了 ${trip.visited}/${trip.total}）` : ''}`;
+    return `${Number(month)} 月 ${Number(date)} 日 ${hmIn(this.timezone, now)} · ${where}${room.note ? ` · ${room.note}` : ''}`;
+  }
+
+  /** 模型只读面：房间状态 + 待记一条；不返回图片字节，也不写盘。 */
+  async #homeStateTool() {
+    const state = await this.#homeState();
+    const lines = [`在家：${state.room.label}（${state.room.source === 'default' ? '随时段变' : '已固定'}）`];
+    if (state.room.note) lines.push(`备注：${state.room.note}`);
+    if (state.room.plan) lines.push(`今天想做什么：${state.room.plan}`);
+    if (state.place?.name) lines.push(`住所：${state.place.name}`);
+    if (state.trip.mode === 'out') lines.push(`现在在外面：${state.trip.placeName}（逛了 ${state.trip.visited}/${state.trip.total}）`);
+    else if (state.trip.mode === 'draft') lines.push(`还留着一趟：${state.trip.placeName}（逛了 ${state.trip.visited}/${state.trip.total}）`);
+    else lines.push('现在在家，没有进行中的行程。');
+    lines.push(`待记一条：${state.pendingLine}`);
+    lines.push('（房间状态是画面，不是经历；要不要记由用户和主会话决定。）');
+    return { text: lines.join('\n'), pendingLine: state.pendingLine, revision: state.revision, room: state.room, trip: state.trip };
+  }
+
+  /** 模型写面：只切姿态/写备注，改的是 `fun/home/room.json`，不写生活记录。 */
+  async #homeActivityTool(args) {
+    const expectedRevision = args?.expectedRevision;
+    if (!Number.isSafeInteger(expectedRevision) || expectedRevision < 0) {
+      return { failed: true, text: '[fun_home_activity 失败] expectedRevision 必须是 fun_home_state 返回的非负整数。' };
+    }
+    try {
+      await this.#home.setActivity(args?.activity, { note: args?.note, revision: expectedRevision });
+      const state = await this.#homeState();
+      return {
+        text: `换成「${state.room.label}」了。\n待记一条：${state.pendingLine}\n（切姿势不写生活记录，也不推进行程。）`,
+        pendingLine: state.pendingLine, revision: state.revision,
+      };
+    } catch (error) {
+      if (error?.code === 'STALE_ROOM') {
+        return { failed: true, text: '[fun_home_activity 失败] 房间刚被改过（revision 已不是最新的）。先用 fun_home_state 再看一次；没有自动重试。' };
+      }
+      if (error?.code === 'INVALID_ACTIVITY') {
+        return { failed: true, text: '[fun_home_activity 失败] 不认识这个活动；只有十个固定 id，先看 fun_home_state。' };
+      }
+      return { failed: true, text: `[fun_home_activity 失败] ${msg(error)}` };
+    }
   }
 
   async #invokeHome(method, payload) {

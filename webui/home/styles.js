@@ -92,6 +92,16 @@ export const HOME_STYLES = `
 .fhm-plan button:hover{border-color:var(--f-accent,#00a870)}
 .fhm-plan .fhm-fine{margin-left:0}
 
+.fhm-pending{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:8px 2px 0;padding:7px 10px;border-radius:10px;
+  border:1px solid var(--f-line,#e3e4e3);background:color-mix(in srgb,var(--f-card,#fbfbfb) 88%,var(--f-soft,#f3efe9))}
+.fhm-pending-label{font-size:11px;letter-spacing:.04em;color:var(--f-dim,#6b6b70)}
+.fhm-pending-text{flex:1 1 260px;min-width:0;font-size:12px;line-height:1.5;color:var(--f-ink,#1b1a1e);word-break:break-word}
+.fhm-pending button{font:inherit;font-size:11.5px;padding:3px 10px;border-radius:999px;cursor:pointer;
+  border:1px solid var(--f-line,#e3e4e3);background:var(--f-card,#fbfbfb);color:var(--f-ink,#1b1a1e)}
+.fhm-pending button:hover{border-color:var(--f-accent,#00a870)}
+.fhm-pending textarea{flex:1 1 100%;min-height:30px;font:inherit;font-size:12px;padding:4px 8px;border-radius:8px;
+  border:1px solid var(--f-line,#e3e4e3);background:var(--f-soft,#f3efe9);color:var(--f-ink,#1b1a1e);resize:vertical}
+
 .fhm-chips{display:flex;gap:6px;flex-wrap:nowrap;overflow-x:auto;padding:10px 2px 4px;scrollbar-width:thin}
 .fhm-chip{flex:none;font-size:12px;line-height:1.5;padding:4px 11px;border-radius:999px;cursor:pointer;
   border:1px solid var(--f-line,#e3e4e3);background:var(--f-card,#fbfbfb);color:var(--f-dim,#6b6b70);font:inherit;font-size:12px}
