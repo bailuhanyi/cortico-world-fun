@@ -155,7 +155,7 @@ test('默认结构就是 blankRoom 的形状（给世界层兜底用）', async 
   assert.deepEqual(blankRoom(), {
     version: 1,
     revision: 0,
-    room: { activity: 'idle', since: null, source: 'default', note: '' },
+    room: { activity: 'idle', since: null, source: 'default', note: '', plan: '' },
     art: { background: '', characters: {}, hotspots: [] },
     updatedAt: null,
   });

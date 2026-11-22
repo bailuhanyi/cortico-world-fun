@@ -19,6 +19,19 @@ const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 const ACCEPT = 'image/png,image/jpeg,image/gif,image/webp,.png,.jpg,.jpeg,.gif,.webp';
 /** 按内容寻址的图片引用缓存：切回面板不重复拉同一张图。 */
 const artCache = new Map();
+/** 纪念品固定摆位：票根/杂项→书架、杯子→茶几、玩偶→沙发边、花草→窗台。 */
+const KEEPSAKE_SLOTS = {
+  ticket: { left: 50, top: 40, icon: '🎫' },
+  shelf: { left: 55, top: 44, icon: '🧩' },
+  cup: { left: 47, top: 70, icon: '☕' },
+  doll: { left: 85, top: 72, icon: '🧸' },
+  plant: { left: 16, top: 58, icon: '🪴' },
+};
+
+function monthDay(day) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(day ?? ''));
+  return match ? `${Number(match[2])} 月 ${Number(match[3])} 日` : '';
+}
 
 /**
  * 批量导入按文件名分拣（任务书 §4.6）：
@@ -102,7 +115,7 @@ export function mountHome(ctx) {
   let busy = false;
   let snapshot = null;
   let ticker = null;
-  const view = { editing: false, noteDraft: null, feedback: '', tone: '', batch: null };
+  const view = { editing: false, noteDraft: null, planDraft: null, feedback: '', tone: '', batch: null };
   const live = () => !disposed && !ctx.signal?.aborted;
 
   function call(method, payload) {
@@ -252,6 +265,37 @@ export function mountHome(ctx) {
     }
 
     if (snapshot.room.note) stage.append(el(document, 'p', { class: 'fhm-note', text: snapshot.room.note }));
+
+    // 纪念品：最新 3–5 件按类别落固定摆位；点一下只读气泡，不发任何写请求。
+    const used = {};
+    const bubbles = [];
+    for (const item of snapshot.keepsakes ?? []) {
+      const slot = KEEPSAKE_SLOTS[item.category] ?? KEEPSAKE_SLOTS.shelf;
+      const offset = used[item.category] ?? 0;
+      used[item.category] = offset + 1;
+      const left = slot.left + offset * 3;
+      const top = slot.top + offset * 3;
+      const bubble = el(document, 'span', {
+        class: 'fhm-keepsake-bubble',
+        hidden: true,
+        text: `${item.name} · 来自${item.placeName}${monthDay(item.day) ? ` · ${monthDay(item.day)}` : ''}`,
+        style: `left:${left}%;top:${top}%`,
+      });
+      bubbles.push(bubble);
+      stage.append(el(document, 'button', {
+        type: 'button',
+        class: 'fhm-keepsake',
+        'aria-label': `${item.name}，来自${item.placeName}`,
+        title: `${item.name} · 来自${item.placeName}`,
+        text: slot.icon,
+        style: `left:${left}%;top:${top}%`,
+        onclick: () => {
+          const open = bubble.hidden;
+          for (const other of bubbles) other.hidden = true;
+          bubble.hidden = !open;
+        },
+      }), bubble);
+    }
     return stage;
   }
 
@@ -425,6 +469,58 @@ export function mountHome(ctx) {
     return box;
   }
 
+  function renderEntry() {
+    const nodes = [];
+    if (snapshot.resume) {
+      const r = snapshot.resume;
+      nodes.push(el(document, 'div', { class: 'fhm-draft' },
+        el(document, 'p', {
+          class: 'fhm-draft-text',
+          text: `还留着一趟 · ${r.placeName}（逛了 ${r.visited}/${r.total}）`,
+        }),
+        el(document, 'button', {
+          type: 'button',
+          text: '继续',
+          disabled: busy,
+          onclick: () => { void write('resume', { id: r.id }, '接着逛这趟。'); },
+        }),
+        el(document, 'span', { class: 'fhm-fine', text: '只接着逛；回不回家由你决定' })));
+    }
+    if (snapshot.wish) {
+      const w = snapshot.wish;
+      nodes.push(el(document, 'p', {
+        class: 'fhm-wish',
+        text: `心愿 · ${w.placeName}${w.target ? ` · ${w.target}` : ''}${w.reason ? `：${w.reason}` : ''}`,
+      }));
+    }
+    return nodes;
+  }
+
+  function renderPlan() {
+    const plan = el(document, 'textarea', {
+      maxlength: '60',
+      rows: '1',
+      placeholder: '今天想做什么？写一句，比如「想读半小时书」',
+      'aria-label': '今天想做什么',
+    });
+    plan.value = view.planDraft ?? snapshot.room.plan ?? '';
+    plan.addEventListener('input', () => { view.planDraft = plan.value; });
+    return el(document, 'div', { class: 'fhm-plan' },
+      el(document, 'span', { class: 'fhm-plan-label', text: '今天想做什么' }),
+      plan,
+      el(document, 'button', {
+        type: 'button',
+        text: '保存',
+        disabled: busy,
+        onclick: () => {
+          void write('setPlan', { plan: plan.value, revision: snapshot.revision }).then((result) => {
+            if (result) { view.planDraft = null; render(); }
+          });
+        },
+      }),
+      el(document, 'span', { class: 'fhm-fine', text: '只显示你写的，不会自动变成她做过的事' }));
+  }
+
   function render() {
     if (disposed || !snapshot) return;
     const head = el(document, 'header', { class: 'fhm-head' },
@@ -437,7 +533,7 @@ export function mountHome(ctx) {
       'data-tone': view.tone,
       text: snapshot.warning || view.feedback,
     });
-    const nodes = [head, feedback, renderStage(), renderChips(), renderActions()];
+    const nodes = [head, feedback, renderStage(), ...renderEntry(), renderChips(), renderActions(), renderPlan()];
     const dress = renderDress();
     if (dress) nodes.push(dress);
     nodes.push(el(document, 'p', { class: 'fhm-foot', text: '出门在「去哪儿」，故事在「出游」。这里只记她在家里的样子。' }));

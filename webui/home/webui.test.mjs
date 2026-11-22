@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { FunWorld } from '../../src/world.js';
@@ -49,11 +49,12 @@ class Node extends EventTarget {
 
 async function mountHomePanel(t, prepare) {
   const dir = await mkdtemp(join(tmpdir(), 'fun-home-ui-'));
-  const world = new FunWorld({ dataDir: dir, now: () => FIXED_NOW });
+  const clock = { now: FIXED_NOW };
+  const world = new FunWorld({ dataDir: dir, now: () => clock.now });
   await world.start({});
   t.after(async () => { await world.stop(); await rm(dir, { recursive: true, force: true }); });
   const call = (method, payload) => world.webUi().invoke('home', method, payload === undefined ? [] : [payload]);
-  if (prepare) await prepare({ dir, world, call });
+  if (prepare) await prepare({ dir, world, call, clock });
 
   const document = { createElement(tag) { return new Node(tag, this); } };
   const root = document.createElement('div');
@@ -89,7 +90,7 @@ async function mountHomePanel(t, prepare) {
     assert.ok(found, `找不到按钮：${label}`);
     return found;
   };
-  return { root, calls, mounted, button, buttons, settle, document };
+  return { root, calls, mounted, button, buttons, settle, document, clock, dir, world };
 }
 
 test('没素材也能打开：CSS 房间、十个活动、时段默认活动', async (t) => {
@@ -161,7 +162,7 @@ test('布置房间：背景与十个活动各一个文件入口，备注能存�
   await h.settle();
   const inputs = h.root.querySelectorAll('input');
   assert.equal(inputs.length, 12, '批量导入 1 + 背景 1 + 十个活动');
-  const textarea = h.root.querySelectorAll('textarea')[0];
+  const textarea = h.root.querySelectorAll('textarea').find((item) => item.getAttribute('aria-label') === '房间备注');
   assert.ok(textarea, '备注输入框要在');
   textarea.value = '在沙发上翻一本旧书';
   h.button('保存备注').click();
@@ -204,4 +205,57 @@ test('恢复默认把活动改回随时段变，已上传的图不删', async (t
   assert.equal(pressed.length, 1);
   assert.equal(pressed[0].textContent, '刷视频', '固定 21:30，恢复默认后回到时段默认');
   assert.ok(h.calls.some((call) => call.method === 'resetRoom'));
+});
+
+test('纪念品：摆出来、点一下只读气泡，零写请求', async (t) => {
+  const h = await mountHomePanel(t, async ({ world }) => {
+    const tool = (name) => world.tools().find((item) => item.name === name).handler;
+    await tool('fun_go')({ place: '海洋馆' });
+    await tool('fun_wander')({ area: '纪念品店', buy: '鲸鱼挂件' });
+    await tool('fun_home')({});
+    await tool('fun_go')({ place: '咖啡店' });
+    await tool('fun_wander')({ buy: '店里的杯垫' });
+    await tool('fun_home')({});
+  });
+  const trinkets = h.buttons().filter((item) => item.className === 'fhm-keepsake');
+  assert.equal(trinkets.length, 2, '两趟各一件');
+  trinkets[0].click();
+  await h.settle();
+  assert.match(h.root.textContent, /来自(海洋馆|咖啡店)/);
+  assert.equal(h.calls.filter((call) => !['state', 'art'].includes(call.method)).length, 0, '点纪念品不发写请求');
+});
+
+test('未完行程：显示票笺与继续，继续用同一个 id', async (t) => {
+  const h = await mountHomePanel(t, async ({ world, clock }) => {
+    await world.tools().find((item) => item.name === 'fun_go').handler({ place: '海洋馆' });
+    // 跨两天 → 正在逛的那趟变成「还没逛完」的 draft。
+    clock.now += 2 * 24 * 60 * 60 * 1000;
+  });
+  assert.match(h.root.textContent, /还留着一趟 · 海洋馆/);
+  const before = JSON.parse(await readFile(join(h.dir, 'fun', 'state.json'), 'utf8'));
+  // 过期只在读的时候判成 draft；文件里仍是当时那趟 session。
+  assert.ok(before.session?.id);
+  h.button('继续').click();
+  await h.settle();
+  const call = h.calls.find((item) => item.method === 'resume');
+  assert.ok(call);
+  assert.equal(call.args[0].id, before.session.id);
+  const after = JSON.parse(await readFile(join(h.dir, 'fun', 'state.json'), 'utf8'));
+  assert.equal(after.session.id, before.session.id, '同一趟 id 不变');
+  assert.match(h.root.textContent, /出门中 · 海洋馆/);
+});
+
+test('今天想做什么：≤60 字、只写非空；旁边写明不会变成经历', async (t) => {
+  const h = await mountHomePanel(t);
+  const plan = h.root.querySelectorAll('textarea').find((item) => item.getAttribute('aria-label') === '今天想做什么');
+  assert.ok(plan, '计划输入框要在');
+  plan.value = '想读半小时书';
+  h.button('保存').click();
+  await h.settle();
+  const write = h.calls.find((call) => call.method === 'setPlan');
+  assert.ok(write);
+  assert.equal(write.args[0].plan, '想读半小时书');
+  assert.match(h.root.textContent, /不会自动变成她做过的事/);
+  const room = JSON.parse(await readFile(join(h.dir, 'fun', 'home', 'room.json'), 'utf8'));
+  assert.equal(room.room.plan, '想读半小时书');
 });

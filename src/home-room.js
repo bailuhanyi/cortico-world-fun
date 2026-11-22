@@ -51,6 +51,7 @@ const MAX_ROOM_BYTES = 256 * 1024;
 const MAX_ART_FILES = 64;
 const MAX_ART_BYTES = 128 * 1024 * 1024;
 const MAX_NOTE = 120;
+const MAX_PLAN = 60;
 const MAX_HOTSPOTS = 12;
 const REF = /^[a-f0-9]{64}\.(?:png|jpg|gif|webp)$/;
 const HOTSPOT_ID = /^[a-z0-9-]{1,32}$/;
@@ -73,6 +74,19 @@ export function defaultActivityAt(hour) {
   return 'watching';
 }
 
+/**
+ * 纪念品落到哪个固定位置：票根→书架、杯子→茶几、玩偶/挂件→沙发边、花草→窗台。
+ * 认不出的仍放书架（不丢、不摆到地板上）。
+ */
+export function souvenirCategory(name) {
+  const text = String(name ?? '');
+  if (/(票根|门票|小票)/.test(text)) return 'ticket';
+  if (/杯/.test(text)) return 'cup';
+  if (/(玩偶|娃娃|公仔|挂件)/.test(text)) return 'doll';
+  if (/(野花|花束|植物|绿植|盆栽|一束)/.test(text)) return 'plant';
+  return 'shelf';
+}
+
 export class HomeRoomError extends Error {
   constructor(code, message) {
     super(message);
@@ -90,7 +104,7 @@ export function blankRoom() {
   return {
     version: 1,
     revision: 0,
-    room: { activity: 'idle', since: null, source: 'default', note: '' },
+    room: { activity: 'idle', since: null, source: 'default', note: '', plan: '' },
     art: { background: '', characters: {}, hotspots: [] },
     updatedAt: null,
   };
@@ -110,6 +124,8 @@ function canonical(state) {
       since: state.room.since,
       source: state.room.source,
       note: state.room.note,
+      // 空 plan 整条省略：老文件（没有这个键）读进来再写回去仍然合法、可比较。
+      ...(state.room.plan ? { plan: state.room.plan } : {}),
     },
     art: {
       background: state.art.background,
@@ -127,6 +143,16 @@ function cleanNote(value) {
   if (note.length > MAX_NOTE) fail('INVALID_ROOM', `房间备注最多 ${MAX_NOTE} 个字。`);
   if (/[\u0000-\u001f\u007f]/u.test(note)) fail('INVALID_ROOM', '房间备注里不能有控制字符。');
   return note;
+}
+
+/** 「今天想做什么」：≤60 字；空串表示不写这个键（老文件继续逐字节合法）。 */
+function cleanPlan(value) {
+  if (value === undefined || value === null) return '';
+  if (typeof value !== 'string') fail('INVALID_ROOM', '「今天想做什么」必须是文字。');
+  const plan = value.trim();
+  if (plan.length > MAX_PLAN) fail('INVALID_ROOM', `「今天想做什么」最多 ${MAX_PLAN} 个字。`);
+  if (/[\u0000-\u001f\u007f]/u.test(plan)) fail('INVALID_ROOM', '「今天想做什么」里不能有控制字符。');
+  return plan;
 }
 
 function cleanActivity(value) {
@@ -164,6 +190,7 @@ function readState(raw) {
       since: raw.room.since,
       source: raw.room.source,
       note: raw.room.note ?? '',
+      plan: raw.room.plan ?? '',
     },
     art: {
       background: raw.art.background ?? '',
@@ -179,14 +206,18 @@ function readState(raw) {
   const okSource = SOURCES.has(state.room.source);
   const okNote = typeof state.room.note === 'string' && state.room.note === state.room.note.trim()
     && state.room.note.length <= MAX_NOTE && !/[\u0000-\u001f\u007f]/u.test(state.room.note);
+  // canonical 会特意省略空 plan（老文件没有这个键），所以这里按缺省空串校验。
+  const plan = state.room.plan ?? '';
+  const okPlan = typeof plan === 'string' && plan === plan.trim()
+    && plan.length <= MAX_PLAN && !/[\u0000-\u001f\u007f]/u.test(plan);
   const okBackground = state.art.background === '' || REF.test(state.art.background);
   const okCharacters = Object.entries(state.art.characters)
     .every(([activity, ref]) => ACTIVITIES.includes(activity) && REF.test(ref));
   const okUpdated = state.updatedAt === null || (Number.isFinite(state.updatedAt) && state.updatedAt > 0);
-  if (!okActivity || !okSince || !okRevision || !okSource || !okNote || !okBackground || !okCharacters || !okUpdated) {
+  if (!okActivity || !okSince || !okRevision || !okSource || !okNote || !okPlan || !okBackground || !okCharacters || !okUpdated) {
     fail('DAMAGED_ROOM', '房间档案损坏，已保留原文件。');
   }
-  return state;
+  return { ...state, room: { ...state.room, plan } };
 }
 
 async function readBounded(file) {
@@ -277,6 +308,7 @@ export class HomeRoom {
         since,
         elapsedMinutes,
         note: state.room.note,
+        plan: state.room.plan ?? '',
         source: state.room.source,
       },
       art: {
@@ -322,7 +354,8 @@ export class HomeRoom {
     const next = canonical({ ...draft, revision: state.revision + 1, updatedAt: this.#now() });
     await this.#write(next, images);
     if (collect) await this.#collect(next, state);
-    return this.#public(next);
+    // canonical 会省略空 plan；内存里的状态仍要有这个字段，面板才知道「没有」。
+    return this.#public({ ...next, room: { ...next.room, plan: draft.room.plan ?? '' } });
   }
 
   async #write(state, images) {
@@ -383,6 +416,14 @@ export class HomeRoom {
     const { state } = await this.#load();
     if (state.room.note === text) return this.#public(state);
     return this.#mutate(revision, (draft) => { draft.room.note = text; });
+  }
+
+  /** 手写的「今天想做什么」：空串 = 清掉（文件里连这个键都不留）。 */
+  async setPlan(plan, revision) {
+    const text = cleanPlan(plan);
+    const { state } = await this.#load();
+    if (state.room.plan === text) return this.#public(state);
+    return this.#mutate(revision, (draft) => { draft.room.plan = text; });
   }
 
   async setBackground(dataUrl, revision) {

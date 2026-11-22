@@ -69,7 +69,7 @@ import {
 import { autoLimits, budgetStop, normalizeStoryReceipts, publicStoryReceipt, storyBudget, storyRequestKey } from './story-reliability.js';
 import { StoryDM, addDmUsage, dmBudget } from './story-dm.js';
 import { PlaceLibrary } from './place-library.js';
-import { ACTIVITIES, ACTIVITY_HINTS, ACTIVITY_LABELS, HomeRoom, defaultActivityAt } from './home-room.js';
+import { ACTIVITIES, ACTIVITY_HINTS, ACTIVITY_LABELS, HomeRoom, defaultActivityAt, souvenirCategory } from './home-room.js';
 const ENV_PROMPT = fileURLToPath(new URL('./ENV_PROMPT.md', import.meta.url));
 /** 面板委派出去的配图请求，在她的提示词里保留多久。 */
 const IMAGE_DELEGATION_TTL_MS = 45 * 60 * 1000;
@@ -1801,7 +1801,7 @@ export class FunWorld {
             : '她此刻在家做什么：换一个姿势、布置房间，或者看看她在不在外面。',
           // 只读：幂等、不写盘。写方法单独声明给宿主，面板才不会只被当成展示。
           getMethods: ['state', 'art'],
-          methods: ['setActivity', 'setNote', 'setBackground', 'clearBackground', 'setCharacter', 'clearCharacter', 'saveHotspots', 'resetRoom'],
+          methods: ['setActivity', 'setNote', 'setPlan', 'resume', 'setBackground', 'clearBackground', 'setCharacter', 'clearCharacter', 'saveHotspots', 'resetRoom'],
         },
         {
           id: 'places',
@@ -2859,7 +2859,7 @@ export class FunWorld {
       libraryWarning = '地点册暂不可读，房间照常显示。';
     }
     const session = this.#state?.session ?? null;
-    const draft = this.#state?.draft ?? null;
+    const { draft } = this.#outings(this.#now());
     const outing = session ?? draft;
     let trip = { mode: 'home', placeName: '', visited: 0, total: 0 };
     if (outing) {
@@ -2871,6 +2871,21 @@ export class FunWorld {
         total: venue?.areas?.length ?? 0,
       };
     }
+    // 未完行程票笺：只给「继续」，不提供「替她回家」。
+    const resume = draft
+      ? { id: draft.id, placeName: draft.placeName ?? '', visited: trip.visited, total: trip.total }
+      : null;
+    // 心愿便签：第一个还没完成的，只读；管理仍在「纪念册」。
+    const activeWish = (this.#state?.wishes ?? []).find((wish) => wish.status === 'active') ?? null;
+    // 纪念品：本 World 收藏里最新 3–5 件，按类别落固定位置；没有就不摆。
+    const keepsakes = collectSouvenirs(this.#savedTrips(), this.timezone, this.#state?.collection)
+      .items.slice(0, 5)
+      .map((item) => ({
+        name: item.name,
+        placeName: item.placeName,
+        day: item.lastDay,
+        category: souvenirCategory(item.name),
+      }));
     const warnings = [snapshot.warning, libraryWarning, this.#stateError ? '行程档案损坏，暂时看不到出门状态。' : '']
       .filter(Boolean);
     // 时段默认：source 还是 default 时，活动由服务端按此刻的小时算，**不写盘**。
@@ -2898,6 +2913,11 @@ export class FunWorld {
         ? { id: home.id, name: home.name, desc: home.desc ?? '', hasCover: Boolean(home.cover), style: home.effectiveStyle ?? '' }
         : null,
       trip,
+      resume,
+      wish: activeWish
+        ? { id: activeWish.id, placeName: activeWish.placeName, target: activeWish.target ?? '', reason: activeWish.reason ?? '' }
+        : null,
+      keepsakes,
       activities: ACTIVITIES.map((id) => ({ id, label: ACTIVITY_LABELS[id], hint: ACTIVITY_HINTS[id] })),
     };
   }
@@ -2915,6 +2935,12 @@ export class FunWorld {
           await this.#home.setActivity(payload.activity, { note: payload.note, since: payload.since, revision: payload.revision });
           break;
         case 'setNote': await this.#home.setNote(payload.note, payload.revision); break;
+        case 'setPlan': await this.#home.setPlan(payload.plan, payload.revision); break;
+        case 'resume': {
+          const result = await this.#resumeTool(payload?.id);
+          if (result.failed) return { ok: false, error: result.text };
+          break;
+        }
         case 'setBackground': await this.#home.setBackground(payload.dataUrl, payload.revision); break;
         case 'clearBackground': await this.#home.clearBackground(payload.revision); break;
         case 'setCharacter': await this.#home.setCharacter(payload.activity, payload.dataUrl, payload.revision); break;

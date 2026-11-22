@@ -4002,6 +4002,33 @@ var HOME_STYLES = `
   border:1px solid color-mix(in srgb,var(--f-accent,#00a870) 55%,transparent);background:color-mix(in srgb,var(--f-accent,#00a870) 16%,transparent)}
 .fhm-spot-label{position:absolute;z-index:3;transform:translate(-50%,-100%);font-size:10.5px;color:var(--f-dim,#6b6b70);white-space:nowrap}
 
+.fhm-keepsake{position:absolute;z-index:1;transform:translate(-50%,-50%);width:30px;height:30px;border-radius:50%;
+  border:1px solid color-mix(in srgb,var(--f-line,#e3e4e3) 80%,transparent);cursor:pointer;font-size:15px;line-height:1;
+  background:color-mix(in srgb,var(--f-card,#fbfbfb) 78%,transparent);padding:0}
+.fhm-keepsake:hover{border-color:var(--f-accent,#00a870)}
+.fhm-keepsake:focus-visible{outline:2px solid var(--f-accent,#00a870);outline-offset:2px}
+.fhm-keepsake-bubble{position:absolute;z-index:5;transform:translate(-50%,-120%);max-width:74%;padding:4px 8px;border-radius:8px;
+  font-size:11px;line-height:1.5;color:var(--f-ink,#1b1a1e);background:color-mix(in srgb,var(--f-card,#fbfbfb) 94%,transparent);
+  border:1px solid var(--f-line,#e3e4e3);white-space:normal;pointer-events:none}
+.fhm-keepsake-bubble[hidden]{display:none}
+.fhm-draft{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:8px 2px 0;padding:8px 11px;border-radius:12px;
+  border:1px dashed color-mix(in srgb,var(--f-warm,#e0862f) 55%,var(--f-line,#e3e4e3));
+  background:color-mix(in srgb,var(--f-warm,#e0862f) 7%,var(--f-card,#fbfbfb))}
+.fhm-draft-text{margin:0;font-size:12px;color:var(--f-ink,#1b1a1e)}
+.fhm-draft button{font:inherit;font-size:11.5px;padding:3px 11px;border-radius:999px;cursor:pointer;border:1px solid var(--f-accent,#00a870);
+  background:var(--f-accent,#00a870);color:#fff}
+.fhm-draft button:disabled{opacity:.55;cursor:default}
+.fhm-wish{margin:8px 2px 0;font-size:11.5px;line-height:1.6;color:var(--f-dim,#6b6b70)}
+.fhm-plan{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:8px 2px 0}
+.fhm-plan-label{font-size:12px;color:var(--f-ink,#1b1a1e)}
+.fhm-plan textarea{flex:1 1 240px;min-width:0;min-height:30px;resize:vertical;font:inherit;font-size:12px;line-height:1.5;
+  padding:5px 9px;border:1px solid var(--f-line,#e3e4e3);border-radius:10px;background:var(--f-soft,#f3efe9);color:var(--f-ink,#1b1a1e)}
+.fhm-plan textarea:focus{border-color:var(--f-accent,#00a870);outline:none}
+.fhm-plan button{font:inherit;font-size:12px;padding:4px 12px;border-radius:999px;cursor:pointer;border:1px solid var(--f-line,#e3e4e3);
+  background:var(--f-card,#fbfbfb);color:var(--f-ink,#1b1a1e)}
+.fhm-plan button:hover{border-color:var(--f-accent,#00a870)}
+.fhm-plan .fhm-fine{margin-left:0}
+
 .fhm-chips{display:flex;gap:6px;flex-wrap:nowrap;overflow-x:auto;padding:10px 2px 4px;scrollbar-width:thin}
 .fhm-chip{flex:none;font-size:12px;line-height:1.5;padding:4px 11px;border-radius:999px;cursor:pointer;
   border:1px solid var(--f-line,#e3e4e3);background:var(--f-card,#fbfbfb);color:var(--f-dim,#6b6b70);font:inherit;font-size:12px}
@@ -4055,6 +4082,17 @@ var HOME_STYLES = `
 var MAX_IMAGE_BYTES2 = 8 * 1024 * 1024;
 var ACCEPT = "image/png,image/jpeg,image/gif,image/webp,.png,.jpg,.jpeg,.gif,.webp";
 var artCache = /* @__PURE__ */ new Map();
+var KEEPSAKE_SLOTS = {
+  ticket: { left: 50, top: 40, icon: "🎫" },
+  shelf: { left: 55, top: 44, icon: "🧩" },
+  cup: { left: 47, top: 70, icon: "☕" },
+  doll: { left: 85, top: 72, icon: "🧸" },
+  plant: { left: 16, top: 58, icon: "🪴" }
+};
+function monthDay(day) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(day ?? ""));
+  return match ? `${Number(match[2])} 月 ${Number(match[3])} 日` : "";
+}
 function classifyHomeFile(name) {
   const base = String(name ?? "").toLowerCase().replace(/\.[a-z0-9]+$/, "");
   if (!base) return null;
@@ -4126,7 +4164,7 @@ function mountHome(ctx) {
   let busy = false;
   let snapshot = null;
   let ticker = null;
-  const view = { editing: false, noteDraft: null, feedback: "", tone: "", batch: null };
+  const view = { editing: false, noteDraft: null, planDraft: null, feedback: "", tone: "", batch: null };
   const live = () => !disposed && !ctx.signal?.aborted;
   function call(method, payload) {
     return ctx.invoke(method, payload === void 0 ? [] : [payload]);
@@ -4272,6 +4310,35 @@ function mountHome(ctx) {
       }
     }
     if (snapshot.room.note) stage.append(el2(document2, "p", { class: "fhm-note", text: snapshot.room.note }));
+    const used = {};
+    const bubbles = [];
+    for (const item of snapshot.keepsakes ?? []) {
+      const slot = KEEPSAKE_SLOTS[item.category] ?? KEEPSAKE_SLOTS.shelf;
+      const offset = used[item.category] ?? 0;
+      used[item.category] = offset + 1;
+      const left = slot.left + offset * 3;
+      const top = slot.top + offset * 3;
+      const bubble = el2(document2, "span", {
+        class: "fhm-keepsake-bubble",
+        hidden: true,
+        text: `${item.name} · 来自${item.placeName}${monthDay(item.day) ? ` · ${monthDay(item.day)}` : ""}`,
+        style: `left:${left}%;top:${top}%`
+      });
+      bubbles.push(bubble);
+      stage.append(el2(document2, "button", {
+        type: "button",
+        class: "fhm-keepsake",
+        "aria-label": `${item.name}，来自${item.placeName}`,
+        title: `${item.name} · 来自${item.placeName}`,
+        text: slot.icon,
+        style: `left:${left}%;top:${top}%`,
+        onclick: () => {
+          const open = bubble.hidden;
+          for (const other of bubbles) other.hidden = true;
+          bubble.hidden = !open;
+        }
+      }), bubble);
+    }
     return stage;
   }
   function renderChips() {
@@ -4472,6 +4539,71 @@ function mountHome(ctx) {
     ));
     return box;
   }
+  function renderEntry() {
+    const nodes = [];
+    if (snapshot.resume) {
+      const r = snapshot.resume;
+      nodes.push(el2(
+        document2,
+        "div",
+        { class: "fhm-draft" },
+        el2(document2, "p", {
+          class: "fhm-draft-text",
+          text: `还留着一趟 · ${r.placeName}（逛了 ${r.visited}/${r.total}）`
+        }),
+        el2(document2, "button", {
+          type: "button",
+          text: "继续",
+          disabled: busy,
+          onclick: () => {
+            void write("resume", { id: r.id }, "接着逛这趟。");
+          }
+        }),
+        el2(document2, "span", { class: "fhm-fine", text: "只接着逛；回不回家由你决定" })
+      ));
+    }
+    if (snapshot.wish) {
+      const w = snapshot.wish;
+      nodes.push(el2(document2, "p", {
+        class: "fhm-wish",
+        text: `心愿 · ${w.placeName}${w.target ? ` · ${w.target}` : ""}${w.reason ? `：${w.reason}` : ""}`
+      }));
+    }
+    return nodes;
+  }
+  function renderPlan() {
+    const plan = el2(document2, "textarea", {
+      maxlength: "60",
+      rows: "1",
+      placeholder: "今天想做什么？写一句，比如「想读半小时书」",
+      "aria-label": "今天想做什么"
+    });
+    plan.value = view.planDraft ?? snapshot.room.plan ?? "";
+    plan.addEventListener("input", () => {
+      view.planDraft = plan.value;
+    });
+    return el2(
+      document2,
+      "div",
+      { class: "fhm-plan" },
+      el2(document2, "span", { class: "fhm-plan-label", text: "今天想做什么" }),
+      plan,
+      el2(document2, "button", {
+        type: "button",
+        text: "保存",
+        disabled: busy,
+        onclick: () => {
+          void write("setPlan", { plan: plan.value, revision: snapshot.revision }).then((result) => {
+            if (result) {
+              view.planDraft = null;
+              render();
+            }
+          });
+        }
+      }),
+      el2(document2, "span", { class: "fhm-fine", text: "只显示你写的，不会自动变成她做过的事" })
+    );
+  }
   function render() {
     if (disposed || !snapshot) return;
     const head = el2(
@@ -4488,7 +4620,7 @@ function mountHome(ctx) {
       "data-tone": view.tone,
       text: snapshot.warning || view.feedback
     });
-    const nodes = [head, feedback3, renderStage(), renderChips(), renderActions()];
+    const nodes = [head, feedback3, renderStage(), ...renderEntry(), renderChips(), renderActions(), renderPlan()];
     const dress = renderDress();
     if (dress) nodes.push(dress);
     nodes.push(el2(document2, "p", { class: "fhm-foot", text: "出门在「去哪儿」，故事在「出游」。这里只记她在家里的样子。" }));
