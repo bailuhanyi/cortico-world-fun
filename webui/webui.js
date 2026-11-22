@@ -124,6 +124,8 @@ const CSS = `
 .fun-trip{border:1px solid var(--f-line);border-radius:var(--radius-sm,6px);padding:9px 12px;margin-bottom:8px;background:var(--f-card)}
 .fun-trip-head{display:flex;justify-content:space-between;gap:10px;align-items:baseline}
 .fun-trip-name{font-weight:600}
+.fun-trip-auto{font-size:10.5px;padding:1px 7px;border-radius:999px;color:#7a5a26;
+  background:color-mix(in srgb,var(--f-warm,#e0862f) 16%,transparent);border:1px solid color-mix(in srgb,var(--f-warm,#e0862f) 40%,transparent)}
 .fun-trip-when{font-size:11.5px;color:var(--f-dim);white-space:nowrap}
 .fun-trip-sum{margin-top:3px;font-size:12.5px}
 .fun-trip-extras{margin-top:5px;font-size:12px;color:var(--f-dim)}
@@ -1203,6 +1205,7 @@ function mountBook(ctx) {
             el('small', { text: (trip.enteredHm || '时间不详') })),
           el('div', { class: 'fun-ticket-main' },
             el('div', { class: 'fun-trip-head' }, el('span', { class: 'fun-trip-name', text: trip.placeName }),
+              trip.auto ? el('span', { class: 'fun-trip-auto', text: '自己出门' }) : null,
               el('span', { class: 'fun-trip-when', text: (trip.enteredHm || '时间不详') + '–' + (trip.leftHm || '时间不详') + (trip.stayedMin ? ' · ' + trip.stayedMin + ' 分钟' : '') })),
             el('div', { class: 'fun-trip-sum', text: trip.summary }),
             trip.company ? el('div', { class: 'fun-trip-extras', text: `同行 · ${trip.company}` }) : null,

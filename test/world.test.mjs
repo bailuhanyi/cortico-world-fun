@@ -62,10 +62,10 @@ test('故事公共查询工具已分离声明为只读', () => {
   }
 });
 
-test('二十二件工具都注册了', () => {
+test('二十四件工具都注册了', () => {
   const w = funDefinition.create({ cfg: {}, dataDir: process.cwd(), timezone: TZ });
   const names = w.tools().map((t) => t.name).sort();
-  assert.deepEqual(names, ['fun_choice', 'fun_go', 'fun_home', 'fun_keepsake', 'fun_places', 'fun_resume', 'fun_route', 'fun_shelf', 'fun_start', 'fun_story', 'fun_story_act', 'fun_story_candidates', 'fun_story_current', 'fun_story_detail', 'fun_story_places', 'fun_story_recap', 'fun_story_schedule', 'fun_story_start', 'fun_view', 'fun_wander', 'fun_wish', 'fun_wishes']);
+  assert.deepEqual(names, ['fun_choice', 'fun_go', 'fun_home', 'fun_home_activity', 'fun_home_state', 'fun_keepsake', 'fun_places', 'fun_resume', 'fun_route', 'fun_shelf', 'fun_start', 'fun_story', 'fun_story_act', 'fun_story_candidates', 'fun_story_current', 'fun_story_detail', 'fun_story_places', 'fun_story_recap', 'fun_story_schedule', 'fun_story_start', 'fun_view', 'fun_wander', 'fun_wish', 'fun_wishes']);
 });
 
 test('envPromptVars 不常驻完整地点清单，关闭时同样为空', async () => {
@@ -89,7 +89,7 @@ test('配置段缺键会被补齐（宿主 /api/config 不合并 defaults）', a
   await world.start({ log: { info() {}, warn() {} } });
   assert.equal(persisted.length, 1);
   assert.deepEqual(Object.keys(persisted[0]).sort(),
-    ['funAskReport', 'funAutoCalls', 'funAutoSteps', 'funSessionTTLMin', 'funStoryAutoImages', 'funStoryDM', 'funStoryFree', 'funStoryFreeTurns', 'funStoryImages', 'funStoryTextOn', 'funTasteFromFeast']);
+    ['funAskReport', 'funAutoCalls', 'funAutoSteps', 'funHomeAutoGo', 'funSessionTTLMin', 'funStoryAutoImages', 'funStoryDM', 'funStoryFree', 'funStoryFreeTurns', 'funStoryImages', 'funStoryTextOn', 'funTasteFromFeast']);
   assert.equal(persisted[0].funAskReport, true);
   assert.equal(persisted[0].funSessionTTLMin, 90);
   assert.equal(persisted[0].funAutoSteps, 20);
@@ -97,6 +97,7 @@ test('配置段缺键会被补齐（宿主 /api/config 不合并 defaults）', a
   assert.equal(persisted[0].funStoryImages, false);
   assert.equal(persisted[0].funStoryDM, false);
   assert.equal(persisted[0].funTasteFromFeast, true);
+  assert.equal(persisted[0].funHomeAutoGo, false, '自动出门默认关');
 });
 
 test('缺键补齐：盘上已有的值一个都不覆盖', async () => {
@@ -105,7 +106,7 @@ test('缺键补齐：盘上已有的值一个都不覆盖', async () => {
   const world = new FunWorld({
     cfg: {
       enabled: true, funOn: false, funSessionTTLMin: 30,
-      funAskReport: false, funTasteFromFeast: false, funStoryImages: false, funStoryDM: true,
+      funAskReport: false, funTasteFromFeast: false, funHomeAutoGo: false, funStoryImages: false, funStoryDM: true,
       funStoryTextOn: true, funStoryFree: false, funStoryFreeTurns: 40, funAutoSteps: 20, funAutoCalls: 6,
       funStoryAutoImages: true,
     },
@@ -114,7 +115,7 @@ test('缺键补齐：盘上已有的值一个都不覆盖', async () => {
     persist: (patch) => { persisted.push(patch); },
   });
   await world.start({ log: { info() {}, warn() {} } });
-  assert.deepEqual(persisted, [], '十一项都在，不该补任何东西');
+  assert.deepEqual(persisted, [], '十二项都在，不该补任何东西');
 });
 
 test('fun_places：按开放时段排，正文带开没开和人多少', async () => {

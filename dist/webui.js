@@ -3988,6 +3988,8 @@ var HOME_STYLES = `
 .fhm-light[data-phase="dusk"]{background:linear-gradient(180deg,rgba(224,134,47,.22),rgba(120,60,90,.12));opacity:.7}
 .fhm-light[data-phase="night"]{background:linear-gradient(180deg,rgba(38,52,92,.34),rgba(20,28,52,.28));opacity:.8}
 .fhm-foreground{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:3;pointer-events:none}
+.fhm-painting{position:absolute;z-index:1;left:34%;top:37%;width:12%;max-height:30%;object-fit:contain;
+  transform:translateX(-50%);border-radius:2px;box-shadow:0 2px 6px rgba(24,24,30,.18)}
 
 .fhm-char{position:absolute;z-index:2;max-width:46%;object-fit:contain;transform:translateX(-50%);
   filter:drop-shadow(0 10px 16px rgba(24,24,30,.14));transition:none;animation:fhm-char-in 180ms ease-out both}
@@ -4042,6 +4044,25 @@ var HOME_STYLES = `
   background:var(--f-card,#fbfbfb);color:var(--f-ink,#1b1a1e)}
 .fhm-plan button:hover{border-color:var(--f-accent,#00a870)}
 .fhm-plan .fhm-fine{margin-left:0}
+
+.fhm-snaps{margin:10px 2px 0;border-top:1px dashed var(--f-line,#e3e4e3);padding-top:8px}
+.fhm-snaps-head{display:flex;align-items:center;gap:8px}
+.fhm-snaps-head button,.fhm-snap-row button{font:inherit;font-size:11px;padding:3px 9px;border-radius:999px;cursor:pointer;
+  border:1px solid var(--f-line,#e3e4e3);background:var(--f-card,#fbfbfb);color:var(--f-ink,#1b1a1e)}
+.fhm-snaps-head button:hover,.fhm-snap-row button:hover{border-color:var(--f-accent,#00a870)}
+.fhm-snap-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:3px 0;font-size:11.5px;color:var(--f-ink,#1b1a1e)}
+.fhm-snap-main{flex:1 1 220px;min-width:0;word-break:break-word}
+.fhm-snap-missing{font-size:10.5px;color:#c0453c}
+.fhm-deps-empty{font-size:11px;color:var(--f-dim,#6b6b70);margin:3px 0}
+.fhm-import{display:inline-flex;align-items:center;gap:6px;font-size:11px;color:var(--f-dim,#6b6b70);cursor:pointer}
+.fhm-import input{font-size:10.5px;max-width:150px}
+.fhm-snaps textarea{width:100%;margin-top:6px;font:inherit;font-size:11px;padding:5px 8px;border-radius:8px;
+  border:1px solid var(--f-line,#e3e4e3);background:var(--f-soft,#f3efe9);color:var(--f-ink,#1b1a1e)}
+.fhm-auto{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:8px 2px 0;padding:7px 10px;border-radius:10px;
+  border:1px solid color-mix(in srgb,var(--f-warm,#e0862f) 40%,var(--f-line,#e3e4e3));
+  background:color-mix(in srgb,var(--f-warm,#e0862f) 7%,var(--f-card,#fbfbfb));font-size:11.5px;color:var(--f-ink,#1b1a1e)}
+.fhm-auto button{font:inherit;font-size:11px;padding:3px 10px;border-radius:999px;cursor:pointer;
+  border:1px solid var(--f-line,#e3e4e3);background:var(--f-card,#fbfbfb);color:var(--f-ink,#1b1a1e)}
 
 .fhm-pending{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:8px 2px 0;padding:7px 10px;border-radius:10px;
   border:1px solid var(--f-line,#e3e4e3);background:color-mix(in srgb,var(--f-card,#fbfbfb) 88%,var(--f-soft,#f3efe9))}
@@ -4208,7 +4229,9 @@ function mountHome(ctx) {
     batch: null,
     copyFallback: "",
     placements: null,
-    hotspots: null
+    hotspots: null,
+    snapshots: [],
+    exportText: ""
   };
   const live = () => !disposed && !ctx.signal?.aborted;
   function call(method, payload) {
@@ -4235,6 +4258,14 @@ function mountHome(ctx) {
       return null;
     }
   }
+  async function loadSnapshots() {
+    try {
+      const result = await call("snapshotList");
+      view.snapshots = result?.ok === true && Array.isArray(result.items) ? result.items : [];
+    } catch {
+      view.snapshots = [];
+    }
+  }
   async function refresh() {
     if (disposed) return;
     try {
@@ -4243,6 +4274,7 @@ function mountHome(ctx) {
     } catch (error) {
       tell(error?.message ?? "房间暂时读不出来。", "error");
     }
+    await loadSnapshots();
     render();
   }
   async function write(method, payload, okText = "") {
@@ -4410,6 +4442,13 @@ function mountHome(ctx) {
       "data-phase": snapshot.phase ?? "day",
       "aria-hidden": "true"
     }));
+    if (snapshot.art?.painting) {
+      const frame = el2(document2, "img", { class: "fhm-painting", alt: "画架上的画", decoding: "async" });
+      stage.append(frame);
+      loadArt("painting").then((src) => {
+        if (src && live()) frame.setAttribute("src", src);
+      });
+    }
     const hasCharacter = Boolean(snapshot.art?.characters?.[snapshot.room.activity] ?? snapshot.art?.characters?.idle);
     const spot = effectiveSpot(snapshot.room.activity);
     const shadow = el2(document2, "div", {
@@ -4596,6 +4635,159 @@ function mountHome(ctx) {
     tell(bits.join("；") + "。", failed.length ? "error" : "ok");
     render();
   }
+  async function choosePainting() {
+    if (typeof ctx.pickPath !== "function") {
+      tell("这个宿主不支持选本地图片。", "error");
+      render();
+      return;
+    }
+    try {
+      const picked = await ctx.pickPath();
+      const path = typeof picked === "string" ? picked : picked?.path ?? picked?.filePath ?? "";
+      if (!path) return;
+      await write("setPainting", { path, revision: snapshot.revision }, "挂到画架上了。");
+    } catch (error) {
+      tell(error?.message ?? "这张图没选成。", "error");
+      render();
+    }
+  }
+  async function saveSnapshotNow() {
+    const result = await write("snapshotSave", {}, "快照存好了。");
+    if (result) await loadSnapshots();
+    render();
+  }
+  async function removeSnapshotNow(id) {
+    const result = await write("snapshotRemove", { id }, "快照删掉了。");
+    if (result) await loadSnapshots();
+    render();
+  }
+  function downloadJson(data) {
+    const text2 = JSON.stringify(data, null, 2);
+    try {
+      const blob = new Blob([text2], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const link = document2.createElement("a");
+      link.href = url;
+      link.download = "fish-home-export.json";
+      link.click();
+      setTimeout(() => URL.revokeObjectURL?.(url), 0);
+      tell("备份已导出（只有引用，没有图片字节）。", "ok");
+    } catch {
+      view.exportText = text2;
+      tell("浏览器不给下载，备份内容放进下面的文本框了。", "");
+    }
+    render();
+  }
+  async function exportBackup() {
+    try {
+      const result = await call("exportRoom");
+      if (result?.ok !== true) throw new Error(result?.error ?? "导出失败。");
+      downloadJson(result);
+    } catch (error) {
+      tell(error?.message ?? "导出失败。", "error");
+      render();
+    }
+  }
+  async function importBackup(input) {
+    const file = input?.files?.[0];
+    if (!file) return;
+    input.value = "";
+    try {
+      const text2 = await new Promise((resolve, reject) => {
+        const Reader = document2.defaultView?.FileReader ?? globalThis.FileReader;
+        if (!Reader) {
+          reject(new Error("这个环境读不了文件。"));
+          return;
+        }
+        const reader = new Reader();
+        reader.onload = () => resolve(String(reader.result ?? ""));
+        reader.onerror = () => reject(reader.error ?? new Error("读不了这个文件。"));
+        reader.readAsText(file);
+      });
+      let data;
+      try {
+        data = JSON.parse(text2);
+      } catch {
+        throw new Error("这不是一份备份 JSON。");
+      }
+      await write("importRoom", { data, revision: snapshot.revision }, "导入完成。");
+    } catch (error) {
+      tell(error?.message ?? "导入失败。", "error");
+      render();
+    }
+  }
+  function snapshotWhen(at) {
+    if (!Number.isFinite(at)) return "";
+    const date2 = new Date(at);
+    const pad = (value) => String(value).padStart(2, "0");
+    return `${date2.getMonth() + 1} 月 ${date2.getDate()} 日 ${pad(date2.getHours())}:${pad(date2.getMinutes())}`;
+  }
+  function renderSnapshots() {
+    const box = el2(
+      document2,
+      "div",
+      { class: "fhm-snaps" },
+      el2(
+        document2,
+        "div",
+        { class: "fhm-snaps-head" },
+        el2(document2, "span", { class: "fhm-plan-label", text: "快照" }),
+        el2(document2, "button", { type: "button", text: "存快照", onclick: () => {
+          void saveSnapshotNow();
+        } })
+      ),
+      el2(document2, "p", { class: "fhm-fine", text: "只记那一刻的房间；图按 digest 引用，不复制字节。删快照不影响当前房间。" })
+    );
+    if (!view.snapshots.length) {
+      box.append(el2(document2, "p", { class: "fhm-deps-empty", text: "还没有快照。" }));
+    } else {
+      for (const item of view.snapshots) {
+        box.append(el2(
+          document2,
+          "div",
+          { class: "fhm-snap-row" },
+          el2(document2, "span", { class: "fhm-snap-main", text: `${snapshotWhen(item.at)} · ${item.label || "发呆"}${item.note ? ` · ${item.note}` : ""}` }),
+          item.missing ? el2(document2, "span", { class: "fhm-snap-missing", text: "这张图不在了" }) : null,
+          el2(document2, "button", {
+            type: "button",
+            text: "删除",
+            "aria-label": `删除快照 ${item.id}`,
+            onclick: () => {
+              void removeSnapshotNow(item.id);
+            }
+          })
+        ));
+      }
+    }
+    box.append(el2(
+      document2,
+      "div",
+      { class: "fhm-row-actions" },
+      el2(document2, "button", { type: "button", text: "导出备份", onclick: () => {
+        void exportBackup();
+      } }),
+      el2(
+        document2,
+        "label",
+        { class: "fhm-import" },
+        "导入备份",
+        el2(document2, "input", {
+          type: "file",
+          accept: ".json,application/json",
+          "aria-label": "导入房间备份",
+          onchange: (event) => {
+            void importBackup(event.target);
+          }
+        })
+      )
+    ));
+    if (view.exportText) {
+      const out = el2(document2, "textarea", { readonly: "", rows: "3", "aria-label": "导出内容" });
+      out.value = view.exportText;
+      box.append(out);
+    }
+    return box;
+  }
   function renderDress() {
     if (!view.editing) return null;
     const box = el2(
@@ -4649,6 +4841,30 @@ function mountHome(ctx) {
         "aria-label": "清空前景层图片",
         onclick: () => {
           void write("clearForeground", { revision: snapshot.revision }, "前景清掉了。");
+        }
+      })
+    ));
+    box.append(el2(
+      document2,
+      "div",
+      { class: "fhm-row" },
+      el2(document2, "span", { class: "fhm-row-name", text: "画架 / 相框" }),
+      el2(document2, "button", {
+        type: "button",
+        text: "选一张本地图",
+        "aria-label": "选一张本地图挂到画架",
+        onclick: () => {
+          void choosePainting();
+        }
+      }),
+      el2(document2, "span", { class: "fhm-row-name", text: snapshot.art?.painting ? "已设置" : "未设置" }),
+      el2(document2, "button", {
+        type: "button",
+        text: "清空",
+        disabled: !snapshot.art?.painting || busy,
+        "aria-label": "清空画架图片",
+        onclick: () => {
+          void write("clearPainting", { revision: snapshot.revision }, "画架清空了。");
         }
       })
     ));
@@ -4931,6 +5147,21 @@ function mountHome(ctx) {
         text: `心愿 · ${w.placeName}${w.target ? ` · ${w.target}` : ""}${w.reason ? `：${w.reason}` : ""}`
       }));
     }
+    if (snapshot.trip?.auto && snapshot.trip.mode !== "home") {
+      nodes.push(el2(
+        document2,
+        "div",
+        { class: "fhm-auto" },
+        el2(document2, "span", { text: "这趟是她自己出去的。" }),
+        el2(document2, "button", {
+          type: "button",
+          text: "撤销这次出门",
+          onclick: () => {
+            void write("undoAutoGo", {}, "已经把她叫回来了。");
+          }
+        })
+      ));
+    }
     return nodes;
   }
   function renderPlan() {
@@ -4982,7 +5213,7 @@ function mountHome(ctx) {
       "data-tone": view.tone,
       text: snapshot.warning || view.feedback
     });
-    const nodes = [head, feedback3, renderStage(), ...renderEntry(), renderChips(), renderActions(), renderPlan(), renderPending()];
+    const nodes = [head, feedback3, renderStage(), ...renderEntry(), renderChips(), renderActions(), renderPlan(), renderSnapshots(), renderPending()];
     const dress = renderDress();
     if (dress) nodes.push(dress);
     nodes.push(el2(document2, "p", { class: "fhm-foot", text: "出门在「去哪儿」，故事在「出游」。这里只记她在家里的样子。" }));
@@ -6319,6 +6550,8 @@ var CSS2 = `
 .fun-trip{border:1px solid var(--f-line);border-radius:var(--radius-sm,6px);padding:9px 12px;margin-bottom:8px;background:var(--f-card)}
 .fun-trip-head{display:flex;justify-content:space-between;gap:10px;align-items:baseline}
 .fun-trip-name{font-weight:600}
+.fun-trip-auto{font-size:10.5px;padding:1px 7px;border-radius:999px;color:#7a5a26;
+  background:color-mix(in srgb,var(--f-warm,#e0862f) 16%,transparent);border:1px solid color-mix(in srgb,var(--f-warm,#e0862f) 40%,transparent)}
 .fun-trip-when{font-size:11.5px;color:var(--f-dim);white-space:nowrap}
 .fun-trip-sum{margin-top:3px;font-size:12.5px}
 .fun-trip-extras{margin-top:5px;font-size:12px;color:var(--f-dim)}
@@ -7534,6 +7767,7 @@ function mountBook(ctx) {
               "div",
               { class: "fun-trip-head" },
               el3("span", { class: "fun-trip-name", text: trip.placeName }),
+              trip.auto ? el3("span", { class: "fun-trip-auto", text: "自己出门" }) : null,
               el3("span", { class: "fun-trip-when", text: (trip.enteredHm || "时间不详") + "–" + (trip.leftHm || "时间不详") + (trip.stayedMin ? " · " + trip.stayedMin + " 分钟" : "") })
             ),
             el3("div", { class: "fun-trip-sum", text: trip.summary }),

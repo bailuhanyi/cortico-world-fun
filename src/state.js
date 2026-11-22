@@ -309,6 +309,8 @@ function normalizeTrip(raw, fallbackId = '') {
     /** 回家时说的那一句（和 `visited[].note` 不是一回事：那是逛某处时记的）。 */
     note: text(raw.note, 120),
     favorite: raw.favorite === true,
+    // 自动出门的标记：稀疏写入，老行程没有这个键就还是原样。
+    ...(raw.auto === true ? { auto: true } : {}),
     visited: normalizeVisited(raw.visited),
     souvenirs: textList(raw.souvenirs, 12, 40),
     photos: textList(raw.photos, 12, 60),
@@ -600,6 +602,7 @@ export function closeSession(state, nowMs, note = '', day = '', timezone = 'Asia
     // 「今天人很多，但很开心」这种话才是她自己的记录，必须存。
     note: said,
     favorite: false,
+    ...(s.auto === true ? { auto: true } : {}),
     visited: s.visited.map((v) => ({ ...v })),
     souvenirs: [...s.souvenirs],
     photos: [...s.photos],

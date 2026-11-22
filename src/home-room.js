@@ -60,6 +60,8 @@ const MAX_HOTSPOTS = 12;
 const MAX_HOTSPOT_NOTE = 60;
 const MIN_SCALE = 0.1;
 const MAX_SCALE = 2;
+const MAX_SNAPSHOTS = 100;
+const SNAPSHOT_ID = /^\d{10,20}$/;
 const REF = /^[a-f0-9]{64}\.(?:png|jpg|gif|webp)$/;
 const HOTSPOT_ID = /^[a-z0-9-]{1,32}$/;
 const SOURCES = new Set(['default', 'panel']);
@@ -158,6 +160,22 @@ function placementsOf(placements) {
     if (placements[activity]) result[activity] = placementShape(placements[activity]);
   }
   return result;
+}
+
+/** 房间引用的全部图片 digest（去重、稳定顺序）。导出清单和快照缺图判断共用。 */
+function refsOf(state) {
+  const refs = [state.art.background, ...Object.values(state.art.characters),
+    state.art.foreground, state.art.painting].filter(Boolean);
+  return [...new Set(refs)];
+}
+
+/** 从文件头认图片类型；认不出就交给 decodeCover 去拒。 */
+function mimeOfBytes(bytes) {
+  if (bytes.length >= 8 && bytes.subarray(0, 8).equals(Buffer.from('89504e470d0a1a0a', 'hex'))) return 'image/png';
+  if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return 'image/jpeg';
+  if (bytes.length >= 6 && ['GIF87a', 'GIF89a'].includes(bytes.toString('ascii', 0, 6))) return 'image/gif';
+  if (bytes.length >= 12 && bytes.toString('ascii', 0, 4) === 'RIFF' && bytes.toString('ascii', 8, 12) === 'WEBP') return 'image/webp';
+  return '';
 }
 
 function roomOf(state) {
@@ -344,6 +362,42 @@ async function readBounded(file) {
   }
 }
 
+function snapshotRecord(raw) {
+  if (!isObject(raw)) fail('INVALID_ROOM', '快照不是一份 JSON 对象。');
+  if (raw.version !== 1) fail('INVALID_ROOM', '快照版本不认识。');
+  const at = Number(raw.at);
+  if (!Number.isFinite(at) || at <= 0) fail('INVALID_ROOM', '快照时间不对。');
+  if (!isObject(raw.room) || !isObject(raw.art) || !isObject(raw.art.characters)
+    || !Array.isArray(raw.art.hotspots) || !isObject(raw.placements) || !Array.isArray(raw.keepsakes)) {
+    fail('INVALID_ROOM', '快照缺少字段。');
+  }
+  return {
+    version: 1,
+    at,
+    phase: typeof raw.phase === 'string' ? raw.phase : 'day',
+    room: {
+      activity: ACTIVITIES.includes(raw.room.activity) ? raw.room.activity : 'idle',
+      label: typeof raw.room.label === 'string' ? raw.room.label : '',
+      note: typeof raw.room.note === 'string' ? raw.room.note : '',
+      plan: typeof raw.room.plan === 'string' ? raw.room.plan : '',
+    },
+    art: {
+      background: typeof raw.art.background === 'string' ? raw.art.background : '',
+      characters: isObject(raw.art.characters) ? { ...raw.art.characters } : {},
+      hotspots: cleanHotspots(raw.art.hotspots),
+      foreground: typeof raw.art.foreground === 'string' ? raw.art.foreground : '',
+      painting: typeof raw.art.painting === 'string' ? raw.art.painting : '',
+    },
+    placements: cleanPlacements(raw.placements),
+    keepsakes: raw.keepsakes.slice(0, 5).map((item) => ({
+      name: typeof item?.name === 'string' ? item.name.slice(0, 40) : '',
+      placeName: typeof item?.placeName === 'string' ? item.placeName.slice(0, 40) : '',
+      day: typeof item?.day === 'string' ? item.day.slice(0, 10) : '',
+      category: typeof item?.category === 'string' ? item.category.slice(0, 12) : 'shelf',
+    })),
+  };
+}
+
 async function atomicWrite(file, text) {
   const tmp = `${file}.${randomUUID()}.tmp`;
   let handle;
@@ -367,17 +421,20 @@ export class HomeRoom {
   #dir;
   #file;
   #artDir;
+  #snapDir;
   #now;
 
   constructor({ dataDir, now = () => Date.now() } = {}) {
     this.#dir = join(dataDir, 'fun', 'home');
     this.#file = join(this.#dir, 'room.json');
     this.#artDir = join(this.#dir, 'art');
+    this.#snapDir = join(this.#dir, 'snapshots');
     this.#now = now;
   }
 
   roomFile() { return this.#file; }
   artDir() { return this.#artDir; }
+  snapshotsDir() { return this.#snapDir; }
 
   /** 读盘；缺失 = 全新的空房间，坏文件 = 只读模式（绝不拿空状态覆盖）。 */
   async #load() {
@@ -566,6 +623,34 @@ export class HomeRoom {
     return this.#mutate(revision, (draft) => { draft.art.foreground = ''; });
   }
 
+  /**
+   * 画架/相框：用户 `ctx.pickPath` 选的本地图片复制进 `art/`。
+   * 不调生图工作室，也不读它的库；只走自己的图片校验。
+   */
+  async attachPainting(path, revision) {
+    if (typeof path !== 'string' || !path.trim()) fail('INVALID_ROOM', '没有选中要挂的图片。');
+    let bytes;
+    try {
+      bytes = await readFile(path);
+    } catch {
+      fail('INVALID_COVER', '选中的图片读不出来。');
+    }
+    if (bytes.length > MAX_COVER_BYTES) fail('LIMIT', '这张图超过 8 MiB。');
+    const mime = mimeOfBytes(bytes);
+    if (!mime) fail('INVALID_COVER', '只支持 PNG / JPEG / GIF / WebP 图片。');
+    const image = decodeCover(`data:${mime};base64,${bytes.toString('base64')}`);
+    return this.#mutate(revision, (draft) => {
+      draft.art.painting = image.cover;
+      return [image];
+    });
+  }
+
+  async clearPainting(revision) {
+    const { state } = await this.#load();
+    if (!state.art.painting) return this.#public(state);
+    return this.#mutate(revision, (draft) => { draft.art.painting = ''; });
+  }
+
   async setCharacter(activity, dataUrl, revision) {
     const id = cleanActivity(activity);
     const image = decodeCover(dataUrl);
@@ -594,6 +679,170 @@ export class HomeRoom {
     const { state } = await this.#load();
     if (JSON.stringify(placementsOf(state.placements)) === JSON.stringify(placementsOf(list))) return this.#public(state);
     return this.#mutate(revision, (draft) => { draft.placements = list; });
+  }
+
+  /** 快照目录里的一条记录；图片只留 digest，不复制字节。 */
+  async listSnapshots() {
+    let entries;
+    try {
+      entries = await readdir(this.#snapDir, { withFileTypes: true });
+    } catch (error) {
+      if (error?.code === 'ENOENT') return { items: [] };
+      throw error;
+    }
+    const items = [];
+    for (const entry of entries) {
+      if (!entry.isFile() || !entry.name.endsWith('.json')) continue;
+      const id = entry.name.slice(0, -5);
+      if (!SNAPSHOT_ID.test(id)) continue;
+      let record;
+      try {
+        record = snapshotRecord(JSON.parse(await readFile(join(this.#snapDir, entry.name), 'utf8')));
+      } catch {
+        continue;
+      }
+      const missing = [];
+      for (const ref of refsOf({ art: { ...record.art, characters: record.art.characters } })) {
+        try {
+          const info = await lstat(join(this.#artDir, ref));
+          if (!info.isFile()) missing.push(ref);
+        } catch {
+          missing.push(ref);
+        }
+      }
+      items.push({
+        id,
+        at: record.at,
+        phase: record.phase,
+        activity: record.room.activity,
+        label: record.room.label,
+        note: record.room.note,
+        keepsakes: record.keepsakes,
+        missing: missing.length,
+        data: record,
+      });
+    }
+    items.sort((a, b) => Number(b.id) - Number(a.id));
+    return { items };
+  }
+
+  /** 存一张快照：图片按 digest 引用，不复制字节；不升 room 的 revision。 */
+  async saveSnapshot(payload = {}) {
+    const record = snapshotRecord({
+      version: 1,
+      at: this.#now(),
+      phase: payload.phase,
+      room: payload.room ?? {},
+      art: payload.art ?? {},
+      placements: payload.placements ?? {},
+      hotspots: payload.art?.hotspots ?? [],
+      keepsakes: payload.keepsakes ?? [],
+    });
+    let entries = [];
+    try {
+      entries = await readdir(this.#snapDir, { withFileTypes: true });
+    } catch (error) {
+      if (error?.code !== 'ENOENT') throw error;
+    }
+    if (entries.filter((entry) => entry.isFile() && entry.name.endsWith('.json')).length >= MAX_SNAPSHOTS) {
+      fail('LIMIT', `快照最多 ${MAX_SNAPSHOTS} 张，先删几张再存。`);
+    }
+    const taken = new Set(entries.map((entry) => entry.name.replace(/\.json$/, '')));
+    let id = String(record.at);
+    while (taken.has(id)) id = String(Number(id) + 1);
+    await mkdir(this.#snapDir, { recursive: true });
+    await atomicWrite(join(this.#snapDir, `${id}.json`), JSON.stringify(record, null, 2));
+    return { id, at: record.at };
+  }
+
+  async removeSnapshot(id) {
+    if (!SNAPSHOT_ID.test(String(id ?? ''))) fail('INVALID_ROOM', '快照 ID 不对。');
+    await unlink(join(this.#snapDir, `${id}.json`)).catch((error) => {
+      if (error?.code !== 'ENOENT') throw error;
+    });
+  }
+
+  /** 导出：room.json + 图片引用清单 + 快照索引，**不含任何图片字节**。 */
+  async exportRoom() {
+    const { state, damaged, warning } = await this.#load();
+    if (damaged) fail('DAMAGED_ROOM', warning || '房间档案损坏，不能导出。');
+    const snapshots = await this.listSnapshots();
+    return {
+      format: 1,
+      exportedAt: this.#now(),
+      room: canonicalV2(state),
+      artRefs: refsOf(state),
+      snapshots: snapshots.items.map(({ id, data }) => ({ id, data })),
+    };
+  }
+
+  #isEmptyRoom(state, snapshots) {
+    return state.revision === 0 && refsOf(state).length === 0
+      && state.art.hotspots.length === 0 && Object.keys(state.placements).length === 0
+      && !state.room.note && !state.room.plan && snapshots.items.length === 0;
+  }
+
+  /**
+   * 导入：**只在空房间**允许。图片逐张校验；先写快照、最后写 room.json，
+   * 任何一步失败都把新建的文件删掉，原房间保持“没有”。
+   */
+  async importRoom(payload) {
+    const { state: current, damaged, warning } = await this.#load();
+    if (damaged) fail('DAMAGED_ROOM', warning || '房间档案损坏，不能导入。');
+    const existing = await this.listSnapshots();
+    if (!this.#isEmptyRoom(current, existing)) fail('INVALID_ROOM', '只有空房间能导入备份；先恢复默认或清空房间。');
+    if (!isObject(payload) || !isObject(payload.room)) fail('INVALID_ROOM', '备份里没有房间数据。');
+    const imported = readState(payload.room);
+    const refs = refsOf(imported);
+    const declared = Array.isArray(payload.artRefs) ? payload.artRefs : null;
+    if (!declared || declared.length !== refs.length
+      || JSON.stringify([...declared].sort()) !== JSON.stringify([...refs].sort())) {
+      fail('INVALID_ROOM', '图片引用清单和房间数据对不上。');
+    }
+    for (const ref of refs) {
+      let bytes;
+      try {
+        const info = await lstat(join(this.#artDir, ref));
+        if (!info.isFile() || info.size > MAX_COVER_BYTES) throw new Error('bad');
+        bytes = await readFile(join(this.#artDir, ref));
+        storedCover(ref, bytes);
+      } catch {
+        fail('INVALID_ROOM', `备份里的图片缺失或已损坏：${ref}`);
+      }
+    }
+    const snapshots = Array.isArray(payload.snapshots) ? payload.snapshots : [];
+    const cleanSnapshots = [];
+    for (const entry of snapshots) {
+      const id = String(entry?.id ?? '');
+      if (!SNAPSHOT_ID.test(id)) fail('INVALID_ROOM', '备份里的快照 ID 不对。');
+      const data = snapshotRecord(entry?.data);
+      for (const ref of refsOf(data)) {
+        let ok = false;
+        try {
+          ok = (await lstat(join(this.#artDir, ref))).isFile();
+        } catch {
+          ok = false;
+        }
+        if (!ok) fail('INVALID_ROOM', `快照引用的图片不在了：${ref}`);
+      }
+      cleanSnapshots.push({ id, data });
+    }
+    await mkdir(this.#snapDir, { recursive: true });
+    const created = [];
+    try {
+      for (const { id, data } of cleanSnapshots) {
+        await atomicWrite(join(this.#snapDir, `${id}.json`), JSON.stringify(data, null, 2));
+        created.push(id);
+      }
+      await atomicWrite(this.#file, JSON.stringify(canonicalV2({
+        ...imported, revision: 0, updatedAt: this.#now(),
+      }), null, 2));
+    } catch (error) {
+      for (const id of created) await unlink(join(this.#snapDir, `${id}.json`)).catch(() => {});
+      await unlink(this.#file).catch(() => {});
+      throw error;
+    }
+    return this.#public({ ...imported, revision: 0, updatedAt: this.#now() });
   }
 
   /** 恢复默认：活动回「随时段变」、清备注/热点/位置；**图片保留**（素材不是状态）。 */

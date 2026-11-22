@@ -4,12 +4,14 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { FunWorld } from '../../src/world.js';
+import { DEFAULTS } from '../../src/config.js';
 import { HOME_LAYOUT } from './layout.js';
 import { classifyHomeFile, mountHome } from './webui.js';
 
 const flush = () => new Promise((resolve) => setImmediate(resolve));
 /** 固定在一个时段（21:30 → 刷视频），否则时段默认会让断言随运行时间漂。 */
 const FIXED_NOW = Date.parse('2026-11-22T21:30:00+08:00');
+const NOON = Date.parse('2026-11-22T12:00:00+08:00');
 const PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
 const PNG_URL = `data:image/png;base64,${PNG}`;
 
@@ -49,10 +51,15 @@ class Node extends EventTarget {
   querySelector(selector) { return this.querySelectorAll(selector)[0] ?? null; }
 }
 
-async function mountHomePanel(t, prepare) {
+async function mountHomePanel(t, prepare, options = {}) {
   const dir = await mkdtemp(join(tmpdir(), 'fun-home-ui-'));
-  const clock = { now: FIXED_NOW };
-  const world = new FunWorld({ dataDir: dir, now: () => clock.now });
+  const clock = { now: options.now ?? FIXED_NOW };
+  const world = new FunWorld({
+    dataDir: dir,
+    now: () => clock.now,
+    cfg: { ...DEFAULTS, enabled: true, ...(options.cfg ?? {}) },
+    persist: () => {},
+  });
   await world.start({});
   t.after(async () => { await world.stop(); await rm(dir, { recursive: true, force: true }); });
   const call = (method, payload) => world.webUi().invoke('home', method, payload === undefined ? [] : [payload]);
@@ -164,7 +171,7 @@ test('布置房间：背景与十个活动各一个文件入口，备注能存�
   await h.settle();
   const inputs = h.root.querySelectorAll('input');
   const files = inputs.filter((item) => item.getAttribute('type') === 'file');
-  assert.equal(files.length, 13, '批量导入 1 + 背景 1 + 前景 1 + 十个活动');
+  assert.equal(files.length, 14, '批量导入 1 + 背景 1 + 前景 1 + 备份导入 1 + 十个活动');
   const textarea = h.root.querySelectorAll('textarea').find((item) => item.getAttribute('aria-label') === '房间备注');
   assert.ok(textarea, '备注输入框要在');
   textarea.value = '在沙发上翻一本旧书';
@@ -184,7 +191,7 @@ test('出门中：状态改成出门，活动不被覆盖，也不多出写操�
   const text = h.root.textContent;
   assert.match(text, /出门中 · 海洋馆/);
   assert.match(text, /在外 · 海洋馆/);
-  assert.equal(h.calls.filter((call) => !['state', 'art'].includes(call.method)).length, 0);
+  assert.equal(h.calls.filter((call) => !['state', 'art', 'snapshotList', 'exportRoom'].includes(call.method)).length, 0);
 });
 
 test('房间档案损坏：说清楚是只读，按钮全禁用，不假装是空房间', async (t) => {
@@ -225,7 +232,7 @@ test('纪念品：摆出来、点一下只读气泡，零写请求', async (t) =
   trinkets[0].click();
   await h.settle();
   assert.match(h.root.textContent, /来自(海洋馆|咖啡店)/);
-  assert.equal(h.calls.filter((call) => !['state', 'art'].includes(call.method)).length, 0, '点纪念品不发写请求');
+  assert.equal(h.calls.filter((call) => !['state', 'art', 'snapshotList', 'exportRoom'].includes(call.method)).length, 0, '点纪念品不发写请求');
 });
 
 test('未完行程：显示票笺与继续，继续用同一个 id', async (t) => {
@@ -257,7 +264,7 @@ test('记一笔：拿不到剪贴板就退回只读文本，不产生写请求',
   const box = h.root.querySelectorAll('textarea').find((item) => item.getAttribute('aria-label') === '待记一条文本');
   assert.ok(box, '没有剪贴板时要出现只读文本框');
   assert.match(box.value, /11 月 22 日 21:30 · 在家刷视频/);
-  assert.equal(h.calls.filter((call) => !['state', 'art'].includes(call.method)).length, 0, '复制不是写操作');
+  assert.equal(h.calls.filter((call) => !['state', 'art', 'snapshotList', 'exportRoom'].includes(call.method)).length, 0, '复制不是写操作');
 });
 
 test('今天想做什么：≤60 字、只写非空；旁边写明不会变成经历', async (t) => {
@@ -328,6 +335,44 @@ test('位置微调：只保存改过的活动，能单个/全部还原', async (
   await h.settle();
   const writes = h.calls.filter((call) => call.method === 'savePlacements');
   assert.deepEqual(writes.at(-1).args[0].placements, {});
+});
+
+test('快照：存一张、列表可见、能删；删了不影响当前房间', async (t) => {
+  const h = await mountHomePanel(t);
+  assert.match(h.root.textContent, /还没有快照/);
+  h.button('存快照').click();
+  await h.settle();
+  assert.ok(h.calls.some((call) => call.method === 'snapshotSave'));
+  assert.ok(h.root.querySelectorAll('div').some((item) => item.className === 'fhm-snap-row'), '列表里要出现一张快照');
+  const remove = h.buttons().find((item) => /^删除快照 \d+$/.test(item.getAttribute('aria-label') ?? ''));
+  assert.ok(remove, '快照列表要有删除按钮');
+  remove.click();
+  await h.settle();
+  assert.ok(h.calls.some((call) => call.method === 'snapshotRemove'));
+  assert.match(h.root.textContent, /还没有快照/);
+});
+
+test('自动出门：票笺写「自己出去」，撤销会调 fun_home', async (t) => {
+  const h = await mountHomePanel(t, async ({ world }) => {
+    const result = await world.runAutoGo();
+    assert.equal(result.ok, true, result.text);
+  }, { cfg: { funHomeAutoGo: true }, now: NOON });
+  assert.match(h.root.textContent, /这趟是她自己出去的/);
+  assert.ok(h.root.textContent.includes('撤销这次出门'));
+  h.button('撤销这次出门').click();
+  await h.settle();
+  const call = h.calls.find((item) => item.method === 'undoAutoGo');
+  assert.ok(call, '撤销要走面板 RPC');
+  assert.doesNotMatch(h.root.textContent, /这趟是她自己出去的/);
+});
+
+test('布置页有画架选图与备份导出/导入入口', async (t) => {
+  const h = await mountHomePanel(t);
+  h.button('布置房间').click();
+  await h.settle();
+  assert.ok(h.buttons().some((item) => item.getAttribute('aria-label') === '选一张本地图挂到画架'));
+  assert.ok(h.buttons().some((item) => item.textContent === '导出备份'));
+  assert.ok(h.root.querySelectorAll('input').some((item) => item.getAttribute('aria-label') === '导入房间备份'));
 });
 
 test('前景层：可选图叠在角色前面', async (t) => {

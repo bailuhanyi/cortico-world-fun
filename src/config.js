@@ -39,6 +39,8 @@ export const DEFAULTS = Object.freeze({
    * 「只说我喝了什么」——所以开着也不会编味道。
    */
   funTasteFromFeast: true,
+  /** 「家」的自动出门：默认关；关着时这条路径不注册。 */
+  funHomeAutoGo: false,
   /** 剧情图片独立开关；来源在故事面板设置，默认回执委派，显式本地URL可选直连。 */
   funStoryImages: false,
   /**
@@ -77,6 +79,8 @@ const ZH = {
     funAskReportDesc: '开启时，回家回执会提醒她把「今天逛了什么」用 feast_life_play 记进自己的日程，再跟主人说一句。关掉就只给这段文字，不提记账。',
     funTasteFromFeast: '吃喝的味道去「鱼的每一天」拿',
     funTasteFromFeastDesc: '开启时，咖啡店/奶茶店/餐厅/夜市的回执会让她用 feast_menu → feast_eat 去「鱼的每一天」点一道真的，那里才有九维口感、香气和余韵。关掉就只说「在这儿喝了什么」，一个字都不提味道。\n\n注意：这不是自动检测——本插件不会去探测别的扩展装没装（World 契约不允许互相依赖）。所以装没装都要你自己定这一项：装了鱼的每一天建议开着。',
+    funHomeAutoGo: '家：自己出门一次',
+    funHomeAutoGoDesc: '打开后，她会在 10:00–20:00 之间自己出门一次；会写进行程与纪念册，可以撤销。默认关闭。',
     funStoryDM: '可选文本主持',
     funStoryDMDesc: '默认关闭。去「出游」面板的设置区填写接口地址、API Key 和模型名（地址与 Key 是密码输入，不回显；模型名留空则由接口用自己的默认模型）。地址与 Key 都留空沿用宿主 cognition.request；都填写则由本插件直连 OpenAI 兼容 POST /chat/completions，密钥仅存在本机，不传给宿主或其他插件。Windows 使用 DPAPI 当前用户加密，其他平台禁用凭据保存；换机器或重装需重填。可立即清除。主持只提议合法选项，当前行动者明确提交才执行。每趟 6 次、每步 2 次（含重试、失败、取消），未知 token 不估算。',
     funStoryTextOn: '文字通道也能玩故事',
@@ -124,6 +128,8 @@ const EN = {
     funAskReportDesc: 'When on, the closing receipt reminds her to log the trip with feast_life_play and tell the owner one sentence.',
     funTasteFromFeast: 'Get tastes from Fish Every Day',
     funTasteFromFeastDesc: 'On: receipts at the coffee shop, tea stand, restaurant and night market tell her to order something real via feast_menu → feast_eat in Fish Every Day, where the nine-axis flavour profile lives. Off: she only says what she had, and never describes a taste.\n\nNote: this is not auto-detection — a World must not probe whether another extension is installed (the contract forbids interdependence). Set it yourself; leave it on if you have Fish Every Day.',
+    funHomeAutoGo: 'Home: go out on her own once',
+    funHomeAutoGoDesc: 'On: she goes out once on her own between 10:00 and 20:00; it is written to the trip and trip book, and can be undone. Off by default.',
     funStoryDM: 'Optional text DM',
     funStoryDMDesc: 'Off by default. In Fish Story World settings enter the API URL, Key and model name (URL and Key are password fields, never echoed; leave the model blank to use the endpoint’s own default). Leave URL and Key blank for host cognition.request, or set both for this plugin to call OpenAI-compatible POST /chat/completions directly. Credentials stay on this machine, never sent to the host or other plugins. Windows DPAPI CurrentUser encryption only; saving is disabled elsewhere. Re-enter after changing machines or reinstalling; clear immediately at any time. The current actor must explicitly submit a valid proposal. Limits: 6 calls per run, 2 attempts per step, including retries, failures and cancellations; unknown tokens remain unknown.',
     funStoryTextOn: 'Play stories from text',
@@ -235,6 +241,12 @@ export function configGroup(language = 'zh') {
           type: 'boolean',
           title: t.funTasteFromFeast,
           description: t.funTasteFromFeastDesc,
+          'x-hot': true,
+        },
+        [`${K}.funHomeAutoGo`]: {
+          type: 'boolean',
+          title: t.funHomeAutoGo,
+          description: t.funHomeAutoGoDesc,
           'x-hot': true,
         },
         [`${K}.funStoryDM`]: {

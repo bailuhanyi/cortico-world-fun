@@ -117,7 +117,7 @@ export function mountHome(ctx) {
   let ticker = null;
   const view = {
     editing: false, noteDraft: null, planDraft: null, feedback: '', tone: '', batch: null, copyFallback: '',
-    placements: null, hotspots: null,
+    placements: null, hotspots: null, snapshots: [], exportText: '',
   };
   const live = () => !disposed && !ctx.signal?.aborted;
 
@@ -152,6 +152,15 @@ export function mountHome(ctx) {
     }
   }
 
+  async function loadSnapshots() {
+    try {
+      const result = await call('snapshotList');
+      view.snapshots = result?.ok === true && Array.isArray(result.items) ? result.items : [];
+    } catch {
+      view.snapshots = [];
+    }
+  }
+
   async function refresh() {
     if (disposed) return;
     try {
@@ -160,6 +169,7 @@ export function mountHome(ctx) {
     } catch (error) {
       tell(error?.message ?? '房间暂时读不出来。', 'error');
     }
+    await loadSnapshots();
     render();
   }
 
@@ -337,6 +347,13 @@ export function mountHome(ctx) {
       'data-phase': snapshot.phase ?? 'day',
       'aria-hidden': 'true',
     }));
+
+    // 画架/相框：固定位置、只读；图是用户自己选的本地图，复制进 art/。
+    if (snapshot.art?.painting) {
+      const frame = el(document, 'img', { class: 'fhm-painting', alt: '画架上的画', decoding: 'async' });
+      stage.append(frame);
+      loadArt('painting').then((src) => { if (src && live()) frame.setAttribute('src', src); });
+    }
 
     const hasCharacter = Boolean(snapshot.art?.characters?.[snapshot.room.activity]
       ?? snapshot.art?.characters?.idle);
@@ -532,6 +549,129 @@ export function mountHome(ctx) {
     render();
   }
 
+  async function choosePainting() {
+    if (typeof ctx.pickPath !== 'function') {
+      tell('这个宿主不支持选本地图片。', 'error');
+      render();
+      return;
+    }
+    try {
+      const picked = await ctx.pickPath();
+      const path = typeof picked === 'string' ? picked : (picked?.path ?? picked?.filePath ?? '');
+      if (!path) return;
+      await write('setPainting', { path, revision: snapshot.revision }, '挂到画架上了。');
+    } catch (error) {
+      tell(error?.message ?? '这张图没选成。', 'error');
+      render();
+    }
+  }
+
+  async function saveSnapshotNow() {
+    const result = await write('snapshotSave', {}, '快照存好了。');
+    if (result) await loadSnapshots();
+    render();
+  }
+
+  async function removeSnapshotNow(id) {
+    const result = await write('snapshotRemove', { id }, '快照删掉了。');
+    if (result) await loadSnapshots();
+    render();
+  }
+
+  function downloadJson(data) {
+    const text = JSON.stringify(data, null, 2);
+    try {
+      const blob = new Blob([text], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'fish-home-export.json';
+      link.click();
+      setTimeout(() => URL.revokeObjectURL?.(url), 0);
+      tell('备份已导出（只有引用，没有图片字节）。', 'ok');
+    } catch {
+      view.exportText = text;
+      tell('浏览器不给下载，备份内容放进下面的文本框了。', '');
+    }
+    render();
+  }
+
+  async function exportBackup() {
+    try {
+      const result = await call('exportRoom');
+      if (result?.ok !== true) throw new Error(result?.error ?? '导出失败。');
+      downloadJson(result);
+    } catch (error) {
+      tell(error?.message ?? '导出失败。', 'error');
+      render();
+    }
+  }
+
+  async function importBackup(input) {
+    const file = input?.files?.[0];
+    if (!file) return;
+    input.value = '';
+    try {
+      const text = await new Promise((resolve, reject) => {
+        const Reader = document.defaultView?.FileReader ?? globalThis.FileReader;
+        if (!Reader) { reject(new Error('这个环境读不了文件。')); return; }
+        const reader = new Reader();
+        reader.onload = () => resolve(String(reader.result ?? ''));
+        reader.onerror = () => reject(reader.error ?? new Error('读不了这个文件。'));
+        reader.readAsText(file);
+      });
+      let data;
+      try { data = JSON.parse(text); } catch { throw new Error('这不是一份备份 JSON。'); }
+      await write('importRoom', { data, revision: snapshot.revision }, '导入完成。');
+    } catch (error) {
+      tell(error?.message ?? '导入失败。', 'error');
+      render();
+    }
+  }
+
+  function snapshotWhen(at) {
+    if (!Number.isFinite(at)) return '';
+    const date = new Date(at);
+    const pad = (value) => String(value).padStart(2, '0');
+    return `${date.getMonth() + 1} 月 ${date.getDate()} 日 ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  }
+
+  function renderSnapshots() {
+    const box = el(document, 'div', { class: 'fhm-snaps' },
+      el(document, 'div', { class: 'fhm-snaps-head' },
+        el(document, 'span', { class: 'fhm-plan-label', text: '快照' }),
+        el(document, 'button', { type: 'button', text: '存快照', onclick: () => { void saveSnapshotNow(); } })),
+      el(document, 'p', { class: 'fhm-fine', text: '只记那一刻的房间；图按 digest 引用，不复制字节。删快照不影响当前房间。' }));
+    if (!view.snapshots.length) {
+      box.append(el(document, 'p', { class: 'fhm-deps-empty', text: '还没有快照。' }));
+    } else {
+      for (const item of view.snapshots) {
+        box.append(el(document, 'div', { class: 'fhm-snap-row' },
+          el(document, 'span', { class: 'fhm-snap-main', text: `${snapshotWhen(item.at)} · ${item.label || '发呆'}${item.note ? ` · ${item.note}` : ''}` }),
+          item.missing ? el(document, 'span', { class: 'fhm-snap-missing', text: '这张图不在了' }) : null,
+          el(document, 'button', {
+            type: 'button',
+            text: '删除',
+            'aria-label': `删除快照 ${item.id}`,
+            onclick: () => { void removeSnapshotNow(item.id); },
+          })));
+      }
+    }
+    box.append(el(document, 'div', { class: 'fhm-row-actions' },
+      el(document, 'button', { type: 'button', text: '导出备份', onclick: () => { void exportBackup(); } }),
+      el(document, 'label', { class: 'fhm-import' }, '导入备份',
+        el(document, 'input', {
+          type: 'file', accept: '.json,application/json', 'aria-label': '导入房间备份',
+          onchange: (event) => { void importBackup(event.target); },
+        }))));
+    if (view.exportText) {
+      const out = el(document, 'textarea', { readonly: '', rows: '3', 'aria-label': '导出内容' });
+      out.value = view.exportText;
+      box.append(out);
+    }
+    return box;
+  }
+
   function renderDress() {
     if (!view.editing) return null;
     const box = el(document, 'div', { class: 'fhm-dress' },
@@ -569,6 +709,19 @@ export function mountHome(ctx) {
         onclick: () => { void write('clearForeground', { revision: snapshot.revision }, '前景清掉了。'); },
       })));
 
+    box.append(el(document, 'div', { class: 'fhm-row' },
+      el(document, 'span', { class: 'fhm-row-name', text: '画架 / 相框' }),
+      el(document, 'button', {
+        type: 'button', text: '选一张本地图', 'aria-label': '选一张本地图挂到画架',
+        onclick: () => { void choosePainting(); },
+      }),
+      el(document, 'span', { class: 'fhm-row-name', text: snapshot.art?.painting ? '已设置' : '未设置' }),
+      el(document, 'button', {
+        type: 'button', text: '清空',
+        disabled: !snapshot.art?.painting || busy,
+        'aria-label': '清空画架图片',
+        onclick: () => { void write('clearPainting', { revision: snapshot.revision }, '画架清空了。'); },
+      })));
     box.append(el(document, 'div', { class: 'fhm-row fhm-batch' },
       el(document, 'span', { class: 'fhm-row-name', text: '批量导入' }),
       el(document, 'input', {
@@ -783,6 +936,15 @@ export function mountHome(ctx) {
         text: `心愿 · ${w.placeName}${w.target ? ` · ${w.target}` : ''}${w.reason ? `：${w.reason}` : ''}`,
       }));
     }
+    if (snapshot.trip?.auto && snapshot.trip.mode !== 'home') {
+      nodes.push(el(document, 'div', { class: 'fhm-auto' },
+        el(document, 'span', { text: '这趟是她自己出去的。' }),
+        el(document, 'button', {
+          type: 'button',
+          text: '撤销这次出门',
+          onclick: () => { void write('undoAutoGo', {}, '已经把她叫回来了。'); },
+        })));
+    }
     return nodes;
   }
 
@@ -823,7 +985,7 @@ export function mountHome(ctx) {
       'data-tone': view.tone,
       text: snapshot.warning || view.feedback,
     });
-    const nodes = [head, feedback, renderStage(), ...renderEntry(), renderChips(), renderActions(), renderPlan(), renderPending()];
+    const nodes = [head, feedback, renderStage(), ...renderEntry(), renderChips(), renderActions(), renderPlan(), renderSnapshots(), renderPending()];
     const dress = renderDress();
     if (dress) nodes.push(dress);
     nodes.push(el(document, 'p', { class: 'fhm-foot', text: '出门在「去哪儿」，故事在「出游」。这里只记她在家里的样子。' }));

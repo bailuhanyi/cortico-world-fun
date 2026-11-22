@@ -404,6 +404,8 @@ export class FunWorld {
   #locationLibrary;
   /** 第七个面板「家」的 2D 房间状态：只写 `fun/home/`，不碰 `state.json`。 */
   #home;
+  /** 自动出门的定时器：**只在开关打开时注册**（关着时连定时器都没有）。 */
+  #autoTimer = null;
   #storySecrets;
   #storyNodeLimit;
   #storyImages;
@@ -431,7 +433,7 @@ export class FunWorld {
       saveVenue: (raw) => this.#saveVenue(raw),
       removeVenue: (id) => this.#removeVenue(id),
     });
-    this.#home = new HomeRoom({ dataDir: this.dataDir });
+    this.#home = new HomeRoom({ dataDir: this.dataDir, now: () => this.#now() });
     this.#storyLibrary = new StoryLibrary({ file: this.storiesFile(), venues: () => this.#places(), visits: (id) => this.#state ? this.#history(id)?.visitCount ?? 0 : 0, nowMin: () => minutesIn(this.timezone, this.#now()), nodeLimit: () => this.#storyNodeLimit.value });
   }
 
@@ -1058,7 +1060,7 @@ export class FunWorld {
     return { text: lines.join('\n') };
   }
 
-  async #goTool(args, storyRun) {
+  async #goTool(args, storyRun, options = {}) {
     const now = this.#now();
     const day = dayIn(this.timezone, now);
     this.#state = this.#normalizeState();
@@ -1097,6 +1099,7 @@ export class FunWorld {
     }
     const enteredPhase = phaseLabelAt(venue, minutesIn(this.timezone, now));
     session.phases = enteredPhase ? [enteredPhase] : [];
+    if (options.auto === true) session.auto = true;
     addMoment(session, 'enter', '进了' + venue.name, now);
     if (route) {
       session.routeId = route.id;
@@ -1832,8 +1835,8 @@ export class FunWorld {
             ? 'Her room right now: change the pose, dress the room, or see whether she is out.'
             : '她此刻在家做什么：换一个姿势、布置房间，或者看看她在不在外面。',
           // 只读：幂等、不写盘。写方法单独声明给宿主，面板才不会只被当成展示。
-          getMethods: ['state', 'art'],
-          methods: ['setActivity', 'setNote', 'setPlan', 'resume', 'setBackground', 'clearBackground', 'setForeground', 'clearForeground', 'setCharacter', 'clearCharacter', 'saveHotspots', 'savePlacements', 'resetRoom'],
+          getMethods: ['state', 'art', 'snapshotList', 'exportRoom'],
+          methods: ['setActivity', 'setNote', 'setPlan', 'resume', 'setBackground', 'clearBackground', 'setForeground', 'clearForeground', 'setCharacter', 'clearCharacter', 'saveHotspots', 'savePlacements', 'setPainting', 'clearPainting', 'snapshotSave', 'snapshotRemove', 'importRoom', 'undoAutoGo', 'resetRoom'],
         },
         {
           id: 'places',
@@ -2901,6 +2904,7 @@ export class FunWorld {
         placeName: outing.placeName ?? '',
         visited: Array.isArray(outing.visited) ? outing.visited.length : 0,
         total: venue?.areas?.length ?? 0,
+        auto: outing.auto === true,
       };
     }
     // 未完行程票笺：只给「继续」，不提供「替她回家」。
@@ -3012,8 +3016,50 @@ export class FunWorld {
     }
   }
 
+  /** 自动出门是否注册了（关着时必须是 false，不是运行时跳过）。 */
+  get autoGoRegistered() {
+    return this.#autoTimer !== null;
+  }
+
+  /**
+   * 自动出门的一次检查：条件全满足才走现有 `fun_go`（和手点同一函数），
+   * 行程标 `auto: true`。失败安静，不打扰用户。
+   */
+  async runAutoGo(now = this.#now()) {
+    return this.#serial(async () => {
+      if (this.cfg?.funHomeAutoGo !== true) return { ok: false, skipped: 'off', text: '' };
+      const nowMin = minutesIn(this.timezone, now);
+      if (nowMin < 10 * 60 || nowMin >= 20 * 60) return { ok: false, skipped: 'hours', text: '' };
+      const { session, draft } = this.#outings(now);
+      if (session || draft) return { ok: false, skipped: 'trip', text: '' };
+      const today = dayIn(this.timezone, now);
+      // 当天已经自动出去过：看已保存的行程里有没有今天的 auto 标记。
+      if (this.#savedTrips().some((trip) => trip.auto === true && tripDay(trip, this.timezone) === today)) {
+        return { ok: false, skipped: 'already', text: '' };
+      }
+      const open = this.#places().filter((venue) => hoursState(venue, nowMin) !== 'closed');
+      if (!open.length) return { ok: false, skipped: 'closed', text: '' };
+      const venue = open[Math.min(open.length - 1, Math.floor(this.#random() * open.length))];
+      try {
+        const result = await this.#goTool({ place: venue.name }, null, { auto: true });
+        return { ok: !result.failed, skipped: result.failed ? 'failed' : '', text: result.text };
+      } catch {
+        // 失败安静待在家里，不刷错误。
+        return { ok: false, skipped: 'failed', text: '' };
+      }
+    });
+  }
+
   async #invokeHome(method, payload) {
     if (method === 'state') return await this.#homeState();
+    if (method === 'snapshotList') {
+      const list = await this.#home.listSnapshots();
+      return { ok: true, items: list.items.map(({ data, ...rest }) => rest) };
+    }
+    if (method === 'exportRoom') {
+      const data = await this.#home.exportRoom();
+      return { ok: true, ...data };
+    }
     if (method === 'art') {
       const allowed = ['background', 'foreground', 'painting', 'character'];
       const slot = allowed.includes(payload?.slot) ? payload.slot : 'character';
@@ -3040,6 +3086,36 @@ export class FunWorld {
         case 'clearCharacter': await this.#home.clearCharacter(payload.activity, payload.revision); break;
         case 'saveHotspots': await this.#home.saveHotspots(payload.hotspots, payload.revision); break;
         case 'savePlacements': await this.#home.savePlacements(payload.placements, payload.revision); break;
+        case 'setPainting': await this.#home.attachPainting(payload.path, payload.revision); break;
+        case 'clearPainting': await this.#home.clearPainting(payload.revision); break;
+        case 'snapshotSave': {
+          const state = await this.#homeState();
+          await this.#home.saveSnapshot({
+            phase: state.phase,
+            room: { activity: state.room.activity, label: state.room.label, note: state.room.note, plan: state.room.plan },
+            art: {
+              background: state.art.background,
+              characters: state.art.characters,
+              hotspots: state.art.hotspots,
+              foreground: state.art.foreground,
+              painting: state.art.painting,
+            },
+            placements: state.placements,
+            keepsakes: state.keepsakes,
+          });
+          break;
+        }
+        case 'snapshotRemove': await this.#home.removeSnapshot(payload.id); break;
+        case 'importRoom': await this.#home.importRoom(payload.data ?? payload); break;
+        case 'undoAutoGo': {
+          const { session, draft } = this.#outings(this.#now());
+          if (!(session?.auto === true || draft?.auto === true)) {
+            return { ok: false, error: '现在没有自动出门的行程可以撤销。' };
+          }
+          const result = await this.#homeTool({ note: '自动出门，撤销回来' });
+          if (result.failed) return { ok: false, error: result.text };
+          break;
+        }
         case 'resetRoom': await this.#home.resetRoom(payload.revision); break;
         default: return { ok: false, error: `home 没有 ${method} 这个方法` };
       }
@@ -3365,6 +3441,7 @@ export class FunWorld {
       scene: t.scene,
       outfit: t.outfit,
       company: t.company || '',
+      auto: t.auto === true,
       // 用 trip 里存下的本地日期，别拿 leftAt 去反算（UTC 会把早上 8 点前的摊算成前一天）。
       day: tripDay(t, this.timezone),
       enteredHm: t.enteredAt ? hmIn(tz, t.enteredAt) : '',
@@ -3502,6 +3579,11 @@ export class FunWorld {
     await this.#storySecrets.load();
     await this.#storyImages.init();
     this.#started = true;
+    // 用户开关：关着时这条路径根本不注册（不是注册了再跳过）。
+    if (this.cfg?.funHomeAutoGo === true) {
+      this.#autoTimer = setInterval(() => { void this.runAutoGo().catch(() => {}); }, 5 * 60 * 1000);
+      this.#autoTimer.unref?.();
+    }
     this.#host?.log?.info?.('从0开始的肥鱼大冒险已启动', {
       places: this.#places().length,
       userVenues: this.#userVenues.length,
@@ -3513,6 +3595,7 @@ export class FunWorld {
 
   async stop() {
     this.#started = false;
+    if (this.#autoTimer) { clearInterval(this.#autoTimer); this.#autoTimer = null; }
     this.#storyImages.cancel();
     this.#dm.cancel();
     this.#autonomy.clear();
