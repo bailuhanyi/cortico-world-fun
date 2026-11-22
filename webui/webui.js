@@ -144,6 +144,8 @@ const CSS = `
 .fun-heading{margin-bottom:16px;padding:4px 0 12px;border-bottom:1px solid var(--f-line)}
 .fun-heading h2{font-size:20px;line-height:1.4;margin:0 0 4px;letter-spacing:.03em}
 .fun-heading p{margin:0;color:var(--f-dim);font-size:12.5px}
+.fun-kicker{margin:0 0 6px!important;font-size:11px!important;letter-spacing:.14em;color:var(--f-dim)}
+.fun-heading-lead{font-size:12.5px!important;line-height:1.8}
 .fun-live,.fun-trip,.fun-stats,.fun-form{border-radius:var(--f-round);padding:14px 16px}
 .fun-live{background:linear-gradient(120deg,color-mix(in srgb,var(--f-accent) 8%,var(--f-card)),var(--f-card));margin-bottom:16px}
 .fun-live h3{font-size:16px}
@@ -185,7 +187,7 @@ const CSS = `
   --f-warm:#a17b4b;--f-round:14px;--f-round-sm:10px;
 }
 .fun-heading{border-bottom:1px solid var(--f-line);padding-bottom:14px;margin-bottom:20px}
-.fun-heading h2{font-size:22px;letter-spacing:.05em;font-weight:650}
+.fun-heading h2{font-size:25px;letter-spacing:.04em;font-weight:650;line-height:1.3;margin:0 0 7px}
 .fun-heading p{font-size:12.5px;line-height:1.75}
 .fun-tabs button,.fun-filters button{min-height:32px;font-size:12.5px;padding:6px 14px}
 .fun-tabs button[aria-pressed="true"],.fun-filters button[aria-pressed="true"]{box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--f-accent) 35%,transparent)}
@@ -385,7 +387,10 @@ function errorCard(err, retry, retained = false) {
 }
 
 function heading(title, subtitle) {
-  return el('header', { class: 'fun-heading' }, el('h2', { text: title }), el('p', { text: subtitle }));
+  return el('header', { class: 'fun-heading' },
+    el('p', { class: 'fun-kicker', text: `娱乐时间 · ${title}` }),
+    el('h2', { text: title }),
+    subtitle ? el('p', { class: 'fun-heading-lead', text: subtitle }) : null);
 }
 
 function feedback(box) {
@@ -577,7 +582,7 @@ function mountPlaces(ctx) {
   const render = (data) => {
     const restoreFocus = rememberFocus(body);
     currentData = data;
-    body.replaceChildren(heading('去哪儿', '挑一处喜欢的地方，慢慢逛。'));
+    body.replaceChildren(heading('今天，想去哪儿？', '有些地方适合热闹，有些地方适合慢慢待着。'));
 
     const pendingChoice = (choice) => choice ? el('div', { class: 'fun-choice' },
       el('div', { class: 'fun-choice-title', text: choice.prompt || '待选择事件' }),
@@ -1108,7 +1113,7 @@ function mountBook(ctx) {
   const render = (data) => {
     const restoreFocus = rememberFocus(body);
     currentData = data;
-    body.replaceChildren(heading('纪念册', '把走过的地方，收成可以回看的小回忆。'));
+    body.replaceChildren(heading('那些一起出门的日子。', '每一趟都留在这里，想起时再翻一翻。'));
     if (data.session) body.appendChild(el('div', { class: 'fun-live' },
       el('h3', { text: '正在逛 · ' + data.session.placeName }), el('div', { class: 'fun-trip-sum', text: data.session.summary })));
     else if (data.trips?.length) body.appendChild(el('div', { class: 'fun-live' },
@@ -1303,7 +1308,7 @@ function mountShelf(ctx) {
 
   const render = (data) => {
     currentData = data;
-    body.replaceChildren(heading('纪念品架', '每一件小东西，都有带它回来的那一天。'));
+    body.replaceChildren(heading('带回来的小东西。', '一件纪念品，连着一处地方，也连着那一天。'));
     if (!data.total) {
       body.appendChild(el('div', { class: 'fun-empty', text: '架子上还什么都没有——她买过纪念品，这里就有了。' }));
     }

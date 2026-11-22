@@ -290,7 +290,8 @@ test('服务端面板声明带 getMethods，且声明的方法真的能调', asy
   const authored = { ...JSON.parse(template.json), id: 'user-rpc-story' };
   assert.equal((await decl.invoke('stories', 'import', [{ json: JSON.stringify(authored) }])).ok, true);
   const builtin = authored;
-  assert.deepEqual(decl.panels.map((p) => p.id), ['places', 'book', 'shelf', 'locations', 'story', 'stories']);
+  // 页签顺序按方案图：去哪儿 → 地点册 → 出游 → 纪念册 → 纪念品架 → 故事工坊。
+  assert.deepEqual(decl.panels.map((p) => p.id), ['places', 'locations', 'story', 'book', 'shelf', 'stories']);
   for (const p of decl.panels) {
     assert.ok(p.title && p.description, `${p.id} 缺标题或说明`);
     assert.ok(Array.isArray(p.getMethods) && p.getMethods.length, `${p.id} 没声明 getMethods`);
@@ -1270,6 +1271,17 @@ test('英文界面也有标题，不回落成中文', async () => {
   const root = await mount('book');
   await waitFor(() => root.querySelector('.fun-empty'), '渲染出来');
   assert.ok(root.childNodes.length > 0);
+});
+
+test('面板标题互不相同：两个故事面板不能都叫「故事工坊」', async () => {
+  // 宿主把面板标题直接排成页签；同名就会变成两个一模一样的「故事工坊」，点哪个都像点错。
+  // 按方案图：从鱼的家出发玩故事的那个叫「出游」，写作/导入作品的那个才叫「故事工坊」。
+  const { decl, mount } = await mountPanels();
+  const titles = decl.panels.map((panel) => panel.title);
+  assert.equal(new Set(titles).size, titles.length, `面板标题重复：${titles.join('、')}`);
+  assert.deepEqual(titles, ['去哪儿', '地点册', '出游', '纪念册', '纪念品架', '故事工坊']);
+  const root = await mount('stories');
+  assert.match(root.textContent, /给下一次出游，写一个故事。/);
 });
 
 test('shelf 面板：空架子给一句话', async () => {

@@ -69,7 +69,7 @@
 
 ## 4. 验证现状
 
-- `npm test` 通过（`panels` 67/67、`story/webui` 41/41、`place-library` 10/10、`user-venues` 20/20、`world` 82/82）。
+- `npm test` 通过（`panels` 68/68、`story/webui` 41/41、`place-library` 10/10、`user-venues` 20/20、`world` 82/82）。
 - `npm run verify` 全部通过，`describe.json` 与代码一致。
 - `node tools/verify-published.mjs --file .tmp/release-0.4.3/cortico-world-fun-0.4.3.tgz` 通过（45 个文件、22 处预设、六面板取数、单文件入口）。
 - 受限沙箱下 `story-config` 的 DPAPI 用例假失败；完整权限下 7/7（已知问题，见旧交接 §6）。

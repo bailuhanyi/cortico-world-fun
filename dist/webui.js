@@ -1193,9 +1193,9 @@ function mountStories(ctx) {
       el(
         "div",
         { class: "fun-story-head-main" },
-        el("p", { class: "fun-story-kicker" }, "故事 · 写在地点上的小篇"),
-        el("h2", {}, "故事工坊"),
-        el("p", { class: "fun-story-note" }, "为地点编写事件节点与分支。草稿仅在导入时保存。")
+        el("p", { class: "fun-story-kicker" }, "娱乐时间 · 给下一次出游，写一个故事。"),
+        el("h2", {}, "给下一次出游，写一个故事。"),
+        el("p", { class: "fun-story-note" }, "故事库、创作与试玩放在一起；平时只看作品，编辑时再展开。")
       ),
       el("div", { class: "fun-story-head-actions" }, newButton)
     ),
@@ -4096,6 +4096,8 @@ var STYLES2 = `
 .fpl h3 { font-size: 17px; }
 .fpl h4 { font-size: 14px; }
 .fpl-header { border-bottom: 1px solid var(--fpl-line); padding-bottom: 12px; margin-bottom: 12px; }
+.fpl-kicker { margin: 0 0 6px; font-size: 11px; letter-spacing: .14em; color: var(--fpl-muted); }
+.fpl-header h2 { font-size: 25px; line-height: 1.3; letter-spacing: .04em; margin-bottom: 7px; }
 .fpl-nav { margin-bottom: 14px; }
 .fpl-row { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
 .fpl-stack { display: grid; gap: 12px; min-width: 0; }
@@ -4201,8 +4203,9 @@ function mountPlaces(ctx) {
   section.append(node2("style", {}, STYLES2), node2(
     "header",
     { class: "fpl-header" },
-    node2("h2", {}, "地点册"),
-    note2("把住处、常去的地方和想去的风景，收在同一本册子里。")
+    node2("p", { class: "fpl-kicker" }, "娱乐时间 · 把喜欢的地方，记在这里。"),
+    node2("h2", {}, "把喜欢的地方，记在这里。"),
+    note2("管理地点、游玩内容、封面与关联。")
   ), navigation, feedback3, main);
   root.replaceChildren(section);
   let snapshot;
@@ -5075,6 +5078,8 @@ var CSS2 = `
 .fun-heading{margin-bottom:16px;padding:4px 0 12px;border-bottom:1px solid var(--f-line)}
 .fun-heading h2{font-size:20px;line-height:1.4;margin:0 0 4px;letter-spacing:.03em}
 .fun-heading p{margin:0;color:var(--f-dim);font-size:12.5px}
+.fun-kicker{margin:0 0 6px!important;font-size:11px!important;letter-spacing:.14em;color:var(--f-dim)}
+.fun-heading-lead{font-size:12.5px!important;line-height:1.8}
 .fun-live,.fun-trip,.fun-stats,.fun-form{border-radius:var(--f-round);padding:14px 16px}
 .fun-live{background:linear-gradient(120deg,color-mix(in srgb,var(--f-accent) 8%,var(--f-card)),var(--f-card));margin-bottom:16px}
 .fun-live h3{font-size:16px}
@@ -5116,7 +5121,7 @@ var CSS2 = `
   --f-warm:#a17b4b;--f-round:14px;--f-round-sm:10px;
 }
 .fun-heading{border-bottom:1px solid var(--f-line);padding-bottom:14px;margin-bottom:20px}
-.fun-heading h2{font-size:22px;letter-spacing:.05em;font-weight:650}
+.fun-heading h2{font-size:25px;letter-spacing:.04em;font-weight:650;line-height:1.3;margin:0 0 7px}
 .fun-heading p{font-size:12.5px;line-height:1.75}
 .fun-tabs button,.fun-filters button{min-height:32px;font-size:12.5px;padding:6px 14px}
 .fun-tabs button[aria-pressed="true"],.fun-filters button[aria-pressed="true"]{box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--f-accent) 35%,transparent)}
@@ -5312,7 +5317,13 @@ function errorCard(err, retry, retained = false) {
   );
 }
 function heading(title, subtitle) {
-  return el2("header", { class: "fun-heading" }, el2("h2", { text: title }), el2("p", { text: subtitle }));
+  return el2(
+    "header",
+    { class: "fun-heading" },
+    el2("p", { class: "fun-kicker", text: `娱乐时间 · ${title}` }),
+    el2("h2", { text: title }),
+    subtitle ? el2("p", { class: "fun-heading-lead", text: subtitle }) : null
+  );
 }
 function feedback2(box) {
   const node2 = el2("div", { class: "fun-feedback" });
@@ -5541,7 +5552,7 @@ function mountPlaces2(ctx) {
   const render = (data) => {
     const restoreFocus = rememberFocus(body);
     currentData = data;
-    body.replaceChildren(heading("去哪儿", "挑一处喜欢的地方，慢慢逛。"));
+    body.replaceChildren(heading("今天，想去哪儿？", "有些地方适合热闹，有些地方适合慢慢待着。"));
     const pendingChoice = (choice) => choice ? el2(
       "div",
       { class: "fun-choice" },
@@ -6116,7 +6127,7 @@ function mountBook(ctx) {
   const render = (data) => {
     const restoreFocus = rememberFocus(body);
     currentData = data;
-    body.replaceChildren(heading("纪念册", "把走过的地方，收成可以回看的小回忆。"));
+    body.replaceChildren(heading("那些一起出门的日子。", "每一趟都留在这里，想起时再翻一翻。"));
     if (data.session) body.appendChild(el2(
       "div",
       { class: "fun-live" },
@@ -6396,7 +6407,7 @@ function mountShelf(ctx) {
   );
   const render = (data) => {
     currentData = data;
-    body.replaceChildren(heading("纪念品架", "每一件小东西，都有带它回来的那一天。"));
+    body.replaceChildren(heading("带回来的小东西。", "一件纪念品，连着一处地方，也连着那一天。"));
     if (!data.total) {
       body.appendChild(el2("div", { class: "fun-empty", text: "架子上还什么都没有——她买过纪念品，这里就有了。" }));
     }

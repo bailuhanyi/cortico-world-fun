@@ -45,8 +45,8 @@ export function mountPlaces(ctx) {
   const feedback = node('div', { class: 'fpl-feedback', role: 'status' });
   const navigation = node('nav', { class: 'fpl-row fpl-nav', 'aria-label': '地点导航' });
   const main = node('div', { class: 'fpl-stack' });
-  section.append(node('style', {}, STYLES), node('header', { class: 'fpl-header' }, node('h2', {}, '地点册'),
-    note('把住处、常去的地方和想去的风景，收在同一本册子里。')), navigation, feedback, main);
+  section.append(node('style', {}, STYLES), node('header', { class: 'fpl-header' }, node('p', { class: 'fpl-kicker' }, '娱乐时间 · 把喜欢的地方，记在这里。'), node('h2', {}, '把喜欢的地方，记在这里。'),
+    note('管理地点、游玩内容、封面与关联。')), navigation, feedback, main);
   root.replaceChildren(section);
 
   let snapshot;

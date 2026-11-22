@@ -18,6 +18,8 @@ export const STYLES = `
 .fpl h3 { font-size: 17px; }
 .fpl h4 { font-size: 14px; }
 .fpl-header { border-bottom: 1px solid var(--fpl-line); padding-bottom: 12px; margin-bottom: 12px; }
+.fpl-kicker { margin: 0 0 6px; font-size: 11px; letter-spacing: .14em; color: var(--fpl-muted); }
+.fpl-header h2 { font-size: 25px; line-height: 1.3; letter-spacing: .04em; margin-bottom: 7px; }
 .fpl-nav { margin-bottom: 14px; }
 .fpl-row { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
 .fpl-stack { display: grid; gap: 12px; min-width: 0; }

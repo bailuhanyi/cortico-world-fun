@@ -1342,7 +1342,7 @@ export class FunWorld {
     if (this.cfg?.funStoryImages === true) {
       const images = this.#storyImages.status(true);
       if (images.state === 'direct') {
-        lines.push('剧情图片已选本机 ComfyUI；请在「故事工坊」面板明确点击生成。回家不等待图片，也不会自动发图片请求。');
+        lines.push('剧情图片已选本机 ComfyUI；请在「出游」面板明确点击生成。回家不等待图片，也不会自动发图片请求。');
       } else {
         const image = await this.#storyImages.generate({ enabled: true, scene, outfits: trip.outfit || '', prompt: `仅画实际经历：${summary}` });
         lines.push(image.message, `图片委派参数：${JSON.stringify({ source: image.source, tool: image.tool, scene: image.scene, outfits: image.outfits, prompt: image.prompt })}`);
@@ -1761,13 +1761,13 @@ export class FunWorld {
           getMethods: ['list', 'blank', 'history'],
           methods: ['save', 'remove', 'reset', 'resetAll', 'resume', 'closeDraft'],
         },
-        { id: 'book', title: p.book.title, description: p.book.description, getMethods: ['list'], methods: ['favorite', 'wish'] },
-        { id: 'shelf', title: p.shelf.title, description: p.shelf.description, getMethods: ['list', 'trip'] },
         { id: 'locations', title: '地点册', description: '编辑全部地点（场所 + 画风 + 关联 + 封面），管理住所，迁入小世界备份。', getMethods: ['list'], methods: ['get', 'cover', 'create', 'update', 'remove', 'reset', 'resetAll', 'setHome', 'setDefaultStyle', 'setCover', 'clearCover', 'previewImport', 'commitImport', 'restoreImport'] },
-        { id: 'story', title: this.language === 'en' ? 'Story Workshop' : '故事工坊', description: this.language === 'en' ? 'Write stories, play from home, and configure optional DM and images.' : '从鱼的家出发，编写故事、体验文字剧情并设置可选主持与图片。',
+        { id: 'story', title: this.language === 'en' ? 'Outing' : '出游', description: this.language === 'en' ? 'Start from the fish home, play a text story, write one, and configure optional DM and images.' : '从鱼的家出发，游玩文字剧情、编写故事，并设置可选主持与图片。',
           getMethods: ['status', 'storySettings', 'storyImageRead', 'authorList', 'authorTemplate', 'authorValidate', 'authorPreview', 'authorPlaytest', 'authorExport'],
           methods: [...STORY_ACTIONS, 'locationCover', 'saveStorySettings', 'saveStoryNodeLimit', 'clearStoryKey', 'storyImage', 'authorImport', 'authorEnable', 'authorDisable', 'authorRemove'] },
-        { id: 'stories', title: this.language === 'en' ? 'Story Workshop' : '故事工坊', description: '导入、校验、预览和管理本地原创剧情包。', getMethods: ['list', 'template', 'validate', 'preview', 'playtest', 'export'], methods: ['import', 'enable', 'disable', 'remove'] },
+        { id: 'book', title: p.book.title, description: p.book.description, getMethods: ['list'], methods: ['favorite', 'wish'] },
+        { id: 'shelf', title: p.shelf.title, description: p.shelf.description, getMethods: ['list', 'trip'] },
+        { id: 'stories', title: this.language === 'en' ? 'Story Workshop' : '故事工坊', description: this.language === 'en' ? 'Import, validate, preview and manage locally written story packs.' : '导入、校验、预览和管理本地原创剧情包。', getMethods: ['list', 'template', 'validate', 'preview', 'playtest', 'export'], methods: ['import', 'enable', 'disable', 'remove'] },
       ],
       invoke: (panel, method, args) => this.#invoke(panel, method, args ?? []),
       config: [configGroup(this.language)],
@@ -2129,7 +2129,7 @@ export class FunWorld {
   // -------------------------------------------------------------------------
 
   #textOff() {
-    return { text: '文字通道游玩没有开启。到娱乐时间的设置里打开「文字通道也能玩故事」，或者到「故事工坊」面板里玩。', failed: true };
+    return { text: '文字通道游玩没有开启。到娱乐时间的设置里打开「文字通道也能玩故事」，或者到「出游」面板里玩。', failed: true };
   }
 
   async #storyTextStart(args) {
