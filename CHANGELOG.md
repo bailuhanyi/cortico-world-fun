@@ -7,6 +7,7 @@
 - **改：「自己出门」改成方案 B——World 只叫醒，不替她决定**。`worlds.fun.funHomeAutoGo` 仍是「主人允许她自己出门」，新增 `worlds.fun.funHomeAutoSlots`（默认 `10:30,15:30,19:30`，24 小时制、逗号分隔、留空只留许可不叫）。两个都有且时段非空时，World 到点推一条 internal 事件 `fun.home.free`：提醒她先看当天日程（`feast_life_now`），这一段自由就出门、写着上班/通勤/睡觉就别出门；同一时段一天只叫一次，正在出门或还有没逛完的行程不叫，叫醒记录落在 `fun/auto-go.json`。它**不读**「鱼的每一天」的日程、不挑地方、不替她出门；去不去、去哪儿、去几次由她和主对话定。`fun_go` 回执提示把这一趟写进当天日程（`feast_life_adjust`），回家回执照旧 `feast_life_play`。面板的「这趟是她自己出去的 / 撤销这次出门」和 `undoAutoGo` 已移除。`describe.json` 因此从 0 个事件变成 1 个。
 - **改：家里的角色换成内置 Q 版**。十张 `chibi-*.png` 裁掉透明边、缩到 900px 高（WebP，共约 1.2 MB）后随包内置，作为没上传角色图时的默认立绘：十个活动各一张，缺哪张就退回发呆那张。自己传的图仍然覆盖它，清空后回到内置。默认站位按「看得见的高度」重新量过（站 0.40 / 坐 0.28–0.32 / 躺 0.26；旧值 0.52 是按带留白的半写实立绘量的，Q 版照那个高度会顶到墙）；布置页的「位置微调」照旧可逐活动改。快照里的 `art.builtin` 会列出内置了哪几个活动。
 - **修：画架选图必报「kind 必须是 file 或 directory」**。面板调 `ctx.pickPath()` 没带参数，Coo 的 `/api/path-picker` 只认 `kind: file | directory`，于是对话框根本不弹、只回一句 400。现在带 `{ kind: 'file', title, extensions: ['.png','.jpg','.jpeg','.gif','.webp'] }`（后缀和服务端 `attachPainting` 认的格式一致），并补了一条会真点「选一张本地图」、断言选择器收到 `kind` 的面板测试。
+- **改：纪念品摆件先不摆**。0.7.0 的摆法按百分比落在房间上，图标会压在空白房间的说明文字和角色身上；等排版、图标和可拖完善再开。数据与接口都还在（`fun_home_state` 的 `keepsakes` 照常返回），面板里把 `SHOW_KEEPSAKES` 改回 `true` 就恢复。
 - 版本号升到 0.7.1；已打包（`story-world\artifacts\release-0.7.1`），并装进本机 Coo（备份 `cortico-world-fun.bak-20261123-0010`）。
 
 ## 0.7.0

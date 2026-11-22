@@ -21,6 +21,14 @@ const ACCEPT = 'image/png,image/jpeg,image/gif,image/webp,.png,.jpg,.jpeg,.gif,.
 const PICKER_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.gif', '.webp'];
 /** 按内容寻址的图片引用缓存：切回面板不重复拉同一张图。 */
 const artCache = new Map();
+/**
+ * 纪念品摆件：先不摆。
+ *
+ * 0.7.0 的摆法是按百分比落在房间上，图标会压在空白房间的说明文字和角色身上；
+ * 等排版与素材（图标、摆位、可拖）完善了再打开。数据和接口都还在：
+ * `fun_home_state` 的 `keepsakes` 照常返回，改回 true 就恢复渲染。
+ */
+const SHOW_KEEPSAKES = false;
 /** 纪念品固定摆位：票根/杂项→书架、杯子→茶几、玩偶→沙发边、花草→窗台。 */
 const KEEPSAKE_SLOTS = {
   ticket: { left: 50, top: 40, icon: '🎫' },
@@ -426,9 +434,10 @@ export function mountHome(ctx) {
     if (snapshot.room.note) stage.append(el(document, 'p', { class: 'fhm-note', text: snapshot.room.note }));
 
     // 纪念品：最新 3–5 件按类别落固定摆位；点一下只读气泡，不发任何写请求。
+    // 先不摆（见 SHOW_KEEPSAKES）；数据和接口都还在。
     const used = {};
     const bubbles = [];
-    for (const item of snapshot.keepsakes ?? []) {
+    for (const item of (SHOW_KEEPSAKES ? snapshot.keepsakes ?? [] : [])) {
       const slot = KEEPSAKE_SLOTS[item.category] ?? KEEPSAKE_SLOTS.shelf;
       const offset = used[item.category] ?? 0;
       used[item.category] = offset + 1;

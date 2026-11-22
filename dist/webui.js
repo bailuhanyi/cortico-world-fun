@@ -4134,6 +4134,7 @@ var MAX_IMAGE_BYTES2 = 8 * 1024 * 1024;
 var ACCEPT = "image/png,image/jpeg,image/gif,image/webp,.png,.jpg,.jpeg,.gif,.webp";
 var PICKER_EXTENSIONS = [".png", ".jpg", ".jpeg", ".gif", ".webp"];
 var artCache = /* @__PURE__ */ new Map();
+var SHOW_KEEPSAKES = false;
 var KEEPSAKE_SLOTS = {
   ticket: { left: 50, top: 40, icon: "🎫" },
   shelf: { left: 55, top: 44, icon: "🧩" },
@@ -4507,7 +4508,7 @@ function mountHome(ctx) {
     if (snapshot.room.note) stage.append(el2(document2, "p", { class: "fhm-note", text: snapshot.room.note }));
     const used = {};
     const bubbles = [];
-    for (const item of snapshot.keepsakes ?? []) {
+    for (const item of SHOW_KEEPSAKES ? snapshot.keepsakes ?? [] : []) {
       const slot = KEEPSAKE_SLOTS[item.category] ?? KEEPSAKE_SLOTS.shelf;
       const offset = used[item.category] ?? 0;
       used[item.category] = offset + 1;

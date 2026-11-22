@@ -224,7 +224,7 @@ test('恢复默认把活动改回随时段变，已上传的图不删', async (t
   assert.ok(h.calls.some((call) => call.method === 'resetRoom'));
 });
 
-test('纪念品：摆出来、点一下只读气泡，零写请求', async (t) => {
+test('纪念品：先不摆（等排版完善），数据仍在 snapshot 里', async (t) => {
   const h = await mountHomePanel(t, async ({ world }) => {
     const tool = (name) => world.tools().find((item) => item.name === name).handler;
     await tool('fun_go')({ place: '海洋馆' });
@@ -234,12 +234,10 @@ test('纪念品：摆出来、点一下只读气泡，零写请求', async (t) =
     await tool('fun_wander')({ buy: '店里的杯垫' });
     await tool('fun_home')({});
   });
-  const trinkets = h.buttons().filter((item) => item.className === 'fhm-keepsake');
-  assert.equal(trinkets.length, 2, '两趟各一件');
-  trinkets[0].click();
-  await h.settle();
-  assert.match(h.root.textContent, /来自(海洋馆|咖啡店)/);
-  assert.equal(h.calls.filter((call) => !['state', 'art', 'snapshotList', 'exportRoom'].includes(call.method)).length, 0, '点纪念品不发写请求');
+  // 图标会和空白房间的说明文字打架，先把摆件关掉；改回 SHOW_KEEPSAKES=true 才恢复。
+  assert.equal(h.buttons().filter((item) => item.className === 'fhm-keepsake').length, 0);
+  const state = await h.world.webUi('zh').invoke('home', 'state', []);
+  assert.equal(state.keepsakes.length, 2, '后端照常返回纪念品，只是面板不摆');
 });
 
 test('未完行程：显示票笺与继续，继续用同一个 id', async (t) => {
