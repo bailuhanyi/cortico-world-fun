@@ -3,7 +3,7 @@ import test from 'node:test';
 import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { blankRoom, HomeRoom, HomeRoomError } from '../src/home-room.js';
+import { blankRoom, defaultActivityAt, HomeRoom, HomeRoomError } from '../src/home-room.js';
 
 const PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
 const OTHER_PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
@@ -155,9 +155,42 @@ test('默认结构就是 blankRoom 的形状（给世界层兜底用）', async 
   assert.deepEqual(blankRoom(), {
     version: 1,
     revision: 0,
-    room: { activity: 'idle', since: null, source: 'panel', note: '' },
+    room: { activity: 'idle', since: null, source: 'default', note: '' },
     art: { background: '', characters: {}, hotspots: [] },
     updatedAt: null,
   });
   assert.ok(new HomeRoomError('X', 'y') instanceof Error);
+});
+
+test('时段默认：六段边界各归一个活动', () => {
+  assert.equal(defaultActivityAt(0), 'sleeping');
+  assert.equal(defaultActivityAt(7), 'sleeping');
+  assert.equal(defaultActivityAt(8), 'looking_outside');
+  assert.equal(defaultActivityAt(10), 'looking_outside');
+  assert.equal(defaultActivityAt(11), 'cooking');
+  assert.equal(defaultActivityAt(13), 'cooking');
+  assert.equal(defaultActivityAt(14), 'reading');
+  assert.equal(defaultActivityAt(17), 'reading');
+  assert.equal(defaultActivityAt(18), 'gaming');
+  assert.equal(defaultActivityAt(20), 'gaming');
+  assert.equal(defaultActivityAt(21), 'watching');
+  assert.equal(defaultActivityAt(23), 'watching');
+  assert.equal(defaultActivityAt(24), 'sleeping');
+});
+
+test('room.source：新装是 default，点一下变 panel，恢复默认回 default 且活动回 idle', async (t) => {
+  const { room, file } = await home(t);
+  assert.equal((await room.snapshot()).room.source, 'default');
+  const picked = await room.setActivity('reading', { revision: 0 });
+  assert.equal(picked.room.source, 'panel');
+  assert.equal(JSON.parse(await readFile(file, 'utf8')).room.source, 'panel');
+  const reset = await room.resetRoom(picked.revision);
+  assert.equal(reset.room.source, 'default');
+  assert.equal(reset.room.activity, 'idle');
+  assert.equal(JSON.parse(await readFile(file, 'utf8')).room.source, 'default');
+  // 旧文件（P0 写的 panel）仍能读。
+  const stored = JSON.parse(await readFile(file, 'utf8'));
+  stored.room.source = 'panel';
+  await writeFile(file, JSON.stringify(stored, null, 2), 'utf8');
+  assert.equal((await room.snapshot()).room.source, 'panel');
 });

@@ -69,7 +69,7 @@ import {
 import { autoLimits, budgetStop, normalizeStoryReceipts, publicStoryReceipt, storyBudget, storyRequestKey } from './story-reliability.js';
 import { StoryDM, addDmUsage, dmBudget } from './story-dm.js';
 import { PlaceLibrary } from './place-library.js';
-import { ACTIVITIES, ACTIVITY_HINTS, ACTIVITY_LABELS, HomeRoom } from './home-room.js';
+import { ACTIVITIES, ACTIVITY_HINTS, ACTIVITY_LABELS, HomeRoom, defaultActivityAt } from './home-room.js';
 const ENV_PROMPT = fileURLToPath(new URL('./ENV_PROMPT.md', import.meta.url));
 /** 面板委派出去的配图请求，在她的提示词里保留多久。 */
 const IMAGE_DELEGATION_TTL_MS = 45 * 60 * 1000;
@@ -2873,10 +2873,24 @@ export class FunWorld {
     }
     const warnings = [snapshot.warning, libraryWarning, this.#stateError ? '行程档案损坏，暂时看不到出门状态。' : '']
       .filter(Boolean);
+    // 时段默认：source 还是 default 时，活动由服务端按此刻的小时算，**不写盘**。
+    // 用户点一下（source 变 panel）之后才固定成文件里的活动。
+    const defaultActivity = defaultActivityAt(Math.floor(minutesIn(this.timezone, this.#now()) / 60));
+    const byDefault = snapshot.room.source === 'default';
+    const activity = byDefault ? defaultActivity : snapshot.room.activity;
+    const room = {
+      ...snapshot.room,
+      activity,
+      label: ACTIVITY_LABELS[activity],
+      hint: ACTIVITY_HINTS[activity],
+      since: byDefault ? null : snapshot.room.since,
+      elapsedMinutes: byDefault ? null : snapshot.room.elapsedMinutes,
+      defaultActivity,
+    };
     return {
       ok: true,
       revision: snapshot.revision,
-      room: snapshot.room,
+      room,
       art: snapshot.art,
       damaged: snapshot.damaged,
       warning: warnings.join(' '),

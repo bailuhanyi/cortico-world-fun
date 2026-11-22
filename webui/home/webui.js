@@ -12,13 +12,37 @@
  *   3. 出门状态只读自本 World 的行程，切姿势不会改动行程。
  */
 import { pictureData } from '../places/helpers.js';
-import { positionOf } from './layout.js';
+import { HOME_LAYOUT, positionOf } from './layout.js';
 import { HOME_STYLES } from './styles.js';
 
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 const ACCEPT = 'image/png,image/jpeg,image/gif,image/webp,.png,.jpg,.jpeg,.gif,.webp';
 /** 按内容寻址的图片引用缓存：切回面板不重复拉同一张图。 */
 const artCache = new Map();
+
+/**
+ * 批量导入按文件名分拣（任务书 §4.6）：
+ *   `bg-*` → 背景；`ch-idle*` → 待机；`act-<activity>*` → 对应活动；
+ *   `act-outside` = `looking_outside`；`chibi-*` 与其他 → 「未使用」。
+ */
+export function classifyHomeFile(name) {
+  const base = String(name ?? '').toLowerCase().replace(/\.[a-z0-9]+$/, '');
+  if (!base) return null;
+  if (base.startsWith('bg-')) return { kind: 'background' };
+  if (base.startsWith('ch-idle')) return { kind: 'character', activity: 'idle' };
+  if (!base.startsWith('act-')) return null;
+  const rest = base.slice(4);
+  const ids = Object.keys(HOME_LAYOUT).filter((id) => id !== 'idle').sort((a, b) => b.length - a.length);
+  for (const id of ids) {
+    if (rest === id || rest.startsWith(`${id}-`) || rest.startsWith(`${id}_`)) {
+      return { kind: 'character', activity: id };
+    }
+  }
+  if (rest === 'outside' || rest.startsWith('outside-') || rest.startsWith('outside_')) {
+    return { kind: 'character', activity: 'looking_outside' };
+  }
+  return null;
+}
 
 function el(document, tag, attrs = {}, ...children) {
   const element = document.createElement(tag);
@@ -78,7 +102,7 @@ export function mountHome(ctx) {
   let busy = false;
   let snapshot = null;
   let ticker = null;
-  const view = { editing: false, noteDraft: null, feedback: '', tone: '' };
+  const view = { editing: false, noteDraft: null, feedback: '', tone: '', batch: null };
   const live = () => !disposed && !ctx.signal?.aborted;
 
   function call(method, payload) {
@@ -191,20 +215,25 @@ export function mountHome(ctx) {
 
     const hasCharacter = Boolean(snapshot.art?.characters?.[snapshot.room.activity]
       ?? snapshot.art?.characters?.idle);
+    const spot = positionOf(snapshot.room.activity);
+    // 接触阴影：有图没图都在，角色才不像贴纸。位置跟脚底走，大小跟缩放走。
+    stage.append(el(document, 'div', {
+      class: 'fhm-char-shadow',
+      'aria-hidden': 'true',
+      style: `left:${(spot.x * 100).toFixed(2)}%;bottom:${((1 - spot.y) * 100).toFixed(2)}%;width:${(spot.scale * 62).toFixed(2)}%`,
+    }));
     if (hasCharacter) {
-      const spot = positionOf(snapshot.room.activity);
       const char = el(document, 'img', {
         class: 'fhm-char',
         alt: `鱼在家的样子：${snapshot.room.label}`,
         decoding: 'async',
-        style: `left:${(spot.x * 100).toFixed(2)}%;bottom:${((1 - spot.y) * 100).toFixed(2)}%`,
+        // 站位：水平居中、底边落在 y 上；高度按角色高度/舞台高。不再有 76% 硬上限。
+        style: `left:${(spot.x * 100).toFixed(2)}%;bottom:${((1 - spot.y) * 100).toFixed(2)}%;height:${(spot.scale * 100).toFixed(2)}%`,
       });
       stage.append(char);
       loadArt('character', snapshot.room.activity).then((src) => {
         if (src && live()) char.setAttribute('src', src);
       });
-    } else {
-      stage.append(el(document, 'div', { class: 'fhm-char-empty' }));
     }
 
     for (const spot of snapshot.art?.hotspots ?? []) {
@@ -262,7 +291,7 @@ export function mountHome(ctx) {
         text: '恢复默认',
         disabled: Boolean(snapshot.damaged) || busy,
         onclick: () => {
-          if (typeof globalThis.confirm === 'function' && !globalThis.confirm('把活动、备注和热点恢复默认？已上传的图片会保留。')) return;
+          if (typeof globalThis.confirm === 'function' && !globalThis.confirm('把活动、备注和热点恢复默认？活动会改回「随时段变」，已上传的图片会保留。')) return;
           void write('resetRoom', { revision: snapshot.revision }, '已恢复默认。');
         },
       }),
@@ -284,13 +313,46 @@ export function mountHome(ctx) {
     }
   }
 
+  /**
+   * 批量导入：一次选多张，按文件名分拣，串行写（每次带最新 revision）。
+   * 单张失败只跳过并汇总，不中断其余文件；认不出的进「未使用」，不上传。
+   */
+  async function importMany(input) {
+    const files = [...(input?.files ?? [])];
+    input.value = '';
+    if (!files.length) return;
+    const placed = [];
+    const unused = [];
+    const failed = [];
+    for (const file of files) {
+      const slot = classifyHomeFile(file.name);
+      if (!slot) { unused.push(file.name); continue; }
+      try {
+        const dataUrl = await pictureData(file, MAX_IMAGE_BYTES, document.defaultView?.FileReader ?? globalThis.FileReader);
+        const result = slot.kind === 'background'
+          ? await write('setBackground', { dataUrl, revision: snapshot.revision }, '')
+          : await write('setCharacter', { activity: slot.activity, dataUrl, revision: snapshot.revision }, '');
+        if (result) placed.push(file.name);
+        else failed.push(file.name);
+      } catch {
+        failed.push(file.name);
+      }
+    }
+    view.batch = { placed, unused, failed };
+    const bits = [`批量导入 ${files.length} 张：${placed.length} 张已就位`];
+    if (unused.length) bits.push(`${unused.length} 张未使用（${unused.join('、')}）`);
+    if (failed.length) bits.push(`${failed.length} 张失败（${failed.join('、')}）`);
+    tell(bits.join('；') + '。', failed.length ? 'error' : 'ok');
+    render();
+  }
+
   function renderDress() {
     if (!view.editing) return null;
     const box = el(document, 'div', { class: 'fhm-dress' },
       el(document, 'h3', { text: '布置房间' }),
       el(document, 'p', {
         class: 'fhm-dress-note',
-        text: '背景 1920×1080；角色图十个活动同一张画布、底边对齐（见素材单）。单张不超过 8 MiB，支持 PNG / JPG / WebP / GIF。',
+        text: '背景 1920×1080；角色图十个活动同一张画布、底边对齐（见素材单）。单张不超过 8 MiB，支持 PNG / JPG / WebP / GIF。批量导入按文件名认领：bg-* 背景、ch-idle* 待机、act-<活动>* 对应活动；chibi-* 与其他会列进未使用。',
       }));
 
     const bgRow = el(document, 'div', { class: 'fhm-row' },
@@ -305,6 +367,22 @@ export function mountHome(ctx) {
         onclick: () => { void write('clearBackground', { revision: snapshot.revision }, '背景清掉了。'); },
       }));
     box.append(bgRow);
+
+    box.append(el(document, 'div', { class: 'fhm-row fhm-batch' },
+      el(document, 'span', { class: 'fhm-row-name', text: '批量导入' }),
+      el(document, 'input', {
+        type: 'file',
+        multiple: '',
+        accept: ACCEPT,
+        'aria-label': '批量导入房间素材',
+        onchange: (event) => { void importMany(event.target); },
+      })));
+    if (view.batch) {
+      const bits = [`已就位 ${view.batch.placed.length} 张`];
+      if (view.batch.unused.length) bits.push(`未使用：${view.batch.unused.join('、')}`);
+      if (view.batch.failed.length) bits.push(`失败：${view.batch.failed.join('、')}`);
+      box.append(el(document, 'p', { class: 'fhm-batch-result', text: bits.join('；') }));
+    }
 
     for (const activity of snapshot.activities) {
       const has = Boolean(snapshot.art?.characters?.[activity.id]);

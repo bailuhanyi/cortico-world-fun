@@ -4,9 +4,12 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { FunWorld } from '../../src/world.js';
-import { mountHome } from './webui.js';
+import { HOME_LAYOUT } from './layout.js';
+import { classifyHomeFile, mountHome } from './webui.js';
 
 const flush = () => new Promise((resolve) => setImmediate(resolve));
+/** 固定在一个时段（21:30 → 刷视频），否则时段默认会让断言随运行时间漂。 */
+const FIXED_NOW = Date.parse('2026-11-22T21:30:00+08:00');
 
 /** 极简 DOM：够挂载面板、点按钮、读文字；不做布局。 */
 class Node extends EventTarget {
@@ -46,7 +49,7 @@ class Node extends EventTarget {
 
 async function mountHomePanel(t, prepare) {
   const dir = await mkdtemp(join(tmpdir(), 'fun-home-ui-'));
-  const world = new FunWorld({ dataDir: dir });
+  const world = new FunWorld({ dataDir: dir, now: () => FIXED_NOW });
   await world.start({});
   t.after(async () => { await world.stop(); await rm(dir, { recursive: true, force: true }); });
   const call = (method, payload) => world.webUi().invoke('home', method, payload === undefined ? [] : [payload]);
@@ -89,7 +92,7 @@ async function mountHomePanel(t, prepare) {
   return { root, calls, mounted, button, buttons, settle, document };
 }
 
-test('没素材也能打开：CSS 房间、十个活动、当前是发呆', async (t) => {
+test('没素材也能打开：CSS 房间、十个活动、时段默认活动', async (t) => {
   const h = await mountHomePanel(t);
   const text = h.root.textContent;
   assert.match(text, /从0开始的肥鱼大冒险 · 回家看看/);
@@ -100,8 +103,43 @@ test('没素材也能打开：CSS 房间、十个活动、当前是发呆', asyn
   assert.equal(chips.length, 10);
   const active = chips.filter((item) => item.getAttribute('aria-pressed') === 'true');
   assert.equal(active.length, 1);
-  assert.equal(active[0].textContent, '发呆');
+  // 21:30 属于 21:00–23:59 → 刷视频；这是服务端算的，没写进 room.json。
+  assert.equal(active[0].textContent, '刷视频');
   assert.equal(h.root.querySelectorAll('img').length, 0, '缺图时不要留一个破图标');
+});
+
+test('十个站位都带缩放，且按素材实测表落地板', () => {
+  assert.deepEqual(Object.keys(HOME_LAYOUT).sort(), ['cards', 'chatting', 'cooking', 'gaming', 'idle',
+    'looking_outside', 'painting', 'reading', 'sleeping', 'watching']);
+  const expected = {
+    idle: [0.52, 0.93, 0.52], reading: [0.40, 0.92, 0.40], watching: [0.60, 0.93, 0.40],
+    cards: [0.34, 0.93, 0.42], gaming: [0.50, 0.955, 0.38], chatting: [0.62, 0.93, 0.40],
+    cooking: [0.13, 0.93, 0.52], painting: [0.30, 0.93, 0.50],
+    looking_outside: [0.21, 0.93, 0.52], sleeping: [0.45, 0.94, 0.34],
+  };
+  for (const [id, [x, y, scale]] of Object.entries(expected)) {
+    assert.equal(HOME_LAYOUT[id].x, x, `${id} x`);
+    assert.equal(HOME_LAYOUT[id].y, y, `${id} y`);
+    assert.equal(HOME_LAYOUT[id].scale, scale, `${id} scale`);
+    assert.ok(HOME_LAYOUT[id].scale >= 0.3 && HOME_LAYOUT[id].scale <= 0.55, `${id} 比例在素材范围内`);
+  }
+});
+
+test('批量导入按文件名分拣：10 个落位、chibi 与其他进未使用', () => {
+  assert.deepEqual(classifyHomeFile('bg-day-bastyle.png'), { kind: 'background' });
+  assert.deepEqual(classifyHomeFile('ch-idle.png'), { kind: 'character', activity: 'idle' });
+  assert.deepEqual(classifyHomeFile('act-reading.png'), { kind: 'character', activity: 'reading' });
+  assert.deepEqual(classifyHomeFile('act-looking_outside.png'), { kind: 'character', activity: 'looking_outside' });
+  assert.deepEqual(classifyHomeFile('act-outside.png'), { kind: 'character', activity: 'looking_outside' });
+  assert.deepEqual(classifyHomeFile('act-watching.gif'), { kind: 'character', activity: 'watching' });
+  assert.equal(classifyHomeFile('chibi-idle.png'), null);
+  assert.equal(classifyHomeFile('notes.txt'), null);
+  const files = ['bg-day-bastyle.png', 'ch-idle.png', 'act-reading.png', 'act-watching.png', 'act-cards.png',
+    'act-gaming.png', 'act-chatting.png', 'act-cooking.png', 'act-painting.png', 'act-outside.png',
+    'chibi-idle.png'];
+  const slots = files.map(classifyHomeFile);
+  assert.equal(slots.filter(Boolean).length, 10, '10 张认出槽位');
+  assert.equal(slots.filter((slot) => !slot).length, 1, '1 张进未使用');
 });
 
 test('点一个活动：只发一次 setActivity，按钮与状态一起跟上', async (t) => {
@@ -122,7 +160,7 @@ test('布置房间：背景与十个活动各一个文件入口，备注能存�
   h.button('布置房间').click();
   await h.settle();
   const inputs = h.root.querySelectorAll('input');
-  assert.equal(inputs.length, 11, '一个背景 + 十个活动');
+  assert.equal(inputs.length, 12, '批量导入 1 + 背景 1 + 十个活动');
   const textarea = h.root.querySelectorAll('textarea')[0];
   assert.ok(textarea, '备注输入框要在');
   textarea.value = '在沙发上翻一本旧书';
@@ -156,7 +194,7 @@ test('房间档案损坏：说清楚是只读，按钮全禁用，不假装是�
   for (const chip of chips) assert.equal(chip.getAttribute('disabled'), 'true');
 });
 
-test('恢复默认把活动收回发呆，已上传的图不删', async (t) => {
+test('恢复默认把活动改回随时段变，已上传的图不删', async (t) => {
   const h = await mountHomePanel(t);
   h.button('读书').click();
   await h.settle();
@@ -164,6 +202,6 @@ test('恢复默认把活动收回发呆，已上传的图不删', async (t) => {
   await h.settle();
   const pressed = h.buttons().filter((item) => item.getAttribute('aria-pressed') === 'true');
   assert.equal(pressed.length, 1);
-  assert.equal(pressed[0].textContent, '发呆');
+  assert.equal(pressed[0].textContent, '刷视频', '固定 21:30，恢复默认后回到时段默认');
   assert.ok(h.calls.some((call) => call.method === 'resetRoom'));
 });

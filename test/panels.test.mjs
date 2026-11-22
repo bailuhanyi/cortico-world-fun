@@ -322,7 +322,9 @@ test('家：出门中只读显示，切姿势不改行程，也不写旧存档',
   assert.equal(idle.trip.mode, 'home');
   assert.equal(idle.activities.length, 10);
   assert.equal(idle.place, null, '没设住所时明确说没有，而不是编一个');
-  assert.equal(idle.room.activity, 'idle');
+  // 固定 now 是 14:00 → 时段默认「读书」；room.json 里仍不写这个活动。
+  assert.equal(idle.room.activity, 'reading');
+  assert.equal(idle.room.source, 'default');
   assert.equal((await decl.invoke('home', 'art', [{ slot: 'character' }])).image, null);
 
   await tool('fun_go')({ place: '海洋馆' });
@@ -335,6 +337,7 @@ test('家：出门中只读显示，切姿势不改行程，也不写旧存档',
   const switched = await decl.invoke('home', 'setActivity', [{ activity: 'reading', revision: out.revision }]);
   assert.equal(switched.ok, true, switched.error);
   assert.equal(switched.room.activity, 'reading');
+  assert.equal(switched.room.source, 'panel', '点一下之后固定成 panel');
   assert.equal(switched.trip.mode, 'out', '在房间里换姿势不该影响出门状态');
   assert.deepEqual(await readFile(stateFile), before, '房间只写 fun/home，行程存档一个字节都不动');
 

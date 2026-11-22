@@ -54,6 +54,24 @@ const MAX_NOTE = 120;
 const MAX_HOTSPOTS = 12;
 const REF = /^[a-f0-9]{64}\.(?:png|jpg|gif|webp)$/;
 const HOTSPOT_ID = /^[a-z0-9-]{1,32}$/;
+const SOURCES = new Set(['default', 'panel']);
+
+/**
+ * 时段默认活动（服务端按 Asia/Shanghai 小时算）。
+ *
+ * **只影响展示，不写盘**：`source: 'default'` 时看到的活动由这里决定；
+ * 用户点任意活动之后 `source: 'panel'`，文件里的活动才开始固定。
+ * 六个时段见任务书 §4。
+ */
+export function defaultActivityAt(hour) {
+  const h = Number.isFinite(hour) ? ((Math.trunc(hour) % 24) + 24) % 24 : 0;
+  if (h < 8) return 'sleeping';
+  if (h < 11) return 'looking_outside';
+  if (h < 14) return 'cooking';
+  if (h < 18) return 'reading';
+  if (h < 21) return 'gaming';
+  return 'watching';
+}
 
 export class HomeRoomError extends Error {
   constructor(code, message) {
@@ -72,7 +90,7 @@ export function blankRoom() {
   return {
     version: 1,
     revision: 0,
-    room: { activity: 'idle', since: null, source: 'panel', note: '' },
+    room: { activity: 'idle', since: null, source: 'default', note: '' },
     art: { background: '', characters: {}, hotspots: [] },
     updatedAt: null,
   };
@@ -90,7 +108,7 @@ function canonical(state) {
     room: {
       activity: state.room.activity,
       since: state.room.since,
-      source: 'panel',
+      source: state.room.source,
       note: state.room.note,
     },
     art: {
@@ -144,6 +162,7 @@ function readState(raw) {
     room: {
       activity: raw.room.activity,
       since: raw.room.since,
+      source: raw.room.source,
       note: raw.room.note ?? '',
     },
     art: {
@@ -157,13 +176,14 @@ function readState(raw) {
   const okActivity = ACTIVITIES.includes(state.room.activity);
   const okSince = state.room.since === null || (Number.isFinite(state.room.since) && state.room.since > 0);
   const okRevision = Number.isSafeInteger(state.revision) && state.revision >= 0;
+  const okSource = SOURCES.has(state.room.source);
   const okNote = typeof state.room.note === 'string' && state.room.note === state.room.note.trim()
     && state.room.note.length <= MAX_NOTE && !/[\u0000-\u001f\u007f]/u.test(state.room.note);
   const okBackground = state.art.background === '' || REF.test(state.art.background);
   const okCharacters = Object.entries(state.art.characters)
     .every(([activity, ref]) => ACTIVITIES.includes(activity) && REF.test(ref));
   const okUpdated = state.updatedAt === null || (Number.isFinite(state.updatedAt) && state.updatedAt > 0);
-  if (!okActivity || !okSince || !okRevision || !okNote || !okBackground || !okCharacters || !okUpdated) {
+  if (!okActivity || !okSince || !okRevision || !okSource || !okNote || !okBackground || !okCharacters || !okUpdated) {
     fail('DAMAGED_ROOM', '房间档案损坏，已保留原文件。');
   }
   return state;
@@ -349,10 +369,11 @@ export class HomeRoom {
     const { state } = await this.#load();
     const sameActivity = state.room.activity === id;
     const sameNote = nextNote === undefined || state.room.note === nextNote;
-    if (sameActivity && sameNote && state.room.since !== null) return this.#public(state);
+    if (sameActivity && sameNote && state.room.since !== null && state.room.source === 'panel') return this.#public(state);
     return this.#mutate(revision, (draft) => {
       draft.room.activity = id;
       draft.room.since = sameActivity ? (draft.room.since ?? at) : at;
+      draft.room.source = 'panel';
       if (nextNote !== undefined) draft.room.note = nextNote;
     });
   }
@@ -401,11 +422,12 @@ export class HomeRoom {
     return this.#mutate(revision, (draft) => { draft.art.hotspots = list; });
   }
 
-  /** 恢复默认：活动回发呆、清备注与热点；**图片保留**（素材不是状态，别替人删）。 */
+  /** 恢复默认：活动回「随时段变」、清备注与热点；**图片保留**（素材不是状态，别替人删）。 */
   async resetRoom(revision) {
     return this.#mutate(revision, (draft) => {
       draft.room.activity = 'idle';
       draft.room.since = this.#now();
+      draft.room.source = 'default';
       draft.room.note = '';
       draft.art.hotspots = [];
     }, { collect: false });

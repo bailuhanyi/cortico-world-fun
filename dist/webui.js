@@ -3927,18 +3927,18 @@ function pictureData(file, maxBytes, FileReaderClass = globalThis.FileReader) {
 
 // webui/home/layout.js
 var HOME_LAYOUT = Object.freeze({
-  idle: { x: 0.76, y: 0.79 },
-  reading: { x: 0.72, y: 0.79 },
-  watching: { x: 0.8, y: 0.79 },
-  chatting: { x: 0.74, y: 0.79 },
-  sleeping: { x: 0.78, y: 0.76 },
-  cards: { x: 0.45, y: 0.9 },
-  gaming: { x: 0.47, y: 0.92 },
-  painting: { x: 0.33, y: 0.88 },
-  cooking: { x: 0.13, y: 0.9 },
-  looking_outside: { x: 0.13, y: 0.82 }
+  idle: { x: 0.52, y: 0.93, scale: 0.52 },
+  reading: { x: 0.4, y: 0.92, scale: 0.4 },
+  watching: { x: 0.6, y: 0.93, scale: 0.4 },
+  cards: { x: 0.34, y: 0.93, scale: 0.42 },
+  gaming: { x: 0.5, y: 0.955, scale: 0.38 },
+  chatting: { x: 0.62, y: 0.93, scale: 0.4 },
+  cooking: { x: 0.13, y: 0.93, scale: 0.52 },
+  painting: { x: 0.3, y: 0.93, scale: 0.5 },
+  looking_outside: { x: 0.21, y: 0.93, scale: 0.52 },
+  sleeping: { x: 0.45, y: 0.94, scale: 0.34 }
 });
-var HOME_FALLBACK = Object.freeze({ x: 0.76, y: 0.79 });
+var HOME_FALLBACK = Object.freeze({ x: 0.52, y: 0.93, scale: 0.52 });
 var positionOf = (activity) => HOME_LAYOUT[activity] ?? HOME_FALLBACK;
 
 // webui/home/styles.js
@@ -3982,10 +3982,13 @@ var HOME_STYLES = `
 .fhm-room-note{position:absolute;left:50%;top:44%;transform:translate(-50%,-50%);margin:0;font-size:11.5px;color:var(--f-dim,#6b6b70);text-align:center;line-height:1.7;z-index:1;pointer-events:none;width:80%}
 .fhm-room-note b{display:block;font-weight:600;color:var(--f-ink,#1b1a1e);font-size:12.5px;margin-bottom:3px}
 
-.fhm-char{position:absolute;z-index:2;max-height:76%;max-width:42%;object-fit:contain;transform:translateX(-50%);
-  filter:drop-shadow(0 8px 14px rgba(24,24,30,.16));transition:none}
-.fhm-char-empty{position:absolute;left:50%;bottom:12%;transform:translateX(-50%);width:34%;height:9%;border-radius:50%;
-  background:radial-gradient(ellipse at center,rgba(24,24,30,.16),transparent 70%);z-index:1}
+.fhm-char{position:absolute;z-index:2;max-width:46%;object-fit:contain;transform:translateX(-50%);
+  filter:drop-shadow(0 10px 16px rgba(24,24,30,.14));transition:none;animation:fhm-char-in 180ms ease-out both}
+.fhm-char-shadow{position:absolute;z-index:1;height:8%;min-height:14px;transform:translate(-50%,50%);
+  border-radius:50%;pointer-events:none;
+  background:radial-gradient(ellipse at center,rgba(24,24,30,.28),rgba(24,24,30,.12) 46%,transparent 72%);
+  filter:blur(1.5px)}
+@keyframes fhm-char-in{from{opacity:.25;transform:translateX(-50%) translateY(2px)}to{opacity:1;transform:translateX(-50%)}}
 .fhm-char-hint{position:absolute;left:50%;bottom:7%;transform:translateX(-50%);margin:0;font-size:11px;color:var(--f-dim,#6b6b70);z-index:3;white-space:nowrap}
 
 .fhm-status{position:absolute;left:10px;top:10px;margin:0;z-index:3;padding:3px 9px;border-radius:999px;font-size:11.5px;
@@ -4022,6 +4025,8 @@ var HOME_STYLES = `
 .fhm-dress-note{margin:0 0 10px;font-size:11.5px;line-height:1.6;color:var(--f-dim,#6b6b70)}
 .fhm-row{display:grid;grid-template-columns:84px minmax(0,1fr) 54px 54px;gap:8px;align-items:center;padding:5px 0;border-top:1px dashed var(--f-line,#e3e4e3)}
 .fhm-row:first-of-type{border-top:none}
+.fhm-row.fhm-batch{grid-template-columns:84px minmax(0,1fr)}
+.fhm-batch-result{margin:2px 0 6px;font-size:11px;line-height:1.6;color:var(--f-dim,#6b6b70);word-break:break-word}
 .fhm-row-name{font-size:12px;color:var(--f-ink,#1b1a1e)}
 .fhm-row input[type=file]{font:inherit;font-size:11px;min-width:0;color:var(--f-dim,#6b6b70)}
 .fhm-row button{font:inherit;font-size:11.5px;padding:3px 9px;border-radius:999px;cursor:pointer;border:1px solid var(--f-line,#e3e4e3);background:var(--f-soft,#f3efe9);color:var(--f-ink,#1b1a1e)}
@@ -4050,6 +4055,24 @@ var HOME_STYLES = `
 var MAX_IMAGE_BYTES2 = 8 * 1024 * 1024;
 var ACCEPT = "image/png,image/jpeg,image/gif,image/webp,.png,.jpg,.jpeg,.gif,.webp";
 var artCache = /* @__PURE__ */ new Map();
+function classifyHomeFile(name) {
+  const base = String(name ?? "").toLowerCase().replace(/\.[a-z0-9]+$/, "");
+  if (!base) return null;
+  if (base.startsWith("bg-")) return { kind: "background" };
+  if (base.startsWith("ch-idle")) return { kind: "character", activity: "idle" };
+  if (!base.startsWith("act-")) return null;
+  const rest = base.slice(4);
+  const ids = Object.keys(HOME_LAYOUT).filter((id) => id !== "idle").sort((a, b) => b.length - a.length);
+  for (const id of ids) {
+    if (rest === id || rest.startsWith(`${id}-`) || rest.startsWith(`${id}_`)) {
+      return { kind: "character", activity: id };
+    }
+  }
+  if (rest === "outside" || rest.startsWith("outside-") || rest.startsWith("outside_")) {
+    return { kind: "character", activity: "looking_outside" };
+  }
+  return null;
+}
 function el2(document2, tag, attrs = {}, ...children) {
   const element = document2.createElement(tag);
   for (const [name, value] of Object.entries(attrs)) {
@@ -4103,7 +4126,7 @@ function mountHome(ctx) {
   let busy = false;
   let snapshot = null;
   let ticker = null;
-  const view = { editing: false, noteDraft: null, feedback: "", tone: "" };
+  const view = { editing: false, noteDraft: null, feedback: "", tone: "", batch: null };
   const live = () => !disposed && !ctx.signal?.aborted;
   function call(method, payload) {
     return ctx.invoke(method, payload === void 0 ? [] : [payload]);
@@ -4215,32 +4238,36 @@ function mountHome(ctx) {
     refs.place = placeNode;
     stage.append(status, placeNode);
     const hasCharacter = Boolean(snapshot.art?.characters?.[snapshot.room.activity] ?? snapshot.art?.characters?.idle);
+    const spot = positionOf(snapshot.room.activity);
+    stage.append(el2(document2, "div", {
+      class: "fhm-char-shadow",
+      "aria-hidden": "true",
+      style: `left:${(spot.x * 100).toFixed(2)}%;bottom:${((1 - spot.y) * 100).toFixed(2)}%;width:${(spot.scale * 62).toFixed(2)}%`
+    }));
     if (hasCharacter) {
-      const spot = positionOf(snapshot.room.activity);
       const char = el2(document2, "img", {
         class: "fhm-char",
         alt: `鱼在家的样子：${snapshot.room.label}`,
         decoding: "async",
-        style: `left:${(spot.x * 100).toFixed(2)}%;bottom:${((1 - spot.y) * 100).toFixed(2)}%`
+        // 站位：水平居中、底边落在 y 上；高度按角色高度/舞台高。不再有 76% 硬上限。
+        style: `left:${(spot.x * 100).toFixed(2)}%;bottom:${((1 - spot.y) * 100).toFixed(2)}%;height:${(spot.scale * 100).toFixed(2)}%`
       });
       stage.append(char);
       loadArt("character", snapshot.room.activity).then((src) => {
         if (src && live()) char.setAttribute("src", src);
       });
-    } else {
-      stage.append(el2(document2, "div", { class: "fhm-char-empty" }));
     }
-    for (const spot of snapshot.art?.hotspots ?? []) {
+    for (const spot2 of snapshot.art?.hotspots ?? []) {
       stage.append(el2(document2, "span", {
         class: "fhm-spot",
-        title: spot.label || spot.id,
-        style: `left:${(spot.x * 100).toFixed(2)}%;top:${(spot.y * 100).toFixed(2)}%`
+        title: spot2.label || spot2.id,
+        style: `left:${(spot2.x * 100).toFixed(2)}%;top:${(spot2.y * 100).toFixed(2)}%`
       }));
-      if (spot.label) {
+      if (spot2.label) {
         stage.append(el2(document2, "span", {
           class: "fhm-spot-label",
-          text: spot.label,
-          style: `left:${(spot.x * 100).toFixed(2)}%;top:${(spot.y * 100).toFixed(2)}%`
+          text: spot2.label,
+          style: `left:${(spot2.x * 100).toFixed(2)}%;top:${(spot2.y * 100).toFixed(2)}%`
         }));
       }
     }
@@ -4288,7 +4315,7 @@ function mountHome(ctx) {
         text: "恢复默认",
         disabled: Boolean(snapshot.damaged) || busy,
         onclick: () => {
-          if (typeof globalThis.confirm === "function" && !globalThis.confirm("把活动、备注和热点恢复默认？已上传的图片会保留。")) return;
+          if (typeof globalThis.confirm === "function" && !globalThis.confirm("把活动、备注和热点恢复默认？活动会改回「随时段变」，已上传的图片会保留。")) return;
           void write("resetRoom", { revision: snapshot.revision }, "已恢复默认。");
         }
       }),
@@ -4309,6 +4336,35 @@ function mountHome(ctx) {
       render();
     }
   }
+  async function importMany(input) {
+    const files = [...input?.files ?? []];
+    input.value = "";
+    if (!files.length) return;
+    const placed = [];
+    const unused = [];
+    const failed = [];
+    for (const file of files) {
+      const slot = classifyHomeFile(file.name);
+      if (!slot) {
+        unused.push(file.name);
+        continue;
+      }
+      try {
+        const dataUrl = await pictureData(file, MAX_IMAGE_BYTES2, document2.defaultView?.FileReader ?? globalThis.FileReader);
+        const result = slot.kind === "background" ? await write("setBackground", { dataUrl, revision: snapshot.revision }, "") : await write("setCharacter", { activity: slot.activity, dataUrl, revision: snapshot.revision }, "");
+        if (result) placed.push(file.name);
+        else failed.push(file.name);
+      } catch {
+        failed.push(file.name);
+      }
+    }
+    view.batch = { placed, unused, failed };
+    const bits = [`批量导入 ${files.length} 张：${placed.length} 张已就位`];
+    if (unused.length) bits.push(`${unused.length} 张未使用（${unused.join("、")}）`);
+    if (failed.length) bits.push(`${failed.length} 张失败（${failed.join("、")}）`);
+    tell(bits.join("；") + "。", failed.length ? "error" : "ok");
+    render();
+  }
   function renderDress() {
     if (!view.editing) return null;
     const box = el2(
@@ -4318,7 +4374,7 @@ function mountHome(ctx) {
       el2(document2, "h3", { text: "布置房间" }),
       el2(document2, "p", {
         class: "fhm-dress-note",
-        text: "背景 1920×1080；角色图十个活动同一张画布、底边对齐（见素材单）。单张不超过 8 MiB，支持 PNG / JPG / WebP / GIF。"
+        text: "背景 1920×1080；角色图十个活动同一张画布、底边对齐（见素材单）。单张不超过 8 MiB，支持 PNG / JPG / WebP / GIF。批量导入按文件名认领：bg-* 背景、ch-idle* 待机、act-<活动>* 对应活动；chibi-* 与其他会列进未使用。"
       })
     );
     const bgRow = el2(
@@ -4341,6 +4397,27 @@ function mountHome(ctx) {
       })
     );
     box.append(bgRow);
+    box.append(el2(
+      document2,
+      "div",
+      { class: "fhm-row fhm-batch" },
+      el2(document2, "span", { class: "fhm-row-name", text: "批量导入" }),
+      el2(document2, "input", {
+        type: "file",
+        multiple: "",
+        accept: ACCEPT,
+        "aria-label": "批量导入房间素材",
+        onchange: (event) => {
+          void importMany(event.target);
+        }
+      })
+    ));
+    if (view.batch) {
+      const bits = [`已就位 ${view.batch.placed.length} 张`];
+      if (view.batch.unused.length) bits.push(`未使用：${view.batch.unused.join("、")}`);
+      if (view.batch.failed.length) bits.push(`失败：${view.batch.failed.join("、")}`);
+      box.append(el2(document2, "p", { class: "fhm-batch-result", text: bits.join("；") }));
+    }
     for (const activity of snapshot.activities) {
       const has = Boolean(snapshot.art?.characters?.[activity.id]);
       box.append(el2(

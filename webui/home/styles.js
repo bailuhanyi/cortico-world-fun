@@ -45,10 +45,13 @@ export const HOME_STYLES = `
 .fhm-room-note{position:absolute;left:50%;top:44%;transform:translate(-50%,-50%);margin:0;font-size:11.5px;color:var(--f-dim,#6b6b70);text-align:center;line-height:1.7;z-index:1;pointer-events:none;width:80%}
 .fhm-room-note b{display:block;font-weight:600;color:var(--f-ink,#1b1a1e);font-size:12.5px;margin-bottom:3px}
 
-.fhm-char{position:absolute;z-index:2;max-height:76%;max-width:42%;object-fit:contain;transform:translateX(-50%);
-  filter:drop-shadow(0 8px 14px rgba(24,24,30,.16));transition:none}
-.fhm-char-empty{position:absolute;left:50%;bottom:12%;transform:translateX(-50%);width:34%;height:9%;border-radius:50%;
-  background:radial-gradient(ellipse at center,rgba(24,24,30,.16),transparent 70%);z-index:1}
+.fhm-char{position:absolute;z-index:2;max-width:46%;object-fit:contain;transform:translateX(-50%);
+  filter:drop-shadow(0 10px 16px rgba(24,24,30,.14));transition:none;animation:fhm-char-in 180ms ease-out both}
+.fhm-char-shadow{position:absolute;z-index:1;height:8%;min-height:14px;transform:translate(-50%,50%);
+  border-radius:50%;pointer-events:none;
+  background:radial-gradient(ellipse at center,rgba(24,24,30,.28),rgba(24,24,30,.12) 46%,transparent 72%);
+  filter:blur(1.5px)}
+@keyframes fhm-char-in{from{opacity:.25;transform:translateX(-50%) translateY(2px)}to{opacity:1;transform:translateX(-50%)}}
 .fhm-char-hint{position:absolute;left:50%;bottom:7%;transform:translateX(-50%);margin:0;font-size:11px;color:var(--f-dim,#6b6b70);z-index:3;white-space:nowrap}
 
 .fhm-status{position:absolute;left:10px;top:10px;margin:0;z-index:3;padding:3px 9px;border-radius:999px;font-size:11.5px;
@@ -85,6 +88,8 @@ export const HOME_STYLES = `
 .fhm-dress-note{margin:0 0 10px;font-size:11.5px;line-height:1.6;color:var(--f-dim,#6b6b70)}
 .fhm-row{display:grid;grid-template-columns:84px minmax(0,1fr) 54px 54px;gap:8px;align-items:center;padding:5px 0;border-top:1px dashed var(--f-line,#e3e4e3)}
 .fhm-row:first-of-type{border-top:none}
+.fhm-row.fhm-batch{grid-template-columns:84px minmax(0,1fr)}
+.fhm-batch-result{margin:2px 0 6px;font-size:11px;line-height:1.6;color:var(--f-dim,#6b6b70);word-break:break-word}
 .fhm-row-name{font-size:12px;color:var(--f-ink,#1b1a1e)}
 .fhm-row input[type=file]{font:inherit;font-size:11px;min-width:0;color:var(--f-dim,#6b6b70)}
 .fhm-row button{font:inherit;font-size:11.5px;padding:3px 9px;border-radius:999px;cursor:pointer;border:1px solid var(--f-line,#e3e4e3);background:var(--f-soft,#f3efe9);color:var(--f-ink,#1b1a1e)}
