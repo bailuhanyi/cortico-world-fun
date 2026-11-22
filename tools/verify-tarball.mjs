@@ -20,6 +20,7 @@ import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { loadStandaloneWebUi } from './load-webui.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const KEEP = process.argv.includes('--keep');
@@ -92,6 +93,9 @@ try {
     ok(existsSync(join(pkgDir, clientRel)), `${clientRel} 在包里（面板能挂上）`);
     const clientSrc = await readFile(join(pkgDir, clientRel), 'utf8');
     ok(clientSrc.includes('panels:'), 'bundle 导出了 panels');
+    const client = await loadStandaloneWebUi(join(pkgDir, clientRel));
+    ok(Object.values(client.default?.panels ?? {}).every((panel) => typeof panel.mount === 'function'),
+      '客户端可单文件加载，所有面板都有 mount');
   }
 
   console.log('4) 从安装形态真加载');

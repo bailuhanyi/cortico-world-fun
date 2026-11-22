@@ -4,6 +4,7 @@ import { mkdtemp, readFile, writeFile, mkdir, readdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { FunWorld } from '../src/world.js';
+import { BUILTIN_STORY_PACKS, storyFixtureJson } from './fixtures/story-presets.mjs';
 const at=(text)=>Date.parse(text);
 async function boot(opts={}) {
  const dir=opts.dir ?? await mkdtemp(join(tmpdir(),'fun-story-'));
@@ -25,7 +26,68 @@ function pack(venue,id='user-window') {
  ]};
 }
 
-test('自填地点没有剧情也能完整出游，管理的查看校验预览不写盘',async()=>{
+test('草稿隔离试玩逐步返回当前节点，但不保存故事、行程或解锁状态', async () => {
+ const b=await boot(); const venue=await custom(b); const value=pack(venue);
+ const json=JSON.stringify(value);
+ const first=await b.panel('playtest',{json,path:[]});
+ assert.equal(first.ok,true,first.error); assert.equal(first.playtest,true); assert.equal(first.sideEffects,false);
+ assert.equal(first.current.id,'start'); assert.equal(first.current.options.length,2);
+ const next=await b.panel('playtest',{json,path:['walk']});
+ assert.equal(next.ok,true,next.error); assert.equal(next.current.id,'end-b');
+ assert.match(next.current.event,/回头看了一眼/);
+ await assert.rejects(readFile(b.world.storiesFile()),{code:'ENOENT'});
+ await assert.rejects(readFile(b.world.stateFile()),{code:'ENOENT'});
+ assert.equal((await b.invoke('book','list')).trips.length,0);
+});
+
+test('地点册为图鉴提供中文分类和故事绑定标记', async () => {
+  const b=await boot();
+  const list=await b.invoke('locations','list',[]);
+  assert.equal(list.ok,true,list.error);
+  const byId=new Map(list.places.map((place)=>[place.id,place]));
+  assert.equal(byId.get('amusement').kindLabel,'游乐场');
+  assert.equal(byId.get('riverside').kindLabel,'户外');
+  assert.equal(byId.get('user-ezfvd').kindLabel,'故事地点');
+  for (const id of ['user-ezfvd','user-f3u9p','riverside','museum']) {
+    assert.equal(byId.get(id).storyBound,true,id);
+    assert.equal(byId.get(id).builtinStoryBound,true,id);
+    assert.equal(byId.get(id).customStoryBound,false,id);
+  }
+  assert.equal(byId.get('amusement').storyBound,false);
+  assert.equal(byId.get('amusement').userPlace,false);
+  const created=await b.invoke('locations','create',[{input:{name:'自己的小屋'},revision:list.revision}]);
+  assert.equal(created.ok,true,created.error);
+  const fresh=created.places.find((place)=>place.name==='自己的小屋');
+  assert.equal(fresh.kindLabel,'');
+  assert.equal(fresh.userPlace,true);
+  assert.equal(fresh.storyBound,false);
+});
+
+test('公共故事查询返回稳定公开字段且不泄露未来分支或写盘', async () => {
+ const b=await boot();
+ assert.equal((await b.panel('import',{json:storyFixtureJson(BUILTIN_STORY_PACKS.find(({id})=>id==='duo-cafe-date'))})).ok,true);
+ const beforePacks=await b.panel('list');
+ const beforeStories=await readFile(b.world.storiesFile(),'utf8');
+ const candidates=await b.tool('fun_story_candidates');
+ assert.equal(candidates.ok,true);
+ assert.ok(candidates.candidates.some((card)=>card.id==='duo-cafe-date'));
+ assert.ok(candidates.candidates.every((card)=>!('nodes' in card)));
+ assert.ok(!JSON.stringify(candidates).includes('鱼把书合上'));
+ const detail=await b.tool('fun_story_detail',{id:'duo-cafe-date'});
+ assert.equal(detail.ok,true); assert.equal(detail.story.participation,'duo');
+ assert.equal(typeof detail.story.duration,'string'); assert.ok(!('nodes' in detail.story));
+ const places=await b.tool('fun_story_places');
+ assert.equal(places.ok,true); assert.ok(places.places.some((place)=>place.id==='cafe'));
+ const current=await b.tool('fun_story_current'); assert.equal(current.state,'none');
+ const schedule=await b.tool('fun_story_schedule',{id:'duo-cafe-date'});
+ assert.equal(schedule.ok,true); assert.match(schedule.text,/不会开始故事/);
+ assert.equal((await b.panel('list')).packs.length,beforePacks.packs.length);
+ assert.equal(await readFile(b.world.storiesFile(),'utf8'),beforeStories);
+ await assert.rejects(readFile(b.world.stateFile()),{code:'ENOENT'});
+});
+
+
+ test('校验预览与模板只读，未导入的故事不影响普通地点游玩', async () => {
  const b=await boot(); const venue=await custom(b); const value=pack(venue);
  const validated=await b.panel('validate',{json:JSON.stringify(value)}); assert.equal(validated.ok,true,validated.error);
  const preview=await b.panel('preview',{json:JSON.stringify(value)}); assert.equal(preview.ok,true);assert.equal(preview.eligible,true);
@@ -53,49 +115,52 @@ test('自填剧情可导入、选分支、重启续接，完成后不重复触�
  assert.ok(trip.timeline.some((p)=>p.kind==='event'&&p.text.includes('书屋')));
 });
 
-test('更新启动不覆盖用户文件，内置停用与自填剧情都持久保留',async()=>{
+test('更新启动不覆盖用户文件，自填剧情启停与替换保护持久保留',async()=>{
  const b=await boot();const venue=await custom(b);
  await b.panel('import',{json:JSON.stringify(pack(venue))});
- const builtin=(await b.panel('list')).packs.find((p)=>p.builtin);
- assert.ok(builtin); await b.panel('disable',{id:builtin.id});
+ const disabled=pack(venue,'user-disabled');
+ assert.equal((await b.panel('import',{json:JSON.stringify(disabled)})).ok,true);
+ assert.equal((await b.panel('disable',{id:disabled.id})).ok,true);
  const before=await readFile(b.world.storiesFile(),'utf8');
  const again=await boot({dir:b.dir});
  assert.equal(await readFile(again.world.storiesFile(),'utf8'),before);
  const listed=await again.panel('list');
  assert.equal(listed.packs.find((p)=>p.id==='user-window').builtin,false);
- assert.equal(listed.packs.find((p)=>p.id===builtin.id).enabled,false);
+ assert.equal(listed.packs.find((p)=>p.id===disabled.id).enabled,false);
  const replacement=pack(venue);replacement.title='用户第二稿';
  assert.equal((await again.panel('import',{json:JSON.stringify(replacement)})).ok,false);
  assert.equal(await readFile(again.world.storiesFile(),'utf8'),before);
  assert.equal((await again.panel('import',{json:JSON.stringify(replacement),replace:true})).ok,true);
 });
 
-test('未来预设 ID 与已存用户内容重名时仍保留用户版本',async()=>{
+test('清理完成后作者新建曾用预设 ID 的作品，重启不再清除或覆盖',async()=>{
  const b=await boot();const venue=await custom(b);
- const builtin=(await b.panel('list')).packs.find((p)=>p.builtin);
- const owned=pack(venue,builtin.id);owned.title='用户原先保存的内容';
+ assert.equal((await b.panel('import',{json:JSON.stringify(pack(venue))})).ok,true);
+ const migrations=JSON.parse(await readFile(b.world.storiesFile(),'utf8')).migrations;
+ const owned=pack(venue,'duo-cafe-date');owned.title='用户原先保存的内容';
  await b.world.stop();
- const source=JSON.stringify({version:1,packs:[owned],disabledIds:[]},null,2);
+ const source=JSON.stringify({version:1,packs:[owned],disabledIds:[],migrations},null,2);
  await writeFile(b.world.storiesFile(),source,'utf8');
  const again=await boot({dir:b.dir});
- const rows=(await again.panel('list')).packs.filter((p)=>p.id===builtin.id);
+ const rows=(await again.panel('list')).packs.filter((p)=>p.id===owned.id);
  assert.equal(rows.length,1);assert.equal(rows[0].builtin,false);assert.equal(rows[0].title,owned.title);
  assert.equal(await readFile(again.world.storiesFile(),'utf8'),source);
  owned.title='用户继续修改';
  assert.equal((await again.panel('import',{json:JSON.stringify(owned),replace:true})).ok,true);
 });
 
-test('清空出游记录不删除用户写的剧情和内置启停设置',async()=>{
+test('清空出游记录不删除用户写的剧情和故事启停设置',async()=>{
  const b=await boot();const venue=await custom(b);
  await b.panel('import',{json:JSON.stringify(pack(venue))});
- const builtin=(await b.panel('list')).packs.find((p)=>p.builtin);
- await b.panel('disable',{id:builtin.id});
+ const disabled=pack(venue,'user-disabled');
+ await b.panel('import',{json:JSON.stringify(disabled)});
+ await b.panel('disable',{id:disabled.id});
  const before=await readFile(b.world.storiesFile(),'utf8');
  await b.world.webUi().storage[0].clear();
  assert.equal(await readFile(b.world.storiesFile(),'utf8'),before);
  const data=await b.panel('list');
  assert.ok(data.packs.some((p)=>p.id==='user-window'));
- assert.equal(data.packs.find((p)=>p.id===builtin.id).enabled,false);
+ assert.equal(data.packs.find((p)=>p.id===disabled.id).enabled,false);
 });
 
 test('替换或删除包不破坏已给出的选择，旧版本本趟不重启',async()=>{

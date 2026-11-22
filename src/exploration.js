@@ -188,7 +188,7 @@ function retainedTrips(input) {
   const seen = new Set();
   const out = [];
   for (const trip of rows) {
-    if (!trip || typeof trip !== 'object' || Array.isArray(trip)) continue;
+    if (!trip || typeof trip !== 'object' || Array.isArray(trip) || trip.storyRun?.canonical === false) continue;
     const placeId = text(trip.placeId, 40);
     const id = tripId(trip);
     if (!placeId || !id || seen.has(id)) continue;
@@ -234,7 +234,7 @@ export function normalizeExploration(raw, trips = [], timezone = 'Asia/Shanghai'
 /** Add one completed trip to a ledger without mutating either input. */
 export function recordExploration(ledger, trip, timezone = 'Asia/Shanghai') {
   const map = normalizedRawLedger(ledger);
-  if (!trip || typeof trip !== 'object' || Array.isArray(trip)) return serialize(map);
+  if (!trip || typeof trip !== 'object' || Array.isArray(trip) || trip.storyRun?.canonical === false) return serialize(map);
   const placeId = text(trip.placeId, 40);
   const id = tripId(trip);
   if (!placeId || !id) return serialize(map);

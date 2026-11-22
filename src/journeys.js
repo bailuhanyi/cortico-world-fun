@@ -29,7 +29,7 @@ export function timelineFor(trip, timezone = 'Asia/Shanghai') {
     for (const s of list(trip.souvenirs)) if (clean(s)) item('buy', `买了${s}`, null);
     for (const p of list(trip.photos)) if (clean(p)) item('photo', `在${p}拍了照`, null);
     for (const a of list(trip.ate)) if (clean(a?.item)) item('consume', `${a.verb || '吃'}了${a.item}`, a.at);
-    if (trip.leftAt) item('close', trip.note ? `收摊 · ${trip.note}` : '收摊', trip.leftAt);
+    if (trip.leftAt) item('close', trip.note ? `回家 · ${trip.note}` : '回家', trip.leftAt);
   }
   // Keep action order: clock changes and legacy unknown dates must not invent order.
   const clock = new Intl.DateTimeFormat('en-GB', { timeZone: timezone, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });

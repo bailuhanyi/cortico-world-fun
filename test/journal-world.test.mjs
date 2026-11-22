@@ -61,7 +61,11 @@ test('检索可组合条件，地点和收藏链接只读真实保留的行程',
 });
 
 test('事件选择重启后仍会影响后续项目，并写入沿途时间线',async()=>{
-  const b=await boot(); await b.tool('fun_go',{place:'江边'});
+  const b=await boot();
+  // 江边现在带一篇内置 v1 故事，会在「步道」自动开场；这条测试验证的是普通分支后续，
+  // 所以先停用内置故事，避免故事抢走同一处区域。
+  assert.equal((await b.data('stories','disable',[{id:'bridge-echo-solo'}])).ok,true);
+  await b.tool('fun_go',{place:'江边'});
   await b.tool('fun_wander',{area:'栏杆边'});
   const {session}=await b.data(); const choice=session.pendingChoice;
   assert.ok(choice);

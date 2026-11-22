@@ -77,8 +77,23 @@ for (const f of files) {
     ...[...code.matchAll(/\bfrom\s+['"]([^'"]+)['"]/g)].map((m) => m[1]),
     ...[...code.matchAll(/\bimport\(\s*['"]([^'"]+)['"]\s*\)/g)].map((m) => m[1]),
   ];
-  const bad = specs.filter((s) => !ALLOWED.has(s) && !s.startsWith('.'));
+  // R1 explicitly permits Windows DPAPI. Only this one audited adapter may
+  // spawn the fixed Windows PowerShell executable; no general process allowance.
+  const dpapiModule = rel.replace(/\\/g, '/') === 'src/story-secrets.js';
+  const bad = specs.filter((s) => !ALLOWED.has(s) && !s.startsWith('.') && !(dpapiModule && s === 'node:child_process'));
   ok(!bad.length, `${rel} 的 import 都在白名单内`, bad.join(', '));
+  if (dpapiModule) {
+    ok(/import\s*\{\s*spawn\s*\}\s*from\s*'node:child_process'/.test(code)
+      && !/\b(?:exec|execFile|fork|spawnSync)\s*\(/.test(code)
+      && (code.match(/\bspawnImpl\s*\(/g) ?? []).length === 1,
+    'DPAPI 是唯一进程入口，不开放 exec/fork 或同步进程接口');
+    ok(code.includes("'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe'")
+      && code.includes("['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', command]")
+      && code.includes("stdio: ['pipe', 'pipe', 'ignore']") && !/shell\s*:\s*true/.test(code)
+      && code.includes('child.stdin.end(input') && code.includes('run(DPAPI_PROTECT, plaintext)')
+      && code.includes('run(DPAPI_UNPROTECT, ciphertext)'),
+    'DPAPI 仅用固定无交互命令，明文走 stdin，禁止 shell 与凭据命令行参数');
+  }
 }
 
 console.log('4) 吃喝数据里没有味道词（味道是鱼的每一天的）');

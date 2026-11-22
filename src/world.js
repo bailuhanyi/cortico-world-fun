@@ -8,18 +8,18 @@
  *   - `fun_go` 进门，回执给当下的描写和能逛什么；
  *   - `fun_wander` 一处一处地逛：过山车、鲸豚湾、捞金鱼、同人展台；
  *   - 买纪念品、拍照点各有一个小口子（在 `fun_wander` 回执里递到嘴边）；
- *   - `fun_home` 收摊，回执把这一趟收成一句话，交给她 `feast_life_play` 记一笔。
+ *   - `fun_home` 回家，回执把这一趟收成一句话，交给她 `feast_life_play` 记一笔。
  *
  * **不推事件、不开定时器**：什么时候出门由「鱼的每一天」的
  * `lifeFreeMenu` 那一行顺手一提，或者她自己 `fun_start`。
  * 这是刻意的——两套叫醒会互相抢时间轴，而联动本来靠的就是提示词。
  *
- * 状态是纯 JSON，落在 `<dataDir>/fun/state.json`；历史保留，跨天超时的行程等待续逛或收摊。
+ * 状态是纯 JSON，落在 `<dataDir>/fun/state.json`；历史保留，跨天超时的行程等待续逛或回家。
  *
  * 红线（World 契约）：不调别的 World 的工具、不读别人的状态或日程文件、
  * `envPromptVars()` 永不抛错、`create()` 保持纯。
  */
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -35,8 +35,8 @@ import {
   regularLine, untriedAreas,
 } from './memories.js';
 import {
-  USER_PREFIX, blankVenue, cleanOverride, cleanUserVenue, idFromName, isPresetId,
-  mergeVenues, parseVenueFile, stringifyVenueFile,
+  blankVenue, cleanOverride, cleanUserVenue, idFromName, isPresetId,
+  isUserPlaceId, mergeVenues, parseVenueFile, stringifyVenueFile,
 } from './user-venues.js';
 import { collectSouvenirs, progressFor, progressLine } from './keepsakes.js';
 import { resolveName } from './names.js';
@@ -49,13 +49,26 @@ import { branchChoiceFor, branchFollowup } from './branches.js';
 import { addMoment, timelineFor, normalizeRoute, storeRoute, routeText } from './journeys.js';
 import { recommendVenue } from './recommendations.js';
 import { StoryLibrary, storyResultText } from './story-library.js';
-import { pickStory, advanceStoryChoice } from './story-packs.js';
+import { randomUUID } from 'node:crypto';
+import { pickStory, advanceStoryChoice, normalizeStoryProgress, storyReferences } from './story-packs.js';
+import { describeMemory, describePack, describeStoryTrip, requestStoryDecision, STORY_ACTIONS, storyFailure, storyStamp, StoryAutonomy } from './story-panel.js';
 import {
-  buySouvenir, closeSession, dayIn, enterVenue, favoriteTrip, hmIn, isStale, minutesIn,
+  continueFreeSegment, effectiveMaxTurns, freeCanContinue, freePromptPayload, freeSummaryText, freeTurn, freeTurnsLeft,
+  isFreePack, newFreeState, normalizeFreeState, requestFreeTurn,
+} from './story-free.js';
+import { StorySecrets } from './story-secrets.js';
+import { StoryNodeLimit } from './story-node-limit.js';
+import { StoryImages, validateStoryImageSource } from './story-images.js';
+import { markVenueMigration, markPromotedVenueMigration, migratePromotedVenues, migrateSampleVenue } from './story-venue-migration.js';
+import {
+  MAX_TRASH_TRIPS, MAX_TRIPS, buySouvenir, closeSession, dayIn, enterVenue, favoriteTrip, hmIn, isStale, minutesIn,
   newState, normalizeState, outingMinutes, outingStatus, recentPlaceIds, recordConsume,
   takePhoto, tripDay, tripSummary, visitedText, wanderOnce,
 } from './state.js';
 
+import { autoLimits, budgetStop, normalizeStoryReceipts, publicStoryReceipt, storyBudget, storyRequestKey } from './story-reliability.js';
+import { StoryDM, addDmUsage, dmBudget } from './story-dm.js';
+import { PlaceLibrary } from './place-library.js';
 const ENV_PROMPT = fileURLToPath(new URL('./ENV_PROMPT.md', import.meta.url));
 
 const msg = (err) => (err instanceof Error ? err.message : String(err));
@@ -154,7 +167,7 @@ export const FUN_TOOL_DECLS = [
   {
     name: 'fun_home',
     tags: ['write'],
-    description: '收摊并把已发生的经历记入纪念册。',
+    description: '回家并把已发生的经历记入纪念册。',
     parameters: {
       type: 'object',
       properties: {
@@ -229,7 +242,7 @@ export const FUN_TOOL_DECLS = [
   {
     name: 'fun_keepsake',
     tags: ['write'],
-    description: '用 fun_view 的行程 ID 珍藏或取消珍藏一趟已收摊的行程。珍藏独立保留，不影响收藏账本。',
+    description: '用 fun_view 的行程 ID 珍藏或取消珍藏一趟已回家的行程。珍藏独立保留，不影响收藏账本。',
     parameters: {
       type: 'object',
       properties: {
@@ -243,14 +256,16 @@ export const FUN_TOOL_DECLS = [
   {
     name: 'fun_story',
     tags: ['write'],
-    description: '管理本地地点剧情包，校验和预览只读，导入或启停须指定操作。',
+    description: '管理本地故事工坊，校验和预览只读，导入或启停须指定操作。',
     parameters: { type: 'object', properties: {
-      action: { type: 'string', enum: ['list', 'template', 'validate', 'preview', 'export', 'import', 'enable', 'disable', 'remove'] },
+      action: { type: 'string', enum: ['list', 'template', 'validate', 'preview', 'playtest', 'export', 'import', 'enable', 'disable', 'remove'] },
       id: { type: 'string', description: '已有剧情包 ID，来自 list。' },
       json: { type: 'string', description: '完整剧情包 JSON，最多 32 KB；validate/preview 不保存。' },
       placeId: { type: 'string', description: 'template 绑定的真实地点 ID，可来自自填地点；list 提供可用 ID。' },
+      mode: { type: 'string', enum: ['static', 'free'], description: 'template 的模板类型：static 选项式（默认），free 自由模式场景包。' },
       area: { type: 'string', description: 'preview 的项目，默认使用起始节点项目。' },
       time: { type: 'string', description: 'preview 的测试时刻 HH:MM，默认当前本地时刻。' },
+      path: { type: 'array', maxItems: 16, items: { type: 'string', maxLength: 24 }, description: 'playtest 已明确选择的选项路径；只使用临时状态。' },
       replace: { type: 'boolean', description: 'import 覆盖已有同 ID 自定义包时才设 true。' },
     }, required: ['action'], additionalProperties: false },
   },
@@ -263,6 +278,70 @@ export const FUN_TOOL_DECLS = [
       properties: {
         place: { type: 'string', description: '只看某一处的架子（填地方名，可选）。不填就看全部。' },
       },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'fun_story_places', tags: ['read', 'snapshot'],
+    description: '查询故事地点索引或单个地点详情；只读，不开始出游。',
+    parameters: { type: 'object', properties: { id: { type: 'string', description: '地点稳定 ID；不填返回索引。' } }, additionalProperties: false },
+  },
+  {
+    name: 'fun_story_candidates', tags: ['read', 'snapshot'],
+    description: '查询可用故事候选和不含未来分支的公开简介；只读，不开始故事。',
+    parameters: { type: 'object', properties: {}, additionalProperties: false },
+  },
+  {
+    name: 'fun_story_detail', tags: ['read', 'snapshot'],
+    description: '查询一个故事的公开资料和可用原因，不返回节点或未来分支全文。',
+    parameters: { type: 'object', properties: { id: { type: 'string', description: '故事稳定 ID。' } }, required: ['id'], additionalProperties: false },
+  },
+  {
+    name: 'fun_story_current', tags: ['read', 'snapshot'],
+    description: '查询当前故事的实际状态、已发生片段与当前待选项；不会推进行程。',
+    parameters: { type: 'object', properties: {}, additionalProperties: false },
+  },
+  {
+    name: 'fun_story_recap', tags: ['read', 'snapshot'],
+    description: '查询已结束故事的事实回顾；只含实际发生的片段和选择。',
+    parameters: { type: 'object', properties: { id: { type: 'string', description: '回忆 ID，可选；不填取最近故事回忆。' } }, additionalProperties: false },
+  },
+  {
+    name: 'fun_story_schedule', tags: ['read', 'snapshot'],
+    description: '生成故事候选的可复制短文本；复制不写入日程，也不会自动出发。',
+    parameters: { type: 'object', properties: { id: { type: 'string', description: '候选故事 ID，可选。' } }, additionalProperties: false },
+  },
+  {
+    name: 'fun_story_start', tags: ['write'],
+    description: '在聊天里开始一段故事（需要在娱乐时间设置里开启「文字通道也能玩故事」，否则会明确报未开启）。先用 fun_story_candidates 或 fun_story_detail 拿 packId、revision 和 fun_story_current 的 startStamp；开始前会重新校验条件。用户明确说要开始才填 confirm: true。',
+    parameters: {
+      type: 'object',
+      properties: {
+        packId: { type: 'string', description: '故事 ID，来自候选清单。' },
+        revision: { type: 'string', description: '故事版本，来自候选清单。' },
+        startStamp: { type: 'string', description: 'fun_story_current 返回的 startStamp。' },
+        confirm: { type: 'boolean', description: '用户明确说要开始时填 true。' },
+      },
+      required: ['packId', 'revision', 'startStamp', 'confirm'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'fun_story_act', tags: ['write'],
+    description: '在聊天里推进当前故事：把用户这一回合的原话交给它，不替用户编选择。选项式故事按当前回合身份提交：用户回合就按用户原话（含“选第二个”这类序号）替用户提交，记为 owner；轮到鱼时以鱼的身份提交，用户没指定时鱼按自己的角色决定。原话对不上时先返回 proposalId（不提交），用户确认后再带 proposalId 和 optionId 提交。自由模式（场景包）每次 say 推进一回合。结束这一段用 intent: close 并 confirm: true。',
+    parameters: {
+      type: 'object',
+      properties: {
+        tripId: { type: 'string', description: '当前故事行程 ID，来自 fun_story_current。' },
+        stamp: { type: 'string', description: '当前进度戳，来自 fun_story_current；变了就重新读，不要猜。' },
+        intent: { type: 'string', enum: ['say', 'close'], description: 'say 说一句；close 结束这一段并保存回忆。' },
+        say: { type: 'string', description: '用户这一回合的原话，最多 200 字。' },
+        proposalId: { type: 'string', description: '选项式故事：上一次 fun_story_act 返回的提议 ID。' },
+        optionId: { type: 'string', description: '选项式故事：确认要提交的选项 ID。' },
+        from: { type: 'string', description: 'QQ 昵称，只用于日志归属，可选。' },
+        confirm: { type: 'boolean', description: 'intent 为 close 时填 true。' },
+      },
+      required: ['tripId', 'stamp', 'intent'],
       additionalProperties: false,
     },
   },
@@ -282,19 +361,41 @@ export class FunWorld {
   /** B 阶段：预设覆盖层 `{ [presetId]: {字段: 值} }`，稀疏、只存改过的字段。 */
   #overrides = {};
   #storyLibrary;
+  #autonomy = new StoryAutonomy();
+  #dm = new StoryDM();
+  #storyEpoch = randomUUID();
+  #storyCommit;
+  /** 文字通道里"待确认"的选项提议（只在内存里，5 分钟或进度变化就失效）。 */
+  #textProposal = null;
+  #stateError;
+  #locationLibrary;
+  #storySecrets;
+  #storyNodeLimit;
+  #storyImages;
+  #venueMigrationError;
 
   constructor(opts = {}) {
     this.id = ID;
     this.#rawCfg = opts.cfg ?? {};
-    this.cfg = { ...DEFAULTS, ...this.#rawCfg };
     this.dataDir = opts.dataDir ?? process.cwd();
     this.language = 'zh';
     this.timezone = opts.timezone || 'Asia/Shanghai';
     this.#now = typeof opts.now === 'function' ? opts.now : () => Date.now();
     this.#random = typeof opts.random === 'function' ? opts.random : Math.random;
     this.#persist = typeof opts.persist === 'function' ? opts.persist : null;
-    this.#storyLibrary = new StoryLibrary({ file: this.storiesFile(), venues: () => this.#places(), visits: (id) => this.#state ? this.#history(id)?.visitCount ?? 0 : 0, nowMin: () => minutesIn(this.timezone, this.#now()) });
+    this.#storySecrets = new StorySecrets({ dataDir: this.dataDir, onInvalidate: () => this.#dm.cancel() });
+    this.#storyNodeLimit = new StoryNodeLimit({ dataDir: this.dataDir });
+    this.#storyImages = new StoryImages({ dataDir: this.dataDir });
+    this.#locationLibrary = new PlaceLibrary({
+      dataDir: this.dataDir,
+      venues: () => this.#allPlaces(),
+      saveVenue: (raw) => this.#saveVenue(raw),
+      removeVenue: (id) => this.#removeVenue(id),
+    });
+    this.#storyLibrary = new StoryLibrary({ file: this.storiesFile(), venues: () => this.#places(), visits: (id) => this.#state ? this.#history(id)?.visitCount ?? 0 : 0, nowMin: () => minutesIn(this.timezone, this.#now()), nodeLimit: () => this.#storyNodeLimit.value });
   }
+
+  get cfg() { return { ...DEFAULTS, ...(this.#rawCfg ?? {}) }; }
 
   // -------------------------------------------------------------------------
   // 配置（热改：每次用时现读）
@@ -368,7 +469,7 @@ export class FunWorld {
   // -------------------------------------------------------------------------
 
   /**
-   * 当前可用的全部场所：预设 20 处（可带覆盖层）+ 用户自填。
+   * 地点表：预设 20 处（可带覆盖层）+ 用户自己的（含从旧地点库迁来的不可玩地点）。
    *
    * **永远返回数组，永远不抛错**——场所表读不出来时退回纯预设，
    * 这个 World 照常能逛（降级是第一公民）。
@@ -376,7 +477,7 @@ export class FunWorld {
    * 合并规则见 `user-venues.js`：用户改动优先，预设升级照常生效。
    * 这个方法是同步的（工具回执要即时算），所以用户数据在 `#load` 时读进内存。
    */
-  #places() {
+  #allPlaces() {
     try {
       const users = Array.isArray(this.#userVenues) ? this.#userVenues : [];
       return mergeVenues(VENUES, users, this.#overrides);
@@ -384,6 +485,17 @@ export class FunWorld {
       this.#host?.log?.warn?.('娱乐时间：场所合并失败，退回预设', { err: msg(err) });
       return [...VENUES];
     }
+  }
+
+  /**
+   * 能逛的场所：玩法只看这一份。
+   *
+   * C 版把地点库并进 venues 之后，`#allPlaces()` 里也会有「只是地图上一个点」
+   * 的不可玩地点（`playable:false` / 没有能逛的）。出去玩、推荐、行程校验
+   * 一律用这里，语义和重构前完全一样。
+   */
+  #places() {
+    return this.#allPlaces().filter((v) => v.playable !== false && Array.isArray(v.areas) && v.areas.length > 0);
   }
 
   /**
@@ -401,13 +513,96 @@ export class FunWorld {
 
   /** 写 venues.json（tmp → rename 原子写）；覆盖层与自填地点一起落盘。 */
   async #saveVenueFile(venues, overrides) {
+    if (this.#venueMigrationError) throw new Error(this.#venueMigrationError);
     const file = this.venuesFile();
     await mkdir(dirname(file), { recursive: true });
+    await markVenueMigration(file);
+    await markPromotedVenueMigration(file);
     const tmp = `${file}.tmp`;
     await writeFile(tmp, stringifyVenueFile({ venues, overrides }), 'utf8');
     await rename(tmp, file);
     this.#userVenues = venues;
     this.#overrides = overrides;
+  }
+
+  /**
+   * C 版迁移：把旧地点库 `data.places` 里的「基础地点」搬进 venues.json。
+   *
+   * 为什么必须保留原 id：relations / homeId / 故事绑定 / 历史行程里存的都是
+   * `place-<uuid>`，换 id 等于把这些关系全断掉。
+   *
+   * 安全线：动任何东西之前先留 `venues.json` 与 `library.json` 的备份；
+   * 任何一步失败就回滚 library.json、把错误记到 `#venueMigrationError`
+   * （之后 `#saveVenueFile` 一律拒绝，宁可不能存也不要用半套数据覆盖）。
+   */
+  async #migrateLegacyPlaces() {
+    const library = this.#locationLibrary;
+    let taken;
+    try {
+      taken = await library.takeLegacyPlaces();
+    } catch (err) {
+      this.#venueMigrationError = this.#venueMigrationError
+        ?? `旧地点库迁移失败；已保留原文件，暂不允许保存地点。（${msg(err)}）`;
+      return;
+    }
+    const legacy = Array.isArray(taken?.places) ? taken.places : [];
+    if (!legacy.length) return;
+
+    const byId = new Map((this.#userVenues ?? []).map((venue) => [venue.id, venue]));
+    const extras = [];
+    for (const row of legacy) {
+      if (!row || typeof row !== 'object' || !row.id) continue;
+      const { venue, problems } = cleanUserVenue({
+        id: row.id, kind: row.kind, name: row.name, desc: row.desc,
+        aliases: row.aliases, tags: row.tags, scene: row.scene,
+        playable: false, hours: { open: '00:00', close: '23:59' },
+      }, { requireId: true });
+      if (!venue) {
+        this.#host?.log?.warn?.('娱乐时间：旧地点没法迁移，先跳过', { id: row.id, problems });
+        continue;
+      }
+      // 迁移来的地点是「地图上的一个点」，不是能逛的场所。
+      venue.playable = false;
+      byId.set(venue.id, venue);
+      extras.push({ id: venue.id, style: row.style, relations: row.relations, cover: row.cover, coverFocus: row.coverFocus });
+    }
+
+    const restoreLibrary = async () => {
+      if (taken?.backup) await copyFile(taken.backup, library.file).catch(() => {});
+    };
+    // venues.json 也留一份备份（不存在就跳过）。
+    try {
+      const file = this.venuesFile();
+      const bytes = await readFile(file).catch((err) => {
+        if (err?.code === 'ENOENT') return null;
+        throw err;
+      });
+      if (bytes) await writeFile(`${file}.bak-c-${Date.now()}`, bytes, { flag: 'wx' });
+    } catch (err) {
+      await restoreLibrary();
+      this.#venueMigrationError = this.#venueMigrationError
+        ?? `地点表备份失败；已保留原文件，暂不允许保存地点。（${msg(err)}）`;
+      return;
+    }
+    try {
+      await this.#saveVenueFile([...byId.values()], this.#overrides ?? {});
+    } catch (err) {
+      await restoreLibrary();
+      this.#venueMigrationError = this.#venueMigrationError
+        ?? `旧地点迁移写入失败；已从备份恢复地点库，暂不允许保存地点。（${msg(err)}）`;
+      return;
+    }
+    for (const item of extras) {
+      try {
+        await library.adoptExtras(item.id, item);
+      } catch (err) {
+        await restoreLibrary();
+        this.#venueMigrationError = this.#venueMigrationError
+          ?? `旧地点的画风/关联/封面迁移失败；已从备份恢复地点库，暂不允许保存地点。（${msg(err)}）`;
+        return;
+      }
+    }
+    this.#host?.log?.info?.('娱乐时间：旧地点库已并进地点表', { migrated: extras.length });
   }
 
   // -------------------------------------------------------------------------
@@ -447,10 +642,13 @@ export class FunWorld {
     switch (name) {
       case 'fun_places': return this.#placesTool(args);
       case 'fun_go': return await this.#goTool(args);
-      case 'fun_wander': return await this.#wanderTool(args);
-      case 'fun_choice': return await this.#choiceTool(args);
+      case 'fun_wander': return await this.#wanderTool(args, this.#state.session?.storyRun?.participation === 'duo' ? 'fish' : undefined);
+      case 'fun_choice': return await this.#choiceTool(args, this.#state.session?.storyRun?.participation === 'duo' ? 'fish' : undefined);
       case 'fun_resume': return await this.#resumeTool(args.id);
-      case 'fun_home': return await this.#homeTool(args);
+      case 'fun_home': {
+        if ((this.#state.session ?? this.#state.draft)?.storyRun?.participation === 'duo') return { failed: true, text: '双人故事由用户在故事面板明确结束，鱼不能代替用户回家。' };
+        return await this.#homeTool(args);
+      }
       case 'fun_start': return this.#startTool();
       case 'fun_route': return await this.#routeTool(args);
       case 'fun_view': return this.#viewTool(args);
@@ -461,10 +659,24 @@ export class FunWorld {
       }
       case 'fun_keepsake': return await this.#keepsakeTool(args);
       case 'fun_shelf': return this.#shelfTool(args);
+      case 'fun_story_places':
+      case 'fun_story_candidates':
+      case 'fun_story_detail':
+      case 'fun_story_current':
+      case 'fun_story_recap':
+      case 'fun_story_schedule': {
+        let result;
+        try { result = await this.#storyRead(name, args); }
+        catch (error) { result = { ok: false, code: 'QUERY_FAILED', error: msg(error) }; }
+        // The host model consumes text; keep typed fields for direct local callers.
+        return { ...result, text: JSON.stringify(result), ...(result.ok ? {} : { failed: true }) };
+      }
       case 'fun_story': {
         const result = await this.#storyLibrary.act(args);
         return { text: storyResultText(result), ...(result.ok ? {} : { failed: true }) };
       }
+      case 'fun_story_start': return this.#storyTextStart(args);
+      case 'fun_story_act': return this.#storyTextAct(args);
       default: return { text: `[${name} 失败] 不认识这个工具。`, failed: true };
     }
   }
@@ -503,7 +715,7 @@ export class FunWorld {
       return { text: routeText(route) + '。没有自动出发。' };
     }
     if (action === 'next') {
-      if (next.session || next.draft) return { text: '这一站还没有收摊，请先完成或处理未完行程。', failed: true };
+      if (next.session || next.draft) return { text: '这一站还没有回家，请先完成或处理未完行程。', failed: true };
       const stop = route.stops[route.nextIndex];
       if (!stop || !this.#places().some((v) => v.id === stop.placeId)) return { text: '下一站已不在地点清单，可 change 换一站或 cancel 取消后续。', failed: true };
       return this.#goTool({ place: stop.placeId, company: route.company });
@@ -547,7 +759,7 @@ export class FunWorld {
   }
 
   #draftHint(draft) {
-    return `「${draft.placeName}」还有一趟未逛完（ID：${draft.id}）。用 fun_resume 填 id 继续，或用 fun_home 填 draftId 按已有记录收摊。`;
+    return `「${draft.placeName}」还有一趟未逛完（ID：${draft.id}）。用 fun_resume 填 id 继续，或用 fun_home 填 draftId 按已有记录回家。`;
   }
 
   #choiceHint(choice) {
@@ -565,7 +777,7 @@ export class FunWorld {
       return { text: '找不到可继续的这趟行程，请用 fun_view 查看当前状态。', failed: true };
     }
     if (!this.#places().some((v) => v.id === draft.placeId)) {
-      return { text: `「${draft.placeName}」已不在地点清单。可用 fun_home 填 draftId 按已有记录收摊。`, failed: true };
+      return { text: `「${draft.placeName}」已不在地点清单。可用 fun_home 填 draftId 按已有记录回家。`, failed: true };
     }
     const now = this.#now();
     draft.pausedMs += Math.max(0, now - draft.lastAt);
@@ -578,24 +790,75 @@ export class FunWorld {
     ].join('\n') };
   }
 
-  async #choiceTool(args) {
+  async #choiceTool(args, actor, reason) {
     const next = this.#normalizeState();
     if (next.draft) return { text: this.#draftHint(next.draft), failed: true };
     const session = next.session;
     if (!session?.pendingChoice) return { text: '现在没有待选择的事件。', failed: true };
     const choice = session.pendingChoice;
     if (args?.choiceId !== choice.id) return { text: this.#choiceHint(choice), failed: true };
-    const skip = args?.optionId === 'skip';
-    const result = skip ? null : applyChoice(choice, args?.optionId);
+    let submitter = actor ?? 'owner';
+    let optionId = args?.optionId;
+    let jointVotes;
+    let substituted = false;
+    if (choice.actor === 'owner' && submitter !== 'owner') return { text: '当前是用户回合，鱼不能代替用户提交。', failed: true };
+    if (choice.actor === 'fish' && submitter !== 'fish') {
+      // 「我替她选」只在鱼这一步真的没法自己决定时才成立：认知接口不可用，
+      // 或者这一趟的决定次数/本步重试已经用满。否则鱼的回合仍由鱼自己提交。
+      if (!(submitter === 'owner' && args?.substitute === true && this.#fishCannotDecide(args?.stamp))) {
+        return { text: '当前是鱼的回合，用户不能替鱼提交。', failed: true };
+      }
+      substituted = true;
+    }
+    if (choice.actor === 'joint') {
+      if (!['owner', 'fish'].includes(submitter)) return { text: '共同选择需要用户或鱼分别提交有效选项。', failed: true };
+      const expectedVoter = !choice.votes?.owner ? 'owner' : !choice.votes?.fish ? 'fish' : 'owner';
+      if (submitter !== expectedVoter) return { text: expectedVoter === 'owner' ? '当前轮到用户提交或修订选择。' : '当前轮到鱼明确提交选择。', failed: true };
+      if (optionId === 'skip') return { text: '共同选择不能用略过代替双方决定。', failed: true };
+      const valid = choice.options.some(({ id }) => id === optionId);
+      if (!valid) return { text: this.#choiceHint(choice), failed: true };
+      const votes = { ...(choice.votes ?? {}), [submitter]: optionId };
+      if (!votes.owner || !votes.fish) {
+        session.pendingChoice = { ...choice, votes };
+        session.lastAt = this.#now();
+        await this.#commitState(next);
+        return { text: submitter === 'owner' ? '你的选择已保存，等待鱼明确提交她的选择；没有以等待或超时当作同意。' : '鱼的选择已保存，等待用户明确提交选择。' };
+      }
+      if (votes.owner !== votes.fish && choice.jointResolution === 'require-agreement') {
+        session.choices.push({ event: choice.event, option: `${votes.owner}|${votes.fish}`, result: '双方意见不同，决定仍待确认', at: this.#now(), actor: 'joint', votes: [{ actor: 'owner', option: votes.owner }, { actor: 'fish', option: votes.fish }] });
+        session.pendingChoice = { ...choice, votes: { [submitter]: optionId } };
+        session.lastAt = this.#now();
+        await this.#commitState(next);
+        return { text: `双方选择不同；已保存${submitter === 'owner' ? '你的' : '鱼的'}新选择，等待另一方明确确认。不会按超时视为同意。` };
+      }
+      optionId = votes.owner === votes.fish ? votes.owner
+        : choice.jointResolution === 'owner-final' ? votes.owner : votes.fish;
+      jointVotes = [{ actor: 'owner', option: votes.owner }, { actor: 'fish', option: votes.fish }];
+      submitter = 'joint';
+    }
+    const skip = optionId === 'skip';
+    const result = skip ? null : applyChoice(choice, optionId);
     if (result && !result.ok) return { text: `${result.error}\n${this.#choiceHint(choice)}`, failed: true };
     const now = this.#now();
-    session.choices.push({ event: choice.event, option: args.optionId, result: skip ? '略过了这次选择' : result.option.result, at: now });
+    const source = submitter ? { actor: submitter, label: result?.option.label ?? '略过', ...(reason ? { reason } : {}), ...(jointVotes ? { votes: jointVotes } : {}), ...(substituted ? { substituted: true } : {}) } : {};
+    session.choices.push({ event: choice.event, option: optionId, result: skip ? '略过了这次选择' : result.option.result, at: now, ...source });
     addMoment(session, 'choice', skip ? '略过了这次选择' : result.option.result, now, choice.area, choice.event);
-    session.storyProgress = advanceStoryChoice(session.storyProgress, choice.id, args.optionId);
+    const before = session.storyProgress.find((entry) => entry.waitingChoiceId === choice.id);
+    session.storyProgress = advanceStoryChoice(session.storyProgress, choice.id, optionId);
+    if (!skip && before?.packId === session.storyRun?.packId && before && !before.options.find(({ id }) => id === optionId)?.next) {
+      session.storyRun.endingNodeId = before.nodeId;
+    }
     session.pendingChoice = null;
     session.lastAt = now;
     await this.#commitState(next);
-    return { text: skip ? '略过了这次选择，可以接着逛。' : `你选择了「${result.option.label}」。${result.option.result}。` };
+    return { text: skip ? '略过了这次选择，可以接着逛。' : `${substituted ? '你替鱼选了' : '选择已确认：'}${result.option.label}。${result.option.result}。` };
+  }
+
+  /** 鱼在这一步还有没有可能自己决定：接口不可用、决定次数用满、或本步两次尝试都失败。 */
+  #fishCannotDecide(stamp) {
+    if (typeof this.#host?.cognition?.request !== 'function') return true;
+    const budget = storyBudget(this.#state?.session?.storyRun?.budget);
+    return budgetStop(budget, this.#autoLimits(), { step: 'choose', stamp }) !== null;
   }
 
   async #manageWish(args) {
@@ -724,14 +987,14 @@ export class FunWorld {
     return { text: lines.join('\n') };
   }
 
-  async #goTool(args) {
+  async #goTool(args, storyRun) {
     const now = this.#now();
     const day = dayIn(this.timezone, now);
     this.#state = this.#normalizeState();
     if (this.#state.draft) return { text: this.#draftHint(this.#state.draft), failed: true };
 
     const places = this.#places();
-    const venue = findVenue(places, args?.place);
+    const venue = storyRun ? places.find(({ id }) => id === storyRun.placeId) : findVenue(places, args?.place);
     if (!venue) {
       const names = places.map((v) => v.name).join(' / ');
       return { text: `没听说过「${args?.place ?? ''}」这处。现在能去的是：${names}。\n（拿不准就 fun_places 看看，或者 all 填 true 列全部。）`, failed: true };
@@ -746,8 +1009,20 @@ export class FunWorld {
     const { session, already } = enterVenue(this.#state, venue, now, this.#random, company);
     if (already) {
       return {
-        text: `你已经在「${this.#state.session.placeName}」逛着了（${visitedText(this.#state.session)}）。\n要么接着 fun_wander，要么 fun_home 收了再换地方。`,
+        text: `你已经在「${this.#state.session.placeName}」逛着了（${visitedText(this.#state.session)}）。\n要么接着 fun_wander，要么 fun_home 回家后再换地方。`,
       };
+    }
+    if (storyRun) {
+      const { packId, revision, title } = storyRun;
+      session.id = randomUUID();
+      const resourceVersion = storyStamp([venue.id, venue.name, venue.desc, venue.areas, venue.scene ?? '', venue.coverId ?? '']);
+      const free = storyRun.mode === 'free' && storyRun.setting ? newFreeState(storyRun.setting) : null;
+      session.storyRun = { packId, revision, title, endingNodeId: null, runId: session.id,
+        participation: storyRun.participation === 'duo' ? 'duo' : 'solo', canonical: storyRun.canonical !== false && !this.#completedStoryIds().has(packId),
+        ...(free ? { free } : {}),
+        sourceRunId: typeof storyRun.sourceRunId === 'string' ? storyRun.sourceRunId : null,
+        sourceMemoryId: typeof storyRun.sourceMemoryId === 'string' ? storyRun.sourceMemoryId : null,
+        resourceVersion, checkpoints: [] };
     }
     const enteredPhase = phaseLabelAt(venue, minutesIn(this.timezone, now));
     session.phases = enteredPhase ? [enteredPhase] : [];
@@ -758,7 +1033,7 @@ export class FunWorld {
       route.status = 'active';
       storeRoute(this.#state, route);
     }
-    const completedWishes = this.#completeWishes({ placeId: venue.id, phase: enteredPhase });
+    const completedWishes = session.storyRun?.canonical === false ? [] : this.#completeWishes({ placeId: venue.id, phase: enteredPhase });
     await this.#save();
 
     // 时段气氛：江边清早和夜里不是一回事，所以描写和可逛的项目都按此刻取。
@@ -806,7 +1081,7 @@ export class FunWorld {
     return { text: lines.join('\n') };
   }
 
-  async #wanderTool(args) {
+  async #wanderTool(args, actor = 'owner') {
     const now = this.#now();
     const day = dayIn(this.timezone, now);
     this.#state = this.#normalizeState();
@@ -822,7 +1097,7 @@ export class FunWorld {
     const venue = places.find((v) => v.id === session.placeId)
       ?? findVenue(places, session.placeName);
     if (!venue) {
-      return { text: `找不到「${session.placeName}」这处了（场所库改过？）。fun_home 收个摊吧。` };
+      return { text: `找不到「${session.placeName}」这处了（场所库改过？）。fun_home 先回家吧。` };
     }
 
     // 挂太久的判断要在这一趟「动过之前」做：逛一次就会刷新 lastAt，
@@ -851,10 +1126,27 @@ export class FunWorld {
     // 回执写「海洋馆 · 蹦极」，还进了纪念册——等于替她编了一个不存在的地方。
     // 现在三档认：正名、别名式包含、或者不填让系统挑。
     const wanted = typeof args?.area === 'string' ? args.area.trim() : '';
+    let pinnedStory = null;
+    if (session.storyRun) {
+      const rows = this.#storyLibrary.catalog().filter(({ pack }) => pack.id === session.storyRun.packId && pack.revision === session.storyRun.revision);
+      if (rows.some(({ pack }) => isFreePack(pack))) {
+        return { text: '这一段是自由模式，用 fun_story_act 说一句来推进；想收尾就用 intent: close。', failed: true };
+      }
+      const step = describeStoryTrip(session, false, rows, venue, nowMin, visitsBefore, [], this.cfg?.funStoryFreeTurns);
+      if (step.step !== 'move' || (wanted && wanted !== step.nextArea)) {
+        return { text: step.blocked || (step.nextArea ? `下一处是「${step.nextArea}」。` : '故事已经走完，可以回家。'), failed: true };
+      }
+      if (session.storyRun.participation === 'duo' && step.actor !== actor) {
+        return { text: step.actor === 'fish' ? '当前是鱼的回合，请开启鱼自主模式或等待鱼明确提交。' : '当前是用户回合，请由用户提交。', failed: true };
+      }
+      args = { area: step.nextArea };
+      pinnedStory = pickStory(rows, venue, step.nextArea, nowMin, session, visitsBefore);
+    }
+    const target = pinnedStory ? args.area : wanted;
     let picked = null;
     let areaMiss = '';
-    if (wanted) {
-      const hit = liveAreas.includes(wanted) ? wanted : liveAreas.find((a) => a.includes(wanted));
+    if (target) {
+      const hit = liveAreas.includes(target) ? target : liveAreas.find((a) => a.includes(target));
       if (!hit) {
         // 这一处**此刻**没有这处项目。可能是时段收窄了（夜市刚开摊只有几家），
         // 也可能是这处压根不存在——两种都如实说，把能逛的递给她。
@@ -916,14 +1208,20 @@ export class FunWorld {
     }
     // 项目和已验证的收获确定后才抽事件，避免串项目或凭空获得东西。
     if (picked) {
-      let story = null;
-      try { story = pickStory(this.#storyLibrary.catalog(), venue, picked.area, nowMin, session, visitsBefore); }
-      catch (error) { this.#host?.log?.warn?.('剧情包未能触发，继续普通游逛', { error: msg(error) }); }
+      let story = pinnedStory;
+      if (!session.storyRun) {
+        try {
+          const legacyRows = this.#storyLibrary.catalog().filter(({ pack }) => pack.version === 1);
+          story = pickStory(legacyRows, venue, picked.area, nowMin, session, visitsBefore);
+        } catch (error) { this.#host?.log?.warn?.('剧情包未能触发，继续普通游逛', { error: msg(error) }); }
+      }
       let choice = null;
       if (story) {
         picked.event = story.event;
         session.storyProgress = story.progress;
         choice = story.choice;
+        const completed = session.storyRun && story.progress.find(({ packId, done }) => done && packId === session.storyRun.packId);
+        if (completed) session.storyRun.endingNodeId = completed.nodeId;
       } else {
       const common = filterEventsForArea(liveEvents, picked.area, venue, session);
       const rare = filterEventsForArea(rarePool, picked.area, venue, session);
@@ -949,7 +1247,8 @@ export class FunWorld {
     if (shot && !shot.duplicate) addMoment(session, 'photo', '在' + shot.spot + '拍了照', now, picked?.area);
     if (ate && !ate.duplicate) addMoment(session, 'consume', ate.verb + '了' + ate.item, now, picked?.area);
 
-    const completedWishes = this.#completeWishes({ placeId: venue.id, area: picked?.area ?? '', phase: phaseName, souvenirs: bought && !bought.duplicate ? [bought.item] : [] });
+    const completedWishes = session.storyRun?.canonical === false ? []
+      : this.#completeWishes({ placeId: venue.id, area: picked?.area ?? '', phase: phaseName, souvenirs: bought && !bought.duplicate ? [bought.item] : [] });
     await this.#save();
 
     // 点的那处不存在：不编一个「逛了」，把能逛的如实递给她，买/拍照/吃喝照常结算
@@ -985,7 +1284,7 @@ export class FunWorld {
     if (hasFood(venue) && ate) lines.push(this.#foodHint(venue));
 
     if (staleBefore) {
-      lines.push(`（这一趟挂得有点久了，上一次动是 ${hmIn(this.timezone, idleSince)}。想收就用 fun_home。）`);
+      lines.push(`（这一趟挂得有点久了，上一次动是 ${hmIn(this.timezone, idleSince)}。想回家就用 fun_home。）`);
     } else if (session.visited.length >= venue.areas.length) {
       lines.push('这儿差不多逛遍了。');
     }
@@ -996,7 +1295,7 @@ export class FunWorld {
     const now = this.#now();
     const next = this.#normalizeState();
     if (args?.draftId !== undefined && (!next.draft || args.draftId !== next.draft.id || next.session)) {
-      return { text: '找不到要收摊的未完行程，请用 fun_view 查看当前状态。', failed: true };
+      return { text: '找不到要回家的未完行程，请用 fun_view 查看当前状态。', failed: true };
     }
     if (next.draft && args?.draftId === undefined) return { text: this.#draftHint(next.draft), failed: true };
     const outing = next.session ?? next.draft;
@@ -1004,12 +1303,19 @@ export class FunWorld {
 
     const endAt = next.draft ? (outing.lastAt || outing.enteredAt || now) : now;
     if (outing.pendingChoice) {
-      outing.storyProgress = advanceStoryChoice(outing.storyProgress, outing.pendingChoice.id, 'skip');
-      outing.choices.push({ event: outing.pendingChoice.event, option: 'skip', result: '收摊时未作选择', at: endAt });
+      if (outing.storyRun?.participation === 'duo') {
+        const abandoned = '共同决定未完成；行程提前结束，未将等待或超时记作同意';
+        outing.events.push(abandoned);
+        addMoment(outing, 'event', abandoned, endAt, outing.pendingChoice.area, outing.pendingChoice.event);
+      } else {
+        outing.storyProgress = advanceStoryChoice(outing.storyProgress, outing.pendingChoice.id, 'skip');
+        outing.choices.push({ event: outing.pendingChoice.event, option: 'skip', result: '回家时未作选择', at: endAt });
+      }
+      outing.pendingChoice = null;
     }
     next.session = outing;
     next.draft = null;
-    const venue = this.#places().find((v) => v.id === outing.placeId)
+    const venue = this.#allPlaces().find((v) => v.id === outing.placeId)
       ?? { name: outing.placeName, scene: outing.scene };
     const closed = closeSession(next, endAt, args?.note, dayIn(this.timezone, endAt), this.timezone);
     const route = (next.routes ?? []).find((r) => r.id === outing.routeId);
@@ -1023,7 +1329,7 @@ export class FunWorld {
 
     const { trip, stayedMin, note } = closed;
     const summary = tripSummary(trip);
-    const lines = [`收摊：这一趟在${summary}。`];
+    const lines = [`回家：这一趟在${summary}。`];
     if (route) lines.push(routeText(route) + (route.status === 'between' ? '。想继续时用 fun_route next 并填路线 id；也可 change 换下一站或 cancel 提前结束。' : '。'));
     if (stayedMin >= 5) lines.push(`待了大约 ${stayedMin} 分钟。`);
     if (note) lines.push(`（你记的：${note}）`);
@@ -1033,7 +1339,15 @@ export class FunWorld {
     const scene = hasScene(venue) ? venue.scene : '';
     // 这句话是联动的关键：把「该填哪个名字」递到她嘴边，替她省一次猜。
     // 素材库里没有这处场景时**一个字都不提**——点了库里没有的名字，那一项等于白填。
-    if (scene) {
+    if (this.cfg?.funStoryImages === true) {
+      const images = this.#storyImages.status(true);
+      if (images.state === 'direct') {
+        lines.push('剧情图片已选本机 ComfyUI；请在「故事工坊」面板明确点击生成。回家不等待图片，也不会自动发图片请求。');
+      } else {
+        const image = await this.#storyImages.generate({ enabled: true, scene, outfits: trip.outfit || '', prompt: `仅画实际经历：${summary}` });
+        lines.push(image.message, `图片委派参数：${JSON.stringify({ source: image.source, tool: image.tool, scene: image.scene, outfits: image.outfits, prompt: image.prompt })}`);
+      }
+    } else if (scene) {
       lines.push(`要发图的时候就照这一趟画：imggen_draw 的 scene 填「${scene}」，outfits 填${trip.outfit ? `「${trip.outfit}」` : '你这一趟穿的那身'}，道具/情境按当时的样子填，别自己编地方。`);
     } else {
       lines.push(`要发图的时候，scene 不用填（素材库里没有${trip.placeName}这个场景），按当时的样子写进 prompt 就行，outfits 填${trip.outfit ? `「${trip.outfit}」` : '你这一趟穿的那身'}。`);
@@ -1060,7 +1374,7 @@ export class FunWorld {
     if (upcomingWish) lines.push(upcomingWish);
     lines.push(`（一共 ${places.length} 处，fun_places all 填 true 能看全，kind 填「室内」「户外」「夜」能只看一类。）`);
     const { draft } = this.#outings(now);
-    lines.push(draft ? this.#draftHint(draft) : '选好后用 fun_go 进门；逛完用 fun_home 收摊。');
+    lines.push(draft ? this.#draftHint(draft) : '选好后用 fun_go 进门；逛完用 fun_home 回家。');
     return { text: lines.join('\n') };
   }
 
@@ -1075,6 +1389,88 @@ export class FunWorld {
       const result = favoriteTrip(this.#state, id, keep);
       if (result.ok) await this.#save();
       return result;
+    });
+  }
+
+  // -------------------------------------------------------------------------
+  // 回收站：删掉的回忆先放这里，能恢复，也能彻底删
+  // -------------------------------------------------------------------------
+
+  #trashView() {
+    return (this.#state?.trash ?? []).map(({ id, from, deletedAt, trip }) => ({
+      id, from, deletedAt, tripId: trip.id,
+      title: trip.storyRun?.title ?? trip.placeName,
+      placeName: trip.placeName, endedAt: trip.leftAt,
+      complete: Boolean(trip.storyRun?.endingNodeId ?? trip.storyRun?.free?.ended),
+      mode: trip.storyRun?.free ? 'free' : 'static',
+    }));
+  }
+
+  /** 删除 = 从纪念册挪进回收站；纪念品架是独立账本，已经带回家的东西不跟着消失。 */
+  #deleteMemory(payload) {
+    return this.#serial(async () => {
+      this.#ensureStarted();
+      const memoryId = typeof payload?.memoryId === 'string' ? payload.memoryId : '';
+      if (!memoryId) return storyFailure('缺少要删除的回忆 ID。');
+      const state = this.#normalizeState();
+      if (state.trash.some((entry) => entry.trip.id === memoryId)) return storyFailure('这条回忆已经在回收站里了。');
+      const inRecent = state.trips.findIndex((trip) => trip.id === memoryId);
+      const inKept = state.keepsakeTrips.findIndex((trip) => trip.id === memoryId);
+      if (inRecent < 0 && inKept < 0) return storyFailure('没有找到这条回忆；可能已经删掉了。');
+      const trip = inKept >= 0 ? state.keepsakeTrips[inKept] : state.trips[inRecent];
+      const from = inKept >= 0 ? 'keepsakeTrips' : 'trips';
+      if (inRecent >= 0) state.trips.splice(inRecent, 1);
+      if (inKept >= 0) state.keepsakeTrips.splice(inKept, 1);
+      state.trash = [...state.trash, {
+        id: `trash-${trip.id}-${this.#now()}`, from, deletedAt: this.#now(), trip: structuredClone(trip),
+      }].slice(-MAX_TRASH_TRIPS);
+      await this.#commitState(state);
+      return this.#storyStatus();
+    });
+  }
+
+  #restoreMemory(payload) {
+    return this.#serial(async () => {
+      this.#ensureStarted();
+      const trashId = typeof payload?.trashId === 'string' ? payload.trashId : '';
+      const state = this.#normalizeState();
+      const index = state.trash.findIndex((entry) => entry.id === trashId);
+      if (index < 0) return storyFailure('回收站里没有这一条；可能已经恢复或彻底删除了。');
+      const [entry] = state.trash.splice(index, 1);
+      if (state.trips.some((trip) => trip.id === entry.trip.id) || state.keepsakeTrips.some((trip) => trip.id === entry.trip.id)) {
+        return storyFailure('这条行程已经在纪念册里了。');
+      }
+      if (entry.from === 'keepsakeTrips' || entry.trip.favorite === true) {
+        state.keepsakeTrips = [...state.keepsakeTrips, entry.trip].sort((a, b) => b.leftAt - a.leftAt).slice(0, MAX_TRIPS);
+      } else {
+        state.trips = [...state.trips, entry.trip].sort((a, b) => b.leftAt - a.leftAt).slice(0, MAX_TRIPS);
+      }
+      await this.#commitState(state);
+      return this.#storyStatus();
+    });
+  }
+
+  #purgeMemory(payload) {
+    return this.#serial(async () => {
+      this.#ensureStarted();
+      const trashId = typeof payload?.trashId === 'string' ? payload.trashId : '';
+      const state = this.#normalizeState();
+      const index = state.trash.findIndex((entry) => entry.id === trashId);
+      if (index < 0) return storyFailure('回收站里没有这一条。');
+      state.trash.splice(index, 1);
+      await this.#commitState(state);
+      return this.#storyStatus();
+    });
+  }
+
+  #emptyTrash() {
+    return this.#serial(async () => {
+      this.#ensureStarted();
+      const state = this.#normalizeState();
+      if (!state.trash.length) return this.#storyStatus();
+      state.trash = [];
+      await this.#commitState(state);
+      return this.#storyStatus();
     });
   }
 
@@ -1228,7 +1624,7 @@ export class FunWorld {
   }
 
   #homeHint() {
-    return '想收就用 fun_home，回执会把这一趟收成一句话。';
+    return '想回家就用 fun_home，回执会把这一趟收成一句话。';
   }
 
   /**
@@ -1262,10 +1658,16 @@ export class FunWorld {
 
   async #load() {
     const day = dayIn(this.timezone, this.#now());
+    this.#stateError = undefined;
     try {
       const raw = JSON.parse(await readFile(this.stateFile(), 'utf8'));
+      if (!raw || typeof raw !== 'object' || Array.isArray(raw) || !Array.isArray(raw.trips)) throw new Error('Invalid outing state');
       return normalizeState(raw, day, this.#now(), this.#ttlMin(), this.timezone);
-    } catch {
+    } catch (error) {
+      if (error?.code !== 'ENOENT') {
+        this.#stateError = '出游存档无法读取，原文件未改动。请从备份恢复后重启娱乐时间。';
+        this.#host?.log?.warn?.(this.#stateError);
+      }
       return newState(day);
     }
   }
@@ -1284,6 +1686,8 @@ export class FunWorld {
 
   async #save(state = this.#state) {
     if (!state) return;
+    if (this.#stateError) throw new Error(this.#stateError);
+    this.#storyCommit?.(state);
     const file = this.stateFile();
     await mkdir(dirname(file), { recursive: true });
     const tmp = `${file}.tmp`;
@@ -1293,6 +1697,7 @@ export class FunWorld {
 
   async #commitState(next) {
     await this.#save(next);
+    this.#storyImages.cancel();
     this.#state = next;
   }
 
@@ -1328,7 +1733,7 @@ export class FunWorld {
       },
     ];
     if (session) {
-      const venue = this.#places().find((v) => v.id === session.placeId);
+      const venue = this.#allPlaces().find((v) => v.id === session.placeId);
       badges.unshift({
         label: t.badgeSession,
         value: `${session.placeName}·${session.visited.length}/${venue?.areas.length ?? '?'}`,
@@ -1358,7 +1763,11 @@ export class FunWorld {
         },
         { id: 'book', title: p.book.title, description: p.book.description, getMethods: ['list'], methods: ['favorite', 'wish'] },
         { id: 'shelf', title: p.shelf.title, description: p.shelf.description, getMethods: ['list', 'trip'] },
-        { id: 'stories', title: this.language === 'en' ? 'Story packs' : '地点剧情包', description: '导入、校验、预览和管理本地原创剧情包。', getMethods: ['list', 'template', 'validate', 'preview', 'export'], methods: ['import', 'enable', 'disable', 'remove'] },
+        { id: 'locations', title: '地点册', description: '编辑全部地点（场所 + 画风 + 关联 + 封面），管理住所，迁入小世界备份。', getMethods: ['list'], methods: ['get', 'cover', 'create', 'update', 'remove', 'reset', 'resetAll', 'setHome', 'setDefaultStyle', 'setCover', 'clearCover', 'previewImport', 'commitImport', 'restoreImport'] },
+        { id: 'story', title: this.language === 'en' ? 'Story Workshop' : '故事工坊', description: this.language === 'en' ? 'Write stories, play from home, and configure optional DM and images.' : '从鱼的家出发，编写故事、体验文字剧情并设置可选主持与图片。',
+          getMethods: ['status', 'storySettings', 'storyImageRead', 'authorList', 'authorTemplate', 'authorValidate', 'authorPreview', 'authorPlaytest', 'authorExport'],
+          methods: [...STORY_ACTIONS, 'locationCover', 'saveStorySettings', 'saveStoryNodeLimit', 'clearStoryKey', 'storyImage', 'authorImport', 'authorEnable', 'authorDisable', 'authorRemove'] },
+        { id: 'stories', title: this.language === 'en' ? 'Story Workshop' : '故事工坊', description: '导入、校验、预览和管理本地原创剧情包。', getMethods: ['list', 'template', 'validate', 'preview', 'playtest', 'export'], methods: ['import', 'enable', 'disable', 'remove'] },
       ],
       invoke: (panel, method, args) => this.#invoke(panel, method, args ?? []),
       config: [configGroup(this.language)],
@@ -1398,11 +1807,917 @@ export class FunWorld {
    * 实现，所以在面板上点一下和她自己调工具是一回事——不会有第二套逻辑。
    * 任何异常都兜成 `{ ok: false, error }`，不让面板挂掉。
    */
+  #completedStoryIds() {
+    return new Set((this.#normalizeState().storyCanon ?? []).map((row) => row.packId));
+  }
+
+  #storyPublicCard(row) {
+    const { pack, enabled } = row;
+    const venue = this.#allPlaces().find((item) => item.id === pack.placeId);
+    const view = describePack(row, venue, minutesIn(this.timezone, this.#now()), this.#history(pack.placeId)?.visitCount ?? 0, this.#completedStoryIds(), { freeEnabled: this.cfg?.funStoryFree === true });
+    const meta = pack.metadata ?? {};
+    return {
+      id: pack.id, title: pack.title, placeId: pack.placeId, placeName: venue?.name ?? pack.placeId,
+      revision: pack.revision, formatVersion: pack.version, mode: pack.version === 3 ? 'free' : 'static',
+      author: meta.author ?? '未标注',
+      release: meta.release ?? 'v1', genre: meta.genre ?? '未标注', synopsis: meta.synopsis ?? '',
+      participation: meta.participation ?? 'solo', durationMinutes: meta.durationMinutes ?? null,
+      duration: meta.durationMinutes === undefined ? '未知' : `${meta.durationMinutes} 分钟`,
+      requirements: [...(meta.requirements ?? [])], enabled, available: view.available,
+      reason: view.problem ?? null, queryAt: this.#now(),
+    };
+  }
+
+  async #storyRead(name, args = {}) {
+    const queryAt = this.#now();
+    const places = this.#places();
+    if (name === 'fun_story_places') {
+      const library = await this.#locationLibrary.snapshot();
+      const nowMin = minutesIn(this.timezone, queryAt);
+      const project = (place, detail = false) => {
+        const venue = places.find((item) => item.id === place.id);
+        return { id: place.id, name: place.name, playable: Boolean(venue?.areas?.length), isHome: place.isHome,
+          openState: venue ? hoursState(venue, nowMin) : null,
+          ...(detail ? { description: venue ? descNow(venue, nowMin) : place.desc,
+            aliases: [...place.aliases], kind: place.kind, tags: [...place.tags],
+            areas: venue ? [...areasNow(venue, nowMin)] : [], hours: venue ? { ...venue.hours } : null } : {}) };
+      };
+      if (args.id) {
+        const place = library.places.find((item) => item.id === args.id);
+        return place ? { ok: true, queryAt, place: project(place, true) }
+          : { ok: false, code: 'NOT_FOUND', error: '地点不存在。' };
+      }
+      return { ok: true, queryAt, places: library.places.map((place) => project(place)) };
+    }
+    const catalog = this.#storyLibrary.catalog();
+    if (name === 'fun_story_candidates' || name === 'fun_story_detail' || name === 'fun_story_schedule') {
+      const cards = catalog.map((row) => this.#storyPublicCard(row));
+      if (name === 'fun_story_detail') {
+        const card = cards.find((item) => item.id === args.id);
+        return card ? { ok: true, queryAt, story: card } : { ok: false, code: 'NOT_FOUND', error: '故事不存在。' };
+      }
+      const available = cards.filter((card) => card.enabled && card.available);
+      const candidates = cards.filter((card) => card.enabled);
+      if (name === 'fun_story_schedule') {
+        const card = args.id ? available.find((item) => item.id === args.id) : available[0];
+        if (!card) return { ok: false, code: args.id ? 'NOT_AVAILABLE' : 'NO_CANDIDATE', error: '当前没有符合条件的故事候选。' };
+        return { ok: true, queryAt, source: 'fun_story_schedule', text: `可考虑《${card.title}》· ${card.placeName} · 参与方式：${card.participation} · 时长：${card.duration}。这只是候选，不会开始故事或写入日程。` };
+      }
+      return { ok: true, queryAt, candidates };
+    }
+    if (name === 'fun_story_current') {
+      const status = this.#storyStatus();
+      if (!status.ok) return status;
+      const trip = status.trip;
+      return { ok: true, queryAt, state: trip ? trip.state : 'none', startStamp: status.startStamp, trip: trip ? {
+        id: trip.id, runId: this.#state.session?.storyRun?.runId ?? this.#state.draft?.storyRun?.runId ?? null,
+        title: trip.title, packId: trip.packId, revision: trip.revision, placeId: trip.placeId, placeName: trip.placeName,
+        step: trip.step, complete: trip.complete, blocked: trip.blocked || null, nextArea: trip.nextArea || null,
+        mode: trip.mode ?? 'static', maxTurns: trip.maxTurns ?? null, free: trip.free ?? null,
+        events: [...trip.events], choices: [...trip.choices], pending: trip.pending ? { id: trip.pending.id, event: trip.pending.event,
+          prompt: trip.pending.prompt, options: trip.pending.options.map(({ id, label }) => ({ id, label })) } : null,
+        timeline: [...trip.timeline],
+      } : null };
+    }
+    if (name === 'fun_story_recap') {
+      const memories = this.#savedTrips().filter((trip) => trip.storyRun);
+      const memory = args.id ? memories.find((trip) => trip.id === args.id || trip.storyRun.runId === args.id) : memories[0];
+      if (!memory) return { ok: false, code: args.id ? 'NOT_FOUND' : 'NO_MEMORY', error: '没有找到已保存的故事回忆。' };
+      const view = describeMemory(memory);
+      const areas = [...new Set((memory.visited ?? []).map((item) => item.area).filter(Boolean))];
+      const choices = (memory.choices ?? []).map((item) => item.option).filter(Boolean);
+      const summary = [`${memory.storyRun.endingNodeId ? '完整' : '中途结束'}：${memory.storyRun.title}`, memory.placeName,
+        areas.length ? `实际走过：${areas.join('、')}` : '', choices.length ? `实际选择：${choices.join('、')}` : '',
+        memory.events?.length ? `实际事件：${memory.events.join('；')}` : ''].filter(Boolean).join('。');
+      return { ok: true, queryAt, source: 'fun_story_recap', memory: { ...view, runId: memory.storyRun.runId ?? null,
+        sourceRunId: memory.storyRun.sourceRunId ?? null, summary } };
+    }
+    return { ok: false, code: 'UNSUPPORTED_QUERY', error: '不支持的只读故事查询。' };
+  }
+
+  /** 自主游玩的上限每次都现读设置：用户在设置里改完不用重开面板。 */
+  #autoLimits() {
+    return autoLimits(this.cfg ?? {});
+  }
+
+  #storyStatus(token) {
+    if (this.cfg?.funStoryImages !== true) this.#storyImages.cancel();
+    if (this.#stateError) return storyFailure(this.#stateError);
+    const state = this.#normalizeState();
+    const outing = state.session ?? state.draft;
+    const now = this.#now();
+    const nowMin = minutesIn(this.timezone, now);
+    const places = this.#places();
+    const catalog = this.#storyLibrary.catalog();
+    const place = (id) => places.find((venue) => venue.id === id);
+    const visits = (id) => this.#history(id)?.visitCount ?? 0;
+    const completed = this.#completedStoryIds();
+    const trip = describeStoryTrip(outing, Boolean(state.draft), catalog, place(outing?.placeId), nowMin, visits(outing?.placeId), completed, this.cfg?.funStoryFreeTurns);
+    if (trip) trip.dmBudget = dmBudget(outing.storyRun.dmBudget);
+    const conflict = outing && !trip ? `「${outing.placeName}」还有一趟普通出游，请在娱乐时间继续或结束。`
+      : !outing && state.route ? '娱乐时间还有一条未结束的联程，请先处理这条路线。' : undefined;
+    return {
+      ok: true, trip, conflict,
+      ...(this.#venueMigrationError ? { migrationWarning: this.#venueMigrationError } : {}),
+      startStamp: storyStamp([this.#storyEpoch, state.tripSeq, outing?.id, state.route?.id]),
+      catalog: catalog.filter(({ enabled }) => enabled)
+        .map((row) => describePack(row, place(row.pack.placeId), nowMin, visits(row.pack.placeId), completed, { freeEnabled: this.cfg?.funStoryFree === true })),
+      memories: this.#savedTrips().filter((saved) => saved.storyRun).map(describeMemory),
+      trash: this.#trashView(),
+      autoplay: outing?.storyRun?.autoplay === true,
+      images: this.#storyImages.status(this.cfg?.funStoryImages === true),
+      dm: { ...this.#dm.view(trip, this.#storySecrets.status.available ? { request() {} } : this.#host?.cognition, this.cfg?.funStoryDM === true), api: this.#storySecrets.status },
+      autonomy: this.#autonomy.view(trip, this.#host?.cognition, now, token, this.#autoLimits()),
+    };
+  }
+
+  async #commitStoryAction(identity, action, trip, actor, details, run) {
+    const priorSeq = this.#state.tripSeq;
+    let receipt;
+    this.#storyCommit = (next) => {
+      const saved = action === 'close' && next.tripSeq > priorSeq ? next.trips[0] : next.session;
+      if (!saved?.storyRun || (action !== 'start' && action !== 'close' && saved.id !== trip.id)) throw new Error('故事动作未生成可保存的进度。');
+      const storyRun = saved.storyRun;
+      storyRun.seq = (storyRun.seq ?? 0) + 1;
+      const budget = storyBudget(storyRun.budget);
+      if (actor === 'fish') budget.steps++;
+      storyRun.budget = budget;
+      const progress = normalizeStoryProgress(saved.storyProgress);
+      const checkpoint = {
+        id: randomUUID(), runId: storyRun.runId ?? saved.id, packId: storyRun.packId, revision: storyRun.revision,
+        resourceVersion: storyRun.resourceVersion ?? 'legacy-unknown', seq: storyRun.seq,
+        nodeId: progress.find((entry) => entry.waitingChoiceId === saved.pendingChoice?.id)?.nodeId
+          ?? progress.find((entry) => !entry.done)?.nodeId ?? storyRun.endingNodeId ?? 'start',
+        budget: storyBudget(storyRun.budget),
+        progress, pendingChoice: saved.pendingChoice ? structuredClone(saved.pendingChoice) : null,
+        ...(storyRun.free ? { free: structuredClone(storyRun.free) } : {}),
+        events: [...(saved.events ?? [])], visited: (saved.visited ?? []).map((entry) => ({ ...entry })),
+        choices: (saved.choices ?? []).map((entry) => ({ ...entry })), timeline: (saved.timeline ?? []).map((entry) => ({ ...entry })),
+        at: this.#now(),
+      };
+      storyRun.checkpoints = [...(storyRun.checkpoints ?? []), checkpoint].slice(-32);
+      receipt = { ...identity, ...details, action, actor, at: this.#now(), runId: saved.storyRun.runId ?? trip?.id ?? saved.id,
+        revision: storyRun.revision, ...(action === 'close' ? { memoryId: saved.id } : {}) };
+      next.storyReceipts = normalizeStoryReceipts([...(next.storyReceipts ?? []), receipt], this.#now());
+    };
+    try {
+      const result = await run();
+      if (result.failed) return storyFailure(result.text);
+      return receipt ? { ok: true, receipt: publicStoryReceipt(receipt) } : storyFailure('没有可确认的故事进度，请刷新。');
+    } finally { this.#storyCommit = undefined; }
+  }
+
+  async #forkStory(payload = {}) {
+    if (typeof payload.forkToken !== 'string' || !/^[A-Za-z0-9_-]{16,80}$/.test(payload.forkToken)) return { ok: false, code: 'INVALID_FORK_TOKEN', error: '分支需要有效的一次性操作标识。' };
+    const existing = this.#state?.session?.storyRun ?? this.#state?.draft?.storyRun;
+    if (existing?.forkToken === payload.forkToken && existing.sourceMemoryId === payload.memoryId && existing.sourceCheckpointId === payload.checkpointId) {
+      return { ...this.#storyStatus(), replayed: true, fork: { runId: existing.runId, sourceRunId: existing.sourceRunId, sourceMemoryId: existing.sourceMemoryId, checkpointId: existing.sourceCheckpointId, canonical: false } };
+    }
+    const completedFork = this.#savedTrips().find((trip) => trip.storyRun?.forkToken === payload.forkToken
+      && trip.storyRun.sourceMemoryId === payload.memoryId && trip.storyRun.sourceCheckpointId === payload.checkpointId);
+    if (completedFork) return { ...this.#storyStatus(), replayed: true,
+      fork: { runId: completedFork.storyRun.runId, sourceRunId: completedFork.storyRun.sourceRunId,
+        sourceMemoryId: completedFork.storyRun.sourceMemoryId, checkpointId: completedFork.storyRun.sourceCheckpointId, canonical: false },
+      memory: describeMemory(completedFork) };
+    const state = this.#normalizeState();
+    if (state.session || state.draft || state.route) return { ok: false, code: 'ACTIVE_OUTING', error: '请先处理当前行程或路线，再开启故事分支。' };
+    const memory = this.#savedTrips().find((trip) => trip.id === payload.memoryId && trip.storyRun);
+    if (!memory) return { ok: false, code: 'NOT_FOUND', error: '找不到指定的故事回忆。' };
+    const checkpoint = (memory.storyRun.checkpoints ?? []).find((item) => item.id === payload.checkpointId);
+    if (!checkpoint) return { ok: false, code: 'CHECKPOINT_NOT_FOUND', error: '检查点不存在或已过期。' };
+    if (checkpoint.revision !== memory.storyRun.revision) return { ok: false, code: 'CONTENT_STALE', error: '故事内容版本已变化，不能从旧检查点分支。' };
+    const venue = this.#allPlaces().find((item) => item.id === memory.placeId);
+    const currentResourceVersion = venue ? storyStamp([venue.id, venue.name, venue.desc, venue.areas, venue.scene ?? '', venue.coverId ?? '']) : null;
+    if (!venue || checkpoint.resourceVersion === 'legacy-unknown' || checkpoint.resourceVersion !== currentResourceVersion) {
+      return { ok: false, code: 'RESOURCE_STALE', error: '地点资源版本不匹配，不能从此检查点分支。' };
+    }
+    const row = this.#storyLibrary.catalog().find(({ pack }) => pack.id === memory.storyRun.packId && pack.revision === checkpoint.revision);
+    if (!row) return { ok: false, code: 'CONTENT_STALE', error: '故事内容当前不可用，不能从此检查点分支。' };
+    const now = this.#now();
+    const runId = randomUUID();
+    const next = state;
+    next.session = {
+      id: runId, placeId: venue.id, placeName: venue.name, scene: venue.scene ?? '', outfit: venue.recommendedOutfit ?? '', company: '',
+      enteredAt: now, lastAt: now, pausedMs: 0, routeId: '', routeOrder: 0, phases: [], branchSeen: [],
+      storyProgress: normalizeStoryProgress(checkpoint.progress), storyRun: {
+        packId: memory.storyRun.packId, revision: checkpoint.revision, title: memory.storyRun.title,
+        endingNodeId: null, seq: checkpoint.seq ?? 0, budget: storyBudget(memory.storyRun.budget), dmBudget: dmBudget(memory.storyRun.dmBudget),
+        runId, sourceRunId: checkpoint.runId ?? memory.storyRun.runId ?? memory.id, sourceMemoryId: memory.id,
+        sourceCheckpointId: checkpoint.id, forkToken: payload.forkToken,
+        participation: memory.storyRun.participation ?? row.pack.metadata?.participation ?? 'solo', canonical: false,
+        resourceVersion: checkpoint.resourceVersion, checkpoints: [],
+      },
+      timelineTruncated: false, timeline: (checkpoint.timeline ?? []).map((item) => ({ ...item })), leftDay: '', note: '', favorite: false,
+      visited: (checkpoint.visited ?? []).map((item) => ({ ...item })), souvenirs: [], photos: [], ate: [],
+      events: [...(checkpoint.events ?? [])], choices: (checkpoint.choices ?? []).map((item) => ({ ...item })),
+      pendingChoice: checkpoint.pendingChoice ? structuredClone(checkpoint.pendingChoice) : null,
+    };
+    await this.#commitState(next);
+    this.#autonomy.clear();
+    const status = this.#storyStatus();
+    return status.ok ? { ...status, fork: { runId, sourceRunId: next.session.storyRun.sourceRunId, sourceMemoryId: memory.id, checkpointId: checkpoint.id, canonical: false } } : status;
+  }
+
+  async #runStoryAction(method, payload) {
+    const status = this.#storyStatus(payload.token);
+    if (!status.ok) return status;
+    const { trip } = status;
+    const identity = storyRequestKey(method, payload);
+    const recorded = identity && normalizeStoryReceipts(this.#state.storyReceipts, this.#now()).find((row) => row.key === identity.key);
+    if (recorded) return recorded.digest === identity.digest
+      ? { ...status, receipt: publicStoryReceipt(recorded), replayed: true }
+      : { ...storyFailure('这一步已由另一项操作提交，请刷新进度。'), code: 'STORY_STEP_CONFLICT' };
+    if (method === 'pause') {
+      if (typeof payload.token === 'string' && typeof payload.tripId === 'string') this.#autonomy.pause(payload.tripId, payload.token);
+      return this.#storyStatus();
+    }
+    if (method === 'start') {
+      if (!identity || status.conflict || trip || payload.startStamp !== status.startStamp) return storyFailure(status.conflict || '当前进度已变更，请刷新后再出发。');
+      const card = status.catalog.find(({ id, revision }) => id === payload.packId && revision === payload.revision);
+      if (!card?.available) return storyFailure(card?.problem || '这篇故事当前不可出发，请刷新。');
+      const row = this.#storyLibrary.catalog().find(({ pack }) => pack.id === card.id && pack.revision === card.revision);
+      const free = row && isFreePack(row.pack);
+      const result = await this.#commitStoryAction(identity, 'start', null, 'owner', { stepId: payload.startStamp }, () =>
+        this.#goTool({}, {
+          packId: card.id, revision: card.revision, title: card.title, placeId: card.placeId, participation: card.participation,
+          mode: free ? 'free' : 'static', ...(free ? { setting: row.pack.setting } : {}),
+        }));
+      return result.ok ? { ...this.#storyStatus(), receipt: result.receipt } : result;
+    }
+    if (!trip || payload.tripId !== trip.id || payload.stamp !== trip.stamp) return storyFailure('行程或事件已变更，请刷新后再操作。');
+    if (method === 'mode') {
+      const next = this.#normalizeState();
+      const run = next.session?.storyRun;
+      if (!run) return storyFailure('当前没有进行中的故事。');
+      if (payload.enabled !== true) {
+        this.#autonomy.pause(trip.id, payload.token);
+        run.autoplay = false;
+        await this.#commitState(next);
+        return this.#storyStatus();
+      }
+      // 用户说「让鱼自己玩」是一次持久偏好：即使此刻是用户回合（duo），也先记住，
+      // 轮到鱼时面板会自动续上；授权租约仍然只在真正能推进时才发。
+      // 但如果是额度用完、认知接口不可用这类"现在就不行"的原因，仍按失败返回，别给假开关。
+      const grant = this.#autonomy.enable(trip, this.#host?.cognition, this.#now(), this.#autoLimits());
+      const ownerTurn = trip.actor === 'owner' && typeof this.#host?.cognition?.request === 'function';
+      if (!grant.ok && !ownerTurn) return grant;
+      run.autoplay = true;
+      await this.#commitState(next);
+      return grant.ok ? this.#storyStatus(grant.token) : { ...this.#storyStatus(), autoplay: true };
+    }
+    if (method === 'segment') {
+      if (payload.confirm !== true) return storyFailure('开新的一段要你明确点一次：确认后带 confirm: true 再调。');
+      if (trip.mode === 'free') return this.#freeSegment(trip);
+      const proceeded = this.#autonomy.continueSegment(trip, this.#now(), this.#autoLimits());
+      if (!proceeded.ok) return proceeded;
+      const next = this.#normalizeState();
+      if (!next.session?.storyRun) return storyFailure('当前没有进行中的故事。');
+      next.session.storyRun.budget = proceeded.budget;
+      await this.#commitState(next);
+      return this.#storyStatus();
+    }
+    if (payload.dmProposalId !== undefined) {
+      const proposal = this.#dm.validateApply(trip, payload.dmProposalId);
+      if (this.cfg?.funStoryDM !== true || method !== 'choose' || !proposal.ok || payload.optionId !== proposal.optionId) {
+        return storyFailure(proposal.error || '主持提议不能执行这项操作。');
+      }
+    }
+    this.#dm.cancel();
+    // 文字通道可以按当前回合声明身份：用户让你替他选（owner），或本来就是你的回合（fish）。
+    let actor = payload.as === 'fish' ? 'fish' : 'owner';
+    let reason;
+    let choiceId = payload.choiceId;
+    let optionId = payload.optionId;
+    if (method === 'auto') {
+      if (!status.autonomy.available) {
+        this.#autonomy.clear();
+        return storyFailure('角色认知接口当前不可用，请手动继续。');
+      }
+      const decision = this.#autonomy.take(trip, payload.token, payload.ticket, this.#now(), this.#autoLimits());
+      if (!decision.ok) return decision;
+      method = trip.step;
+      actor = 'fish';
+      reason = decision.reason;
+      choiceId = trip.pending?.id;
+      optionId = decision.optionId;
+    } else {
+      // A manual action from any authorized panel takes over at the next action boundary.
+      this.#autonomy.clear();
+    }
+    if (!identity) return storyFailure('操作缺少有效的行程与步骤标识。');
+    let run;
+    if (method === 'move' && trip.step === 'move') run = () => this.#wanderTool({ area: trip.nextArea }, actor);
+    else if (method === 'choose' && trip.step === 'choose' && choiceId === trip.pending.id && trip.pending.options.some(({ id }) => id === optionId)) {
+      run = () => this.#choiceTool({ choiceId, optionId, substitute: payload.substitute === true, stamp: trip.stamp }, actor, reason);
+    } else if (method === 'resume' && trip.step === 'resume') run = () => this.#resumeTool(trip.id);
+    else if (method === 'close') run = () => this.#homeTool(trip.state === 'draft' ? { draftId: trip.id } : {});
+    else return storyFailure('当前行程没有这项操作或该选项已失效。');
+    const substituting = method === 'choose' && actor === 'owner' && payload.substitute === true && trip.actor === 'fish';
+    const result = await this.#commitStoryAction(identity, method, trip, actor, {
+      stepId: trip.stamp, area: method === 'move' ? trip.nextArea : undefined, optionId: method === 'choose' ? optionId : undefined,
+      ...(substituting ? { substituted: true } : {}),
+    }, run);
+    if (!result.ok || method === 'close') this.#autonomy.clear();
+    if (!result.ok) return result;
+    const updated = this.#storyStatus(actor === 'fish' ? payload.token : undefined);
+    if (updated.trip?.actor === 'owner') this.#autonomy.clear();
+    return { ...updated, receipt: result.receipt };
+  }
+
+  // -------------------------------------------------------------------------
+  // 文字通道（QQ / 控制台聊天）：开局与推进
+  // -------------------------------------------------------------------------
+
+  #textOff() {
+    return { text: '文字通道游玩没有开启。到娱乐时间的设置里打开「文字通道也能玩故事」，或者到「故事工坊」面板里玩。', failed: true };
+  }
+
+  async #storyTextStart(args) {
+    if (this.cfg?.funStoryTextOn !== true) return this.#textOff();
+    if (args?.confirm !== true) return { text: '开始故事要用户明确说要开始：确认后带 confirm: true 再调一次。', failed: true };
+    const status = this.#storyStatus();
+    if (!status.ok) return { text: status.error, failed: true };
+    if (status.trip) return { text: `已经有一段故事在进行中（《${status.trip.title}》）；先 fun_story_act 继续，或结束它。`, failed: true };
+    const card = status.catalog.find((item) => item.id === args.packId && item.revision === args.revision);
+    if (!card) return { text: '没有找到这篇故事。先用 fun_story_candidates 或 fun_story_detail 取 packId 和 revision。', failed: true };
+    if (!card.available) return { text: card.problem || '这篇故事现在不能开始。', failed: true };
+    const result = await this.#runStoryAction('start', { startStamp: args.startStamp, packId: args.packId, revision: args.revision });
+    if (!result.ok) return { text: result.error || '故事没有开始。', failed: true };
+    const trip = result.trip;
+    const row = this.#storyLibrary.catalog().find(({ pack }) => pack.id === trip.packId && pack.revision === trip.revision);
+    return { text: JSON.stringify({
+      ok: true, tripId: trip.id, stamp: trip.stamp, mode: trip.mode ?? 'static', title: trip.title, placeName: trip.placeName,
+      state: trip.state, step: trip.step, opening: row && isFreePack(row.pack) ? row.pack.setting.opening : undefined,
+      free: trip.free ? { turn: trip.free.turn, maxTurns: trip.free.maxTurns, segment: trip.free.segment,
+        turnsLeft: trip.free.turnsLeft, segmentsLeft: trip.free.segmentsLeft, canContinue: trip.free.canContinue } : null,
+      hint: trip.mode === 'free'
+        ? '把开场告诉用户，然后用户每说一句就用 fun_story_act 的 say 交进来。'
+        : '把当前待选的事件和选项告诉用户；用户说定之后用 fun_story_act 的 say 交进来（原话命中选项会直接生效，否则先给一个待确认提议）。',
+      receipt: result.receipt ?? null,
+    }) };
+  }
+
+  async #storyTextAct(args) {
+    if (this.cfg?.funStoryTextOn !== true) return this.#textOff();
+    const status = this.#storyStatus();
+    if (!status.ok) return { text: status.error, failed: true };
+    const trip = status.trip;
+    if (!trip) return { text: '现在没有正在进行的故事。先 fun_story_start。', failed: true };
+    if (args?.tripId !== trip.id || args?.stamp !== trip.stamp) {
+      return { text: JSON.stringify({ ok: false, code: 'STALE', error: '故事进度已经变了：先 fun_story_current 读最新的 tripId/stamp 再继续，不要猜。', stamp: trip.stamp, step: trip.step }), failed: true };
+    }
+    if (args?.intent === 'close') {
+      if (args?.confirm !== true) return { text: '结束这一段要用户明确确认：确认后带 confirm: true 再调一次。', failed: true };
+      const closed = await this.#runStoryAction('close', { tripId: trip.id, stamp: trip.stamp });
+      if (!closed.ok) return { text: closed.error || '没有结束成功。', failed: true };
+      return { text: JSON.stringify({ ok: true, closed: true, memoryId: closed.receipt?.memoryId ?? null, receipt: closed.receipt ?? null }) };
+    }
+    if (args?.intent !== 'say') return { text: 'intent 只能是 say 或 close。', failed: true };
+    return trip.mode === 'free' ? this.#storyTextFree(args, trip) : this.#storyTextStatic(args, trip);
+  }
+
+  async #storyTextStatic(args, trip) {
+    // 这一回合该谁走：轮到鱼（duo 的 fish 回合）就以鱼的身份提交；否则以用户身份（用户让鱼代说）。
+    const as = (pendingActor) => (pendingActor === 'fish' ? 'fish' : 'owner');
+    if (trip.step === 'resume') {
+      const resumed = await this.#runStoryAction('resume', { tripId: trip.id, stamp: trip.stamp, as: as(trip.actor) });
+      if (!resumed.ok) return { text: resumed.error || '没有继续成功。', failed: true };
+      return { text: JSON.stringify(this.#textStaticPayload(resumed.trip, { resumed: true })) };
+    }
+    if (trip.step === 'move') {
+      const moved = await this.#runStoryAction('move', { tripId: trip.id, stamp: trip.stamp, as: as(trip.actor) });
+      if (!moved.ok) return { text: moved.error || '没有走到下一处。', failed: true };
+      return { text: JSON.stringify(this.#textStaticPayload(moved.trip, { moved: true })) };
+    }
+    const pending = trip.pending;
+    if (!pending) return { text: '现在没有待选择的节点，这一步不需要 say。', failed: true };
+    const say = typeof args.say === 'string' ? args.say.replace(/\s+/g, ' ').trim().slice(0, 200) : '';
+    if (args.proposalId || args.optionId) {
+      const proposal = this.#textProposal;
+      if (!proposal || proposal.id !== args.proposalId || proposal.tripId !== trip.id || proposal.stamp !== trip.stamp
+        || this.#now() - proposal.at > 10 * 60 * 1000
+        || (args.optionId && args.optionId !== proposal.optionId)) {
+        return { text: '这个提议已经失效（进度变了、超过十分钟，或不是同一步）。用 say 重新说一句。', failed: true };
+      }
+      this.#textProposal = null;
+      return this.#commitTextChoice(trip, pending, proposal.optionId, `用户确认：${proposal.label}`, as(pending.actor));
+    }
+    if (!say) return { text: '请把用户这一回合的原话放进 say（最多 200 字）。', failed: true };
+    const hit = pending.options.find((option) => {
+      const label = option.label.replace(/\s+/g, '');
+      return label && (say.replace(/\s+/g, '').includes(label) || label.includes(say.replace(/\s+/g, '')));
+    });
+    if (hit) return this.#commitTextChoice(trip, pending, hit.id, `按用户原话命中：${hit.label}`, as(pending.actor));
+    const ordinal = this.#ordinalPick(pending, say);
+    if (ordinal) return this.#commitTextChoice(trip, pending, ordinal.id, `按用户明的序号：${ordinal.label}`, as(pending.actor));
+    if (/^(skip|略过|算了|跳过|不选)$/i.test(say)) return this.#commitTextChoice(trip, pending, 'skip', '用户明确略过', as(pending.actor));
+    // 轮到鱼、用户又没有指定时，让鱼按自己的角色决定（不再要求用户替鱼选）。
+    if (pending.actor === 'fish') {
+      const cognition = await this.#storySecrets.cognition(this.#host?.cognition);
+      const decision = await requestStoryDecision(cognition, trip);
+      if (!decision.ok) return { text: decision.error || '鱼没有做出决定；可以再说一次或自己去面板选。', failed: true };
+      return this.#commitTextChoice(trip, pending, decision.optionId, '鱼自己决定', 'fish');
+    }
+    const mapped = await this.#mapSayToOption(trip, pending, say);
+    if (!mapped.ok) return { text: mapped.error, failed: true };
+    const proposal = { id: randomUUID(), tripId: trip.id, stamp: trip.stamp, optionId: mapped.optionId, label: mapped.label, at: this.#now() };
+    this.#textProposal = proposal;
+    return { text: JSON.stringify({
+      ok: true, needConfirm: true, proposalId: proposal.id, optionId: mapped.optionId, label: mapped.label, reason: mapped.reason,
+      hint: '这一步还没有提交。把候选告诉用户，用户确认后带上 proposalId 和 optionId 再调一次 fun_story_act。',
+    }) };
+  }
+
+  #textStaticPayload(trip, extra = {}) {
+    return {
+      ok: true, ...extra, step: trip?.step ?? '', stamp: trip?.stamp ?? '', nextArea: trip?.nextArea ?? null,
+      pending: trip?.pending ?? null, narration: trip?.events?.at(-1) ?? '',
+      hint: trip?.pending ? '把事件和选项告诉用户；用户说完再用 say 交进来（原话命中选项会直接生效）。' : '故事已经走完，可以用 intent: close 收尾。',
+    };
+  }
+
+  /** 「选第一个 / 就第二个 / 3」这种明确的序号；含糊的句子不猜。 */
+  #ordinalPick(pending, say) {
+    const text = say.replace(/\s+/g, '');
+    const digits = { 1: 0, 2: 1, 3: 2, 4: 3, 一: 0, 二: 1, 两: 1, 三: 2, 四: 3 };
+    for (const pattern of [/第([1-4一二两三四])(?:个|条|项|号)?/, /(?:选|挑|要|就)([1-4一二两三四])(?:个|条|项|号)?/, /^([1-4一二两三四])$/]) {
+      const match = text.match(pattern);
+      if (match) return pending.options[digits[match[1]]] ?? null;
+    }
+    return null;
+  }
+
+  async #commitTextChoice(trip, pending, optionId, how, as = 'owner') {
+    const chosen = pending.options.find(({ id }) => id === optionId);
+    const result = await this.#runStoryAction('choose', { tripId: trip.id, stamp: trip.stamp, choiceId: pending.id, optionId, as });
+    if (!result.ok) return { text: result.error || '选择没有提交成功。', failed: true };
+    const recorded = result.trip?.choices?.at(-1);
+    return { text: JSON.stringify(this.#textStaticPayload(result.trip, {
+      chosen: optionId, how, as, result: recorded?.result ?? (optionId === 'skip' ? '略过了这次选择' : ''),
+      label: chosen?.label ?? '', receipt: result.receipt ?? null,
+    })) };
+  }
+
+  /** 用户原话和选项对不上时，让主持做一次"最接近"的映射；只是提议，不提交。 */
+  async #mapSayToOption(trip, pending, say) {
+    const cognition = await this.#storySecrets.cognition(this.#host?.cognition);
+    if (typeof cognition?.request !== 'function') return { ok: false, error: '这句话没有正好对上任何一个选项，而当前没有可用的主持做映射；请让用户从选项里挑一个。' };
+    let timer;
+    try {
+      const task = Promise.resolve().then(() => cognition.request({
+        brief: '把玩家的原话映射到给定的选项上。只返回一行 JSON：{"optionId":"选项 ID","reason":"一句简短理由"}。'
+          + '不要替玩家编造动作，不要选择列表以外的 ID；实在对不上时返回 {"optionId":"none","reason":"..."}。\n'
+          + JSON.stringify({ event: pending.event, prompt: pending.prompt, options: pending.options.map(({ id, label }) => ({ id, label })), say }),
+        tools: [], hint: { rounds: 1 },
+      }));
+      const result = await Promise.race([task, new Promise((resolve) => {
+        timer = setTimeout(() => resolve({ error: 'timeout' }), 20_000);
+      })]);
+      if (result?.error || typeof result?.text !== 'string') return { ok: false, error: '映射超时了：请让用户直接从选项里挑一个。' };
+      const parsed = JSON.parse(result.text.trim().replace(/^```(?:json)?\s*([\s\S]*?)\s*```$/i, '$1'));
+      const option = pending.options.find(({ id }) => id === parsed?.optionId);
+      if (!option) return { ok: false, error: '这句话和当前选项都对不上；请让用户从选项里挑一个，或明确说略过。' };
+      return { ok: true, optionId: option.id, label: option.label, reason: typeof parsed.reason === 'string' ? parsed.reason.slice(0, 120) : '' };
+    } catch {
+      return { ok: false, error: '映射失败：请让用户从选项里挑一个。' };
+    } finally { clearTimeout(timer); }
+  }
+
+  /**
+   * 自由模式的「再来一段」：只把这一段的回合下限抬到当前回合，回合数、日志与状态都不重置。
+   * 与选项式共用同一条 RPC（`segment`）和同一个「最多三段」上限。
+   */
+  async #freeSegment(trip) {
+    const row = this.#storyLibrary.catalog().find(({ pack }) => pack.id === trip.packId && pack.revision === trip.revision);
+    if (!row || !isFreePack(row.pack)) return storyFailure('这篇故事不是自由模式（场景包）。');
+    const maxTurns = effectiveMaxTurns(row.pack, this.cfg?.funStoryFreeTurns);
+    const next = this.#normalizeState();
+    const outing = next.session ?? next.draft;
+    const run = outing?.storyRun;
+    if (!run?.free) return storyFailure('这一趟没有自由模式的状态。');
+    const proceeded = continueFreeSegment(run.free, maxTurns);
+    if (!proceeded.ok) return storyFailure(proceeded.error);
+    run.free = proceeded.free;
+    run.seq = (run.seq ?? 0) + 1;
+    await this.#commitState(next);
+    return this.#storyStatus();
+  }
+
+  async #storyTextFree(args, trip) {
+    const row = this.#storyLibrary.catalog().find(({ pack }) => pack.id === trip.packId && pack.revision === trip.revision);
+    if (!row || !isFreePack(row.pack)) return { text: '这篇故事不是自由模式（场景包）。', failed: true };
+    const setting = row.pack.setting;
+    const outing = this.#state.session ?? this.#state.draft;
+    if (!outing?.storyRun) return { text: '故事已经不在进行中了。', failed: true };
+    const storyRun = outing.storyRun;
+    const free = normalizeFreeState(storyRun.free, setting);
+    const maxTurns = effectiveMaxTurns(row.pack, this.cfg?.funStoryFreeTurns);
+    const canContinue = freeCanContinue(free, maxTurns);
+    if (free.ended) return { text: '这一段已经收尾了：用 intent: close（confirm: true）结束并保存回忆。', failed: true };
+    if (freeTurnsLeft(free, maxTurns) === 0) {
+      return { text: `这一段的回合数已经用完（第 ${free.segment + 1} 段，${maxTurns} 回合）：${canContinue ? '到面板点「再来一段」，或者' : ''}用 intent: close 收尾。`, failed: true };
+    }
+    const say = typeof args.say === 'string' ? args.say.replace(/\s+/g, ' ').trim().slice(0, 200) : '';
+    if (!say) return { text: '请把用户这一回合的原话放进 say（最多 200 字）。', failed: true };
+    const from = typeof args.from === 'string' ? args.from.trim().slice(0, 40) : '';
+    const identity = storyRequestKey('say', { tripId: trip.id, stamp: trip.stamp, say, from });
+    if (!identity) return { text: '这一句不合法。', failed: true };
+    const recorded = normalizeStoryReceipts(this.#state.storyReceipts, this.#now()).find((row) => row.key === identity.key);
+    if (recorded) return recorded.digest === identity.digest
+      ? { text: JSON.stringify({ ok: true, replayed: true, note: '这一句已经提交过，没有重复推进。' }) }
+      : { text: '这一步已经被另一句话提交过了，请先 fun_story_current 读最新进度。', failed: true };
+
+    const calls = Number.isSafeInteger(storyRun.freeCalls) ? storyRun.freeCalls : 0;
+    // 每一段各有自己的调用上限；已经花掉的跨段累计。
+    if (calls >= (free.segment + 1) * (maxTurns * 2 + 4)) return { text: '这一段的模型调用额度用完了：用 intent: close 收尾。', failed: true };
+    const reserved = this.#normalizeState();
+    if (!reserved.session?.storyRun) return { text: '故事已经不在进行中了。', failed: true };
+    reserved.session.storyRun.freeCalls = calls + 1;
+    await this.#commitState(reserved);
+
+    const cognition = await this.#storySecrets.cognition(this.#host?.cognition);
+    let outcome = null;
+    let lastError = '';
+    let narrationText = '';
+    for (let attempt = 0; attempt < 2 && !outcome; attempt += 1) {
+      const payload = freePromptPayload(setting, free, { say, from, turn: free.turn });
+      const answer = await requestFreeTurn(cognition, payload, lastError);
+      if (!answer.ok) { lastError = answer.error; continue; }
+      const turn = freeTurn(setting, free, answer.output, { now: this.#now(), from, say, maxTurns });
+      if (!turn.ok) { lastError = turn.error; continue; }
+      outcome = turn;
+      narrationText = answer.output.narration;
+    }
+    if (!outcome) return { text: `这一回合没有提交：${lastError}。进度没有变化，可以重说一句。`, failed: true };
+
+    const next = this.#normalizeState();
+    const nextRun = next.session?.storyRun;
+    if (!nextRun) return { text: '故事已经不在进行中了。', failed: true };
+    nextRun.free = outcome.free;
+    nextRun.freeCalls = calls + 1;
+    nextRun.seq = (nextRun.seq ?? 0) + 1;
+    const checkpoint = {
+      id: randomUUID(), runId: nextRun.runId ?? trip.id, packId: nextRun.packId, revision: nextRun.revision,
+      resourceVersion: nextRun.resourceVersion ?? 'legacy-unknown', seq: nextRun.seq,
+      nodeId: `t${outcome.free.turn}`, budget: storyBudget(nextRun.budget), progress: [], pendingChoice: null,
+      events: [...(next.session.events ?? [])], visited: (next.session.visited ?? []).map((entry) => ({ ...entry })),
+      choices: [...(next.session.choices ?? [])], timeline: (next.session.timeline ?? []).map((entry) => ({ ...entry })),
+      free: outcome.free, at: this.#now(),
+    };
+    nextRun.checkpoints = [...(nextRun.checkpoints ?? []), checkpoint].slice(-32);
+    const receipt = { key: identity.key, digest: identity.digest, at: this.#now(), action: 'say', actor: 'owner',
+      runId: nextRun.runId ?? trip.id, stepId: trip.stamp, revision: nextRun.revision };
+    next.storyReceipts = normalizeStoryReceipts([...(next.storyReceipts ?? []), receipt], this.#now());
+    await this.#commitState(next);
+    return { text: JSON.stringify({
+      ok: true, narration: narrationText, ended: outcome.free.ended, endRejected: outcome.endRejected ?? null,
+      tripId: trip.id, stamp: this.#storyStatus().trip?.stamp ?? null,
+      turn: outcome.free.turn, maxTurns, summary: freeSummaryText(setting, outcome.free),
+      free: { turn: outcome.free.turn, maxTurns, segment: outcome.free.segment + 1, turnsLeft: freeTurnsLeft(outcome.free, maxTurns),
+        canContinue: freeCanContinue(outcome.free, maxTurns), ended: outcome.free.ended,
+        facts: outcome.free.facts, flags: outcome.free.flags, counters: outcome.free.counters },
+      state: outcome.free.ended ? 'ended' : 'active',
+      hint: outcome.free.ended ? '把收尾讲给用户；然后可以用 intent: close（confirm: true）结束并保存回忆。'
+        : freeTurnsLeft(outcome.free, maxTurns) === 0 ? '这一段的回合已经说完：可以到面板点「再来一段」，或者用 intent: close 收尾。' : '继续等用户下一句。',
+    }) };
+  }
+
+  /**
+   * 退回上一回合：只回滚自由模式的状态与日志，不退还已花的调用额度。
+   * 复用检查点里的 `free` 快照，写入一个新的检查点（新的 seq），原分支不丢。
+   */
+  async #rewindFreeTurn() {
+    const status = this.#storyStatus();
+    if (!status.ok) return status;
+    const trip = status.trip;
+    if (!trip || trip.mode !== 'free') return storyFailure('只有自由模式可以退回上一回合；选项式故事请用检查点分支。');
+    const run = this.#state.session?.storyRun;
+    if (!run?.free) return storyFailure('现在没有可退回的自由模式进度。');
+    const row = this.#storyLibrary.catalog().find(({ pack }) => pack.id === run.packId && pack.revision === run.revision);
+    if (!row || !isFreePack(row.pack)) return storyFailure('这篇故事的场景包已经不在了，没法退回。');
+    const setting = row.pack.setting;
+    const free = normalizeFreeState(run.free, setting);
+    if (free.turn < 1) return storyFailure('还没有可以退回的回合。');
+    const target = [...(run.checkpoints ?? [])].reverse().find((entry) => entry?.free && entry.free.turn === free.turn - 1);
+    if (!target) return storyFailure('找不到上一回合的检查点，没法退回。');
+    const next = this.#normalizeState();
+    if (!next.session?.storyRun) return storyFailure('故事已经不在进行中了。');
+    const nextRun = next.session.storyRun;
+    nextRun.free = normalizeFreeState(target.free, setting);
+    nextRun.seq = (nextRun.seq ?? 0) + 1;
+    nextRun.checkpoints = [...(nextRun.checkpoints ?? []), {
+      id: randomUUID(), runId: nextRun.runId ?? trip.id, packId: nextRun.packId, revision: nextRun.revision,
+      resourceVersion: nextRun.resourceVersion ?? 'legacy-unknown', seq: nextRun.seq, nodeId: `t${nextRun.free.turn}`,
+      budget: storyBudget(nextRun.budget), progress: [], pendingChoice: null,
+      events: [...(next.session.events ?? [])], visited: (next.session.visited ?? []).map((entry) => ({ ...entry })),
+      choices: [...(next.session.choices ?? [])], timeline: (next.session.timeline ?? []).map((entry) => ({ ...entry })),
+      free: nextRun.free, at: this.#now(),
+    }].slice(-32);
+    await this.#commitState(next);
+    return { ...this.#storyStatus(), lastSay: { ok: true, rewound: true, turn: nextRun.free.turn, note: '已退回上一回合；已经花掉的模型调用不退。' } };
+  }
+
+  #modelStoryTrip(trip, audience) {
+    const outing = this.#state.session ?? this.#state.draft;
+    const row = this.#storyLibrary.catalog().find(({ pack, enabled }) => enabled && pack.id === trip.packId && pack.revision === trip.revision);
+    return { ...trip, references: storyReferences(row?.pack, outing, audience) };
+  }
+
+  async #proposeStoryDM(payload) {
+    const prepared = await this.#serial(async () => {
+      this.#ensureStarted();
+      const status = this.#storyStatus(payload.token);
+      if (!status.ok) return status;
+      const trip = status.trip;
+      if (!trip || payload.tripId !== trip.id || payload.stamp !== trip.stamp) return storyFailure('行程或事件已变更，请刷新。');
+      const cognition = await this.#storySecrets.cognition(this.#host?.cognition);
+      const reservation = this.#dm.reserve(trip, cognition, this.cfg?.funStoryDM === true, payload.requestId);
+      if (!reservation.ok || reservation.replayed) return reservation;
+      const next = this.#normalizeState();
+      next.session.storyRun.dmBudget = reservation.budget;
+      try { await this.#commitState(next); }
+      catch { this.#dm.cancel(); return storyFailure('主持额度未能保存；没有发起模型请求。'); }
+      return { ...reservation, trip: this.#modelStoryTrip(trip, 'dm'), cognition, epoch: this.#storyEpoch };
+    });
+    if (!prepared.ok) return prepared;
+    if (prepared.replayed) return this.#serial(() => this.#storyStatus(payload.token));
+    const recordUsage = (usage) => this.#serial(async () => {
+      // After stop/restart the durable reservation remains explicitly unknown.
+      if (!usage || !this.#started || this.#storyEpoch !== prepared.epoch) return;
+      const next = this.#normalizeState();
+      const outings = [next.session, next.draft, ...(next.trips ?? []), ...(next.keepsakeTrips ?? [])];
+      let changed = false;
+      for (const outing of outings) {
+        if (outing?.id !== prepared.trip.id || !outing.storyRun) continue;
+        outing.storyRun.dmBudget = addDmUsage(outing.storyRun.dmBudget, usage);
+        changed = true;
+      }
+      if (changed) await this.#commitState(next);
+    });
+    const outcome = await this.#dm.generate(prepared.cognition, prepared.trip, prepared.attempt, recordUsage);
+    return this.#serial(() => {
+      const status = this.#started ? this.#storyStatus(payload.token) : null;
+      const result = this.#dm.finish(status?.trip, prepared.attempt, outcome, this.#started && this.cfg?.funStoryDM === true);
+      return result.ok ? this.#storyStatus(payload.token) : result;
+    });
+  }
+
+  #storySettings() {
+    return { ok: true, dm: this.#storySecrets.status, imageSource: this.#storyImages.status().source,
+      nodeLimit: this.#storyNodeLimit.value, dmEnabled: this.cfg?.funStoryDM === true, imagesEnabled: this.cfg?.funStoryImages === true,
+      textOn: this.cfg?.funStoryTextOn === true, freeEnabled: this.cfg?.funStoryFree === true,
+      freeTurns: clampInt(this.cfg?.funStoryFreeTurns, 5, 120, 40) };
+  }
+
+  async #saveStoryNodeLimit(payload = {}) {
+    const saved = await this.#storyNodeLimit.save(payload.nodeLimit);
+    return saved.ok ? this.#storySettings() : { ...this.#storySettings(), ...saved };
+  }
+
+  async #saveStorySettings(payload) {
+    if (Object.hasOwn(payload, 'imageSource')) {
+      const checked = validateStoryImageSource(payload.imageSource);
+      if (!checked.ok) return { ...this.#storySettings(), ...checked };
+    }
+    const secrets = await this.#storySecrets.save(payload);
+    if (!secrets.ok) return { ...this.#storySettings(), ...secrets };
+    if (Object.hasOwn(payload, 'imageSource') && payload.imageSource.trim() !== this.#storyImages.status().source) {
+      const image = await this.#storyImages.configure({ source: payload.imageSource });
+      if (!image.ok) return { ...this.#storySettings(), ok: false,
+        ...(Object.hasOwn(payload, 'apiUrl') || Object.hasOwn(payload, 'apiKey') ? { partial: 'dm' } : {}),
+        error: '图片来源保存失败；主持设置的当前状态已返回，请核对后重试图片设置。' };
+    }
+    return this.#storySettings();
+  }
+
+  async #requestStoryImage() {
+    const prepared = await this.#serial(async () => {
+      this.#ensureStarted();
+      const outing = this.#state.session ?? this.#state.draft ?? this.#savedTrips()[0];
+      const venue = this.#allPlaces().find((item) => item.id === outing?.placeId);
+      const home = !outing ? (await this.#locationLibrary.snapshot()).places.find((item) => item.isHome) : null;
+      // 自由模式没有「待选事件」：取最后一条真实发生的叙述，别拿选项式的事件去凑。
+      const row = outing?.storyRun
+        ? this.#storyLibrary.catalog().find(({ pack }) => pack.id === outing.storyRun.packId && pack.revision === outing.storyRun.revision)
+        : null;
+      const free = row && isFreePack(row.pack) ? normalizeFreeState(outing.storyRun.free, row.pack.setting) : null;
+      const narration = free?.log?.at(-1)?.narration ?? '';
+      const freePlace = free
+        ? [row.pack.setting.locations?.[0]?.name, row.pack.setting.locations?.[0]?.desc].filter(Boolean).join('：')
+        : '';
+      const prompt = outing
+        ? [`仅描绘已发生的场景：${outing.placeName}`, narration, freePlace,
+          outing.pendingChoice?.area || outing.visited?.at(-1)?.area || '',
+          narration ? '' : outing.pendingChoice?.event || outing.events?.at(-1) || venue?.desc || ''].filter(Boolean).join('。')
+        : home ? `${home.name}。${home.desc || ''}` : '鱼的家，安静的日常场景。';
+      return { epoch: this.#storyEpoch, enabled: this.cfg?.funStoryImages === true,
+        scene: hasScene(venue) ? venue.scene : (freePlace || ''), outfits: outing?.outfit || '', prompt };
+    });
+    // Network and polling never hold the story-action queue.
+    const image = await this.#storyImages.generate(prepared);
+    if (!this.#started || prepared.epoch !== this.#storyEpoch || (prepared.enabled && this.cfg?.funStoryImages !== true)) {
+      this.#storyImages.cancel();
+      return { ok: false, error: '图片请求已取消或设置已变更；文字故事仍可继续。' };
+    }
+    return { ok: true, image };
+  }
+
+  async #invokeStory(method, payload) {
+    const author = { authorList: 'list', authorTemplate: 'template', authorValidate: 'validate', authorPreview: 'preview', authorPlaytest: 'playtest', authorExport: 'export', authorImport: 'import', authorEnable: 'enable', authorDisable: 'disable', authorRemove: 'remove' }[method];
+    if (author) {
+      const act = () => this.#storyLibrary.act({ ...payload, action: author });
+      return ['import', 'enable', 'disable', 'remove'].includes(author) ? this.#serial(act) : act();
+    }
+    if (method === 'storySettings') return this.#storySettings();
+    if (method === 'saveStoryNodeLimit') return this.#serial(() => this.#saveStoryNodeLimit(payload));
+    if (method === 'saveStorySettings') return this.#serial(() => this.#saveStorySettings(payload));
+    if (method === 'clearStoryKey') {
+      this.#dm.cancel();
+      const result = await this.#storySecrets.clear();
+      return { ...this.#storySettings(), ...result };
+    }
+    if (method === 'storyImage') return this.#requestStoryImage();
+    if (method === 'storyImageRead') {
+      const result = await this.#storyImages.read(payload.id);
+      return result.ok ? { ok: true, image: { dataUrl: result.dataUrl } } : result;
+    }
+    if (method === 'dmPropose') return this.#proposeStoryDM(payload);
+    if (method === 'dmCancel') return this.#serial(() => { this.#dm.cancel(); return this.#storyStatus(payload.token); });
+    if (method === 'status' || method === 'dmStatus') return this.#serial(() => this.#storyStatus(payload.token));
+    if (method === 'say') {
+      return this.#serial(async () => {
+        this.#ensureStarted();
+        const status = this.#storyStatus();
+        if (!status.ok) return status;
+        const trip = status.trip;
+        if (!trip || trip.mode !== 'free') return storyFailure('只有自由模式用 say；选项式故事请在面板上点选项。');
+        if (payload?.tripId !== trip.id || payload?.stamp !== trip.stamp) return storyFailure('故事进度已变更，请刷新后再试。');
+        if (typeof payload?.say !== 'string' || !payload.say.trim()) return storyFailure('先说一句想做的事。');
+        const result = await this.#storyTextFree(payload, trip);
+        if (result.failed) return storyFailure(result.text);
+        return { ...this.#storyStatus(), lastSay: JSON.parse(result.text) };
+      });
+    }
+    if (method === 'rewind') return this.#serial(() => this.#rewindFreeTurn());
+    if (method === 'deleteMemory') return this.#deleteMemory(payload);
+    if (method === 'restoreMemory') return this.#restoreMemory(payload);
+    if (method === 'purgeMemory') return this.#purgeMemory(payload);
+    if (method === 'emptyTrash') return this.#emptyTrash();
+    if (!STORY_ACTIONS.includes(method)) return storyFailure('不支持的故事操作。');
+    if (method === 'fork') return this.#serial(async () => { this.#ensureStarted(); return this.#forkStory(payload); });
+    if (method !== 'decide') {
+      return this.#serial(async () => {
+        this.#ensureStarted();
+        const before = this.#state;
+        try {
+          return await this.#runStoryAction(method, payload);
+        } catch (error) {
+          this.#state = before;
+          this.#autonomy.clear();
+          throw error;
+        }
+      });
+    }
+    const prepared = await this.#serial(async () => {
+      this.#ensureStarted();
+      const cognition = this.#host?.cognition;
+      const status = this.#storyStatus(payload.token);
+      if (!status.ok) return status;
+      const trip = status.trip;
+      if (!trip || payload.tripId !== trip.id || payload.stamp !== trip.stamp || !cognition) return storyFailure('当前行程或角色接口已变更。');
+      const reserved = this.#autonomy.reserve(trip, payload.token, this.#now(), this.#autoLimits());
+      if (!reserved.ok) return reserved;
+      const next = this.#normalizeState();
+      next.session.storyRun.budget = reserved.budget;
+      try { await this.#commitState(next); }
+      catch (error) {
+        this.#autonomy.finish(trip, payload.token, this.#now(), storyFailure('预算未保存。'), reserved.attemptId);
+        throw error;
+      }
+      return { ...reserved, cognition, trip: this.#modelStoryTrip(trip, 'fish') };
+    });
+    if (!prepared.ok) return storyFailure(prepared.error);
+    const decision = await requestStoryDecision(prepared.cognition, prepared.trip);
+    return this.#serial(() => {
+      const trip = this.#started ? this.#storyStatus(payload.token).trip : null;
+      const current = trip?.stamp === prepared.trip.stamp ? trip : null;
+      const outcome = this.#autonomy.finish(current, payload.token, this.#now(), decision, prepared.attemptId);
+      return outcome.ok ? { ...this.#storyStatus(payload.token), ticket: outcome.ticket, reason: outcome.reason } : outcome;
+    });
+  }
+
+  async #invokeLocations(method, payload) {
+    return this.#serial(async () => {
+      this.#ensureStarted();
+      const library = this.#locationLibrary;
+      const snapshot = async () => ({ ok: true, ...this.#decoratePlaces(await library.snapshot()) });
+      if (method === 'list') return snapshot();
+      if (method === 'get') {
+        const place = await library.get(payload.id);
+        return { ok: true, place: place ? this.#decoratePlaces({ places: [place] }).places[0] : null };
+      }
+      if (method === 'cover') return { ok: true, image: await library.readCover(payload.id) };
+      if (method === 'previewImport') return { ok: true, ...await library.previewImport(payload.bundle, {
+        sourceId: payload.sourceId, defaultStyle: payload.defaultStyle, mappings: payload.mappings, useImportedHome: payload.useImportedHome,
+      }) };
+      if (method === 'commitImport') return { ok: true, ...await library.commitImport(payload, { requireReview: true }) };
+      if (payload.revision !== (await library.snapshot()).revision) return { ok: false, code: 'STALE_LOCATION', error: '地点册已变更，请刷新后再提交。' };
+      switch (method) {
+        case 'create': {
+          const place = await library.create(payload.input);
+          return { ...await snapshot(), place };
+        }
+        case 'update': {
+          // C 版：地点册是唯一编辑器。场所字段写 venues.json，画风/关联写 extras。
+          const patch = payload.patch ?? {};
+          const venue = patch.venue && typeof patch.venue === 'object' ? patch.venue : null;
+          if (venue && Object.keys(venue).length) await library.updateVenue(payload.id, venue);
+          const supplement = {};
+          for (const key of ['style', 'relations', 'coverFocus']) if (key in patch) supplement[key] = patch[key];
+          if (Object.keys(supplement).length) await library.update(payload.id, supplement);
+          break;
+        }
+        case 'remove': {
+          const row = await library.get(payload.id);
+          if (!row) return { ok: false, error: '这处地点已找不到，刷新后再试。' };
+          if (row.playable) {
+            // 可玩场所的「删除」= 删场所本身（地点册里才能做），预设只能恢复。
+            if (isPresetId(VENUES, row.id)) return { ok: false, error: '预设地点删不掉；想还原就用「恢复预设」。' };
+            const removed = await this.#removeVenue(row.id);
+            if (!removed.ok) return { ok: false, error: removed.error };
+            await library.forget(row.id);
+          } else {
+            await library.remove(payload.id);
+          }
+          break;
+        }
+        case 'setHome': await library.setHome(payload.id); break;
+        case 'setDefaultStyle': await library.setDefaultStyle(payload.style); break;
+        case 'setCover': await library.setCover(payload.id, { dataUrl: payload.dataUrl, coverFocus: payload.coverFocus }); break;
+        case 'clearCover': await library.clearCover(payload.id); break;
+        case 'reset': {
+          const result = await this.#resetVenue(payload.id);
+          if (!result.ok) return { ok: false, error: result.error };
+          break;
+        }
+        case 'resetAll': await this.#resetAllVenues(); break;
+        case 'restoreImport': await library.restoreImport(payload.recoveryId); break;
+        default: return storyFailure('不支持的地点操作。');
+      }
+      return snapshot();
+    });
+  }
+
+  /** 地点册的展示字段：中文分类、故事绑定状态和是否自填，供图鉴筛选使用。 */
+  #decoratePlaces(snapshot) {
+    const builtin = new Set();
+    const custom = new Set();
+    for (const { pack, builtin: isBuiltin } of this.#storyLibrary.catalog()) {
+      if (!pack?.placeId) continue;
+      (isBuiltin ? builtin : custom).add(pack.placeId);
+    }
+    const places = snapshot.places.map((place) => ({
+      ...place,
+      kindLabel: KIND_LABEL[place.kind] ?? '',
+      storyBound: builtin.has(place.id) || custom.has(place.id),
+      builtinStoryBound: builtin.has(place.id),
+      customStoryBound: custom.has(place.id),
+      userPlace: place.playable ? !isPresetId(VENUES, place.id) : true,
+      preset: isPresetId(VENUES, place.id),
+      overridden: Boolean(this.#overrides?.[place.id] && Object.keys(this.#overrides[place.id]).length),
+    }));
+    return { ...snapshot, places };
+  }
+
+  async #storyLocations(result) {
+    if (!result.ok || !Array.isArray(result.catalog)) return result;
+    let places;
+    try { ({ places } = await this.#locationLibrary.snapshot()); }
+    catch { return { ...result, locationWarning: '地点册暂不可读，仍可使用文字场景。' }; }
+    const index = new Map(places.map((place) => [place.id, place]));
+    const artwork = (place) => place && ({ id: place.id, cover: place.cover, coverFocus: place.coverFocus });
+    const enrich = (card) => {
+      const place = index.get(card.placeId);
+      return { ...card, style: place?.effectiveStyle || card.style, locationArt: artwork(place) };
+    };
+    const home = places.find((place) => place.isHome);
+    return { ...result, home: home ? { ...artwork(home), name: home.name, desc: home.desc, style: home.effectiveStyle } : null,
+      catalog: result.catalog.map(enrich),
+      trip: result.trip && { ...result.trip, locationArt: artwork(index.get(result.trip.placeId)) } };
+  }
+
   async #invoke(panel, method, args) {
     try {
       this.#ensureStarted();
+      const payload = args?.[0] ?? {};
+      if (panel === 'locations') return await this.#invokeLocations(method, payload);
+      if (panel === 'story') {
+        if (method === 'locationCover') return await this.#invokeLocations('cover', payload);
+        return await this.#storyLocations(await this.#invokeStory(method, payload));
+      }
+      if (this.#stateError && (panel === 'book' || panel === 'shelf' || (panel === 'places' && method === 'history'))) return storyFailure(this.#stateError);
       if (panel === 'stories') {
-        const reads = ['list', 'template', 'validate', 'preview', 'export'];
+        const reads = ['list', 'template', 'validate', 'preview', 'playtest', 'export'];
         const writes = ['import', 'enable', 'disable', 'remove'];
         const payload = { ...(args?.[0] ?? {}), action: method };
         if (reads.includes(method)) return await this.#storyLibrary.act(payload);
@@ -1421,11 +2736,11 @@ export class FunWorld {
             return result.failed ? { ok: false, error: result.text } : { ok: true, text: result.text.split('\n')[0] };
           }
           // 写方法：只动用户的 venues.json，绝不动预设常量。
-          case 'save': return await this.#saveVenue(args?.[0] ?? args ?? {});
-          case 'remove': return await this.#removeVenue(args?.[0]?.id ?? args?.id);
+          case 'save': return await this.#serial(() => this.#saveVenue(args?.[0] ?? args ?? {}));
+          case 'remove': return await this.#serial(() => this.#removeVenue(args?.[0]?.id ?? args?.id));
           // B 阶段：恢复预设（抹掉这一处 / 全部覆盖层）。
-          case 'reset': return await this.#resetVenue(args?.[0]?.id ?? args?.id);
-          case 'resetAll': return await this.#resetAllVenues();
+          case 'reset': return await this.#serial(() => this.#resetVenue(args?.[0]?.id ?? args?.id));
+          case 'resetAll': return await this.#serial(() => this.#resetAllVenues());
           case 'blank': return { ok: true, venue: blankVenue(), feast: this.#tasteFromFeast() };
           default: throw new Error(`places 没有 ${method} 这个方法`);
         }
@@ -1447,7 +2762,7 @@ export class FunWorld {
       }
       throw new Error(`不认识的面板：${panel}`);
     } catch (err) {
-      return { ok: false, error: msg(err) };
+      return { ok: false, error: msg(err), ...(panel === 'locations' && typeof err?.code === 'string' ? { code: err.code } : {}) };
     }
   }
 
@@ -1470,24 +2785,28 @@ export class FunWorld {
 
     if (presetHit) {
       // B 阶段：编辑预设 → 稀疏覆盖层。名字/别名撞别的预设仍要拦（按名字找会二义）。
-      const name = typeof raw?.name === 'string' ? raw.name.trim() : '';
+      // 面板可能只提交改动过的字段，所以先叠在当前有效值上再压差异；
+      // 否则没提交的字段会被当成「用户清空了」。
+      const current = this.#allPlaces().find((v) => v.id === editingId) ?? presetHit;
+      const merged = { ...current, ...raw, id: editingId };
+      const name = typeof merged.name === 'string' ? merged.name.trim() : '';
       const clash = VENUES.find((v) => v.id !== editingId
-        && (v.name === name || (Array.isArray(raw?.aliases)
-          && raw.aliases.some((a) => String(a).trim() === v.name))));
+        && (v.name === name || (Array.isArray(merged.aliases)
+          && merged.aliases.some((a) => String(a).trim() === v.name))));
       if (clash) {
         return { ok: false, error: `「${clash.name}」是另一处预设的名字，换一个吧——不然按名字找会撞。` };
       }
-      const { fields, problems } = cleanOverride(raw, presetHit);
+      const { fields, problems } = cleanOverride(merged, presetHit);
       if (problems.length) return { ok: false, error: problems.join('；') || '这条改动存不下来' };
       if (Object.keys(fields).length) overrides[editingId] = fields;
       else delete overrides[editingId]; // 跟预设一模一样 = 没有覆盖层
       await this.#saveVenueFile(list, overrides);
       this.#host?.log?.info?.('娱乐时间：改了预设场所（覆盖层）', { id: editingId, fields: Object.keys(fields) });
-      return { ok: true, venue: this.#places().find((v) => v.id === editingId), places: this.#places().length };
+      return { ok: true, venue: this.#allPlaces().find((v) => v.id === editingId), places: this.#places().length };
     }
 
-    // 自填地点（新建 / 改自己的）
-    if (editingId && !editingId.startsWith(USER_PREFIX)) {
+    // 自己的地点：`user-` 新建 / 编辑，`place-` 是从旧地点库迁进来的。
+    if (editingId && !isUserPlaceId(editingId)) {
       return { ok: false, error: `不认识的 id「${editingId}」：既不是预设，也不是自己加的地方。` };
     }
     const name = typeof raw?.name === 'string' ? raw.name.trim() : '';
@@ -1497,7 +2816,12 @@ export class FunWorld {
 
     const existingIds = [...VENUES.map((v) => v.id), ...list.map((v) => v.id)];
     const id = editingId || idFromName(name, existingIds);
-    const { venue, problems } = cleanUserVenue({ ...raw, id }, { requireId: true });
+    const existing = list.find((v) => v.id === id) ?? null;
+    // 部分提交（只改一两个字段）不能把没提交的字段清空：先叠在旧值上。
+    // 这次带了 areas 就以 areas 重新判断可玩——清空「能逛的」= 退回不可玩地点。
+    const merged = existing ? { ...existing, ...raw, id } : { ...raw, id };
+    if (existing && Object.hasOwn(raw ?? {}, 'areas') && !Object.hasOwn(raw ?? {}, 'playable')) delete merged.playable;
+    const { venue, problems } = cleanUserVenue(merged, { requireId: true });
     if (!venue) return { ok: false, error: problems.join('；') || '这条地点存不下来' };
 
     const at = list.findIndex((v) => v.id === venue.id);
@@ -1516,7 +2840,7 @@ export class FunWorld {
     if (isPresetId(VENUES, target)) {
       return { ok: false, error: '预设里的地方删不掉；想还原就在编辑表单里点「恢复预设」。' };
     }
-    if (!target.startsWith(USER_PREFIX)) {
+    if (!isUserPlaceId(target)) {
       return { ok: false, error: '只能删自己加的地方。' };
     }
     const list = (this.#userVenues ?? []).filter((v) => v.id !== target);
@@ -1582,7 +2906,9 @@ export class FunWorld {
         crowdLabel: CROWD_LABEL[v.crowd] ?? '',
         kindLabel: KIND_LABEL[v.kind] ?? '自填',
         // 自填的地点：面板上显示「删除这处」；B 阶段起预设也能编辑。
-        userVenue: String(v.id).startsWith(USER_PREFIX),
+        // 内置故事带来的地点虽然沿用了 user- 前缀（历史行程与回忆里存的就是这个 id），
+        // 但它们是随版本内置的预设，删不掉，也不算「我的地点」。
+        userVenue: !isPresetId(VENUES, v.id),
         // 这一处预设被改过（覆盖层非空）：面板上标一下，并提供「恢复预设」。
         overridden: Boolean(this.#overrides?.[v.id] && Object.keys(this.#overrides[v.id]).length),
         hours: v.hours,
@@ -1625,7 +2951,7 @@ export class FunWorld {
       on: this.#on(),
       // 吃喝了去不去鱼的每一天拿味道：面板上显示成开关状态，让主人知道自己是哪种模式。
       feast: this.#tasteFromFeast(),
-      userVenueCount: places.filter((x) => String(x.id).startsWith(USER_PREFIX)).length,
+      userVenueCount: places.filter((x) => !isPresetId(VENUES, x.id)).length,
       overriddenCount: Object.keys(this.#overrides ?? {}).length,
       openCount: places.filter((x) => x.state !== 'closed').length,
       total: places.length,
@@ -1801,6 +3127,9 @@ export class FunWorld {
   async #clearState() {
     return this.#serial(async () => {
       await this.#commitState(newState(dayIn(this.timezone, this.#now())));
+      this.#storyEpoch = randomUUID();
+      this.#dm.cancel();
+      this.#autonomy.clear();
       this.#host?.log?.info?.('娱乐时间：出游记录已清空');
       return { ok: true };
     });
@@ -1816,10 +3145,20 @@ export class FunWorld {
     this.#ensureConfigSection();
     this.#state = await this.#load();
     // 用户自填地点 + 预设覆盖层：读失败就当没有，预设照常能逛。
+    const venueMigration = await migrateSampleVenue(this.venuesFile());
+    this.#venueMigrationError = venueMigration.ok ? null : venueMigration.error;
+    // 内置故事带来的地点：只移除与内置定义完全一致的历史副本，改过的保留。
+    const promoted = await migratePromotedVenues(this.venuesFile(), VENUES);
+    if (!promoted.ok) this.#venueMigrationError = this.#venueMigrationError ?? promoted.error;
     const venueFile = await this.#loadVenueFile();
     this.#userVenues = venueFile.venues;
     this.#overrides = venueFile.overrides;
+    // C 版：旧地点库里的基础地点并进 venues.json（保留原 id），画风/关联/封面留在 extras。
+    await this.#migrateLegacyPlaces();
+    await this.#storyNodeLimit.load();
     await this.#storyLibrary.load();
+    await this.#storySecrets.load();
+    await this.#storyImages.init();
     this.#started = true;
     this.#host?.log?.info?.('娱乐时间已启动', {
       places: this.#places().length,
@@ -1832,6 +3171,10 @@ export class FunWorld {
 
   async stop() {
     this.#started = false;
+    this.#storyImages.cancel();
+    this.#dm.cancel();
+    this.#autonomy.clear();
+    this.#storyEpoch = randomUUID();
     await this.#serial(async () => {
       try { await this.#save(); } catch { /* 停的时候存不上就算了 */ }
       this.#host = null;

@@ -18,6 +18,7 @@ import { gunzipSync } from 'node:zlib';
 import { tmpdir } from 'node:os';
 import { dirname, join, isAbsolute, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { loadStandaloneWebUi } from './load-webui.mjs';
 
 /**
  * 在 Node 里解 tar（不 spawn `tar`：受限沙箱里子进程会 EPERM）。
@@ -155,6 +156,20 @@ try {
   const dataDir = join(work, 'data');
   const world = def.create({ cfg: def.defaults(), dataDir, timezone: 'Asia/Shanghai', persist: () => {} });
   await world.start({ log: { info() {}, warn() {}, error() {} } });
+  if (published.version === '0.3.3') {
+    const initial = await world.webUi('zh').invoke('story', 'status', []);
+    const ids = Array.isArray(initial?.catalog) ? initial.catalog.map((entry) => entry.id) : [];
+    ok(initial?.ok === true && ids.length === 4 && ids.includes('foldtide-reply-lite') && ids.includes('drizzled-list') && ids.includes('bridge-echo-solo') && ids.includes('swapped-plaque-riddle'), '0.3.3 新装包含四篇内置故事');
+    ok(!Object.hasOwn(initial, 'sample'), '0.3.3 没有样章入口数据');
+    const presets = await import(pathToFileURL(join(pkgDir, 'src/story-examples.js')).href);
+    ok(Array.isArray(presets.BUILTIN_STORY_PACKS) && presets.BUILTIN_STORY_PACKS.length === 4, '发布包内置四篇获批故事');
+     ok(entries.some((entry) => entry.rel === 'src/bridge-echo-solo.json') && entries.some((entry) => entry.rel === 'src/swapped-plaque-riddle.json'), '发布包包含新增故事 JSON');
+    const source = entries.filter((entry) => !entry.mkdir && entry.rel.startsWith('src/') && /\.(?:js|md)$/.test(entry.rel)).map((entry) => entry.data.toString('utf8')).join('\n');
+    ok(!['旧木桥的第三块木板吱呀一声', '桥底的回声短了一拍', '街尾的台阶空出一小块位置', '海报墙上的彩色边缘被灯光照得发亮', '靠窗的双人座刚好空下来，桌上留着两张干净的杯垫'].some((body) => source.includes(body)), '发布源码不含旧故事正文片段');
+    ok(!entries.some((entry) => entry.rel.startsWith('test/fixtures/')), '回归故事夹具未进入发布包');
+    const settings = await world.webUi().invoke('story', 'storySettings', []);
+    ok(settings?.ok === true && settings.dm?.saved === false && settings.imageSource === '', '安装形态的设置为空且不回传凭据');
+  }
   const marketDescribe = JSON.parse(await readFile(join(pkgDir, 'describe.json'), 'utf8'));
   const tools = world.tools();
   const marketNames = checkNames(marketDescribe.tools, 'name', 'describe.json 工具名称');
@@ -184,11 +199,12 @@ try {
   const lists = new Map();
   for (const id of declared ?? []) {
     const { getMethods } = ui.panels.find((panel) => panel.id === id);
-    const hasList = Array.isArray(getMethods) && getMethods.includes('list');
-    ok(hasList, `${id} 在 getMethods 中声明 list`);
-    if (!hasList) continue;
+    const readMethod = id === 'story' ? 'status' : 'list';
+    const hasRead = Array.isArray(getMethods) && getMethods.includes(readMethod);
+    ok(hasRead, `${id} 在 getMethods 中声明 ${readMethod}`);
+    if (!hasRead) continue;
     try {
-      const result = await ui.invoke(id, 'list', []);
+      const result = await ui.invoke(id, readMethod, []);
       ok(result?.ok === true, `${id} 面板取数成功`, result?.error);
       lists.set(id, result);
     } catch (error) {
@@ -210,7 +226,8 @@ try {
 
   console.log('8) 面板 bundle 能对上线上的服务端');
   if (clientRel && existsSync(join(pkgDir, clientRel))) {
-    const bundle = await import(pathToFileURL(join(pkgDir, clientRel)).href);
+    const bundle = await loadStandaloneWebUi(join(pkgDir, clientRel));
+    ok(true, '客户端入口可单文件加载，不依赖宿主未托管的相邻模块');
     const panels = bundle.default?.panels;
     const exported = panels && typeof panels === 'object' && !Array.isArray(panels)
       ? Object.keys(panels).sort()

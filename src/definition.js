@@ -40,7 +40,7 @@ const TOOL_SUMMARIES = {
     en: 'Plan and manage a two-stop outing, explicitly move on or end early.',
   },
   fun_view: {
-    zh: '查看正在逛、未逛完或已收摊的行程。',
+    zh: '查看正在逛、未逛完或已回家的行程。',
     en: 'View active, unfinished, or finished outings.',
   },
   fun_wishes: {
@@ -56,13 +56,21 @@ const TOOL_SUMMARIES = {
     en: 'Keep or unkeep a trip without changing the recent trip book or permanent collection.',
   },
   fun_story: {
-    zh: '管理、校验与预览本地地点剧情包，支持自填地点。',
+    zh: '管理、校验与预览本地故事工坊，支持自填地点。',
     en: 'Manage, validate, and preview local story packs, including custom places.',
   },
   fun_shelf: {
     zh: '按地点查询长期纪念品收藏和收集进度。',
     en: 'Query long-term souvenirs and collection progress by place.',
   },
+  fun_story_places: { zh: '查询地点索引或单个地点详情，只读，不开始出游；JSON 回执经标准 text 返回。', en: 'Read the place index or one place detail; does not start an outing. JSON is returned in standard text.' },
+  fun_story_candidates: { zh: '查询故事候选和公开简介，不返回未来分支；JSON 回执经标准 text 返回。', en: 'Read story candidates and public synopses without future branches. JSON is returned in standard text.' },
+  fun_story_detail: { zh: '查询单个故事的公开资料与可用原因，不返回节点内容；JSON 回执经标准 text 返回。', en: 'Read one story’s public metadata and availability without node contents. JSON is returned in standard text.' },
+  fun_story_current: { zh: '查询当前故事的状态和已发生内容，不推进故事；JSON 回执经标准 text 返回。', en: 'Read current story state and actual events without advancing it. JSON is returned in standard text.' },
+  fun_story_recap: { zh: '查询已保存故事的事实回顾，不写入日程或长期记忆；JSON 回执经标准 text 返回。', en: 'Read an actual story recap without writing a schedule or long-term memory. JSON is returned in standard text.' },
+  fun_story_schedule: { zh: '生成可复制的故事候选短文本；复制不写日程；JSON 回执经标准 text 返回。', en: 'Create copyable story-candidate text; copying does not write a schedule. JSON is returned in standard text.' },
+  fun_story_start: { zh: '在文字通道里开始一段故事（需开启文字通道开关），开始前重新校验条件；JSON 回执经标准 text 返回。', en: 'Start a story from a text channel (requires the text switch), rechecking conditions. JSON is returned in standard text.' },
+  fun_story_act: { zh: '在文字通道里推进当前故事：选项式先给待确认提议，自由模式每句推进一回合；JSON 回执经标准 text 返回。', en: 'Advance the current story from a text channel: option packs return a proposal, free packs advance one turn per line. JSON is returned in standard text.' },
 };
 
 function describeTools(decls) {

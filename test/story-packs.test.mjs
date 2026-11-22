@@ -1,12 +1,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { VENUES } from '../src/venues.js';
-import { BUILTIN_STORY_PACKS } from '../src/story-examples.js';
+import { BUILTIN_STORY_PACKS } from './fixtures/story-presets.mjs';
+import { BUILTIN_STORY_PACKS as SHIPPED_STORY_PACKS } from '../src/story-examples.js';
+import bridgeEchoSource from '../src/bridge-echo-solo.json' with { type: 'json' };
+import swappedPlaqueSource from '../src/swapped-plaque-riddle.json' with { type: 'json' };
 import {
   advanceStoryChoice,
   normalizeStoryProgress,
   pickStory,
   storyAvailability,
+  storyReferences,
+  storyStepBlock,
   validateStoryPack,
 } from '../src/story-packs.js';
 
@@ -40,6 +45,14 @@ function smallPack(overrides = {}) {
   };
 }
 
+function linearPack(count) {
+  const nodes = Array.from({ length: count }, (_, index) => ({
+    id: `step-${index}`, area: 'quiet-corner', event: `A small event at step ${index}.`,
+    ...(index + 1 < count ? { next: `step-${index + 1}` } : {}),
+  }));
+  return { version: 1, id: 'long-story', title: 'A longer story', placeId: 'custom-place', start: 'step-0', nodes };
+}
+
 const customVenue = {
   id: 'custom-place',
   name: 'Custom Place',
@@ -51,7 +64,52 @@ const customVenue = {
   ],
 };
 
-test('validates and canonicalizes a small DAG with a stable normalized revision', () => {
+test('version 2 metadata is strict and version 1 hashes stay unchanged', () => {
+  const legacy = smallPack();
+  const v1 = validateStoryPack(legacy);
+  assert.equal(v1.ok, true);
+  assert.equal(v1.pack.revision, validateStoryPack(JSON.stringify(legacy)).pack.revision);
+  assert.equal(v1.pack.version, 1);
+  assert.equal('metadata' in v1.pack, false);
+
+  const duo = BUILTIN_STORY_PACKS.find((pack) => pack.id === 'duo-cafe-date');
+  assert.equal(duo.version, 2);
+  assert.equal(duo.metadata.participation, 'duo');
+  assert.equal(duo.metadata.durationMinutes, 20);
+  assert.deepEqual(duo.nodes.filter((node) => node.choices).map((node) => node.actor), ['owner', 'joint', 'fish']);
+
+  const unknownDuration = structuredClone(duo);
+  delete unknownDuration.revision;
+  delete unknownDuration.metadata.durationMinutes;
+  const validated = validateStoryPack(unknownDuration);
+  assert.equal(validated.ok, true, validated.errors.join('; '));
+  assert.equal('durationMinutes' in validated.pack.metadata, false);
+  const unknownField = structuredClone(unknownDuration);
+  unknownField.metadata.futureResult = 'secret ending';
+  assert.equal(validateStoryPack(unknownField).ok, false);
+  const missingActor = structuredClone(unknownDuration);
+  delete missingActor.nodes.find((node) => node.choices).actor;
+  assert.equal(validateStoryPack(missingActor).ok, false);
+});
+
+test('sequel prerequisites require explicitly completed canonical stories', () => {
+  const sequel = structuredClone(BUILTIN_STORY_PACKS.find((pack) => pack.id === 'duo-cafe-date'));
+  delete sequel.revision;
+  sequel.id = 'cafe-sequel';
+  sequel.metadata.participation = 'solo';
+  delete sequel.metadata.jointResolution;
+  sequel.metadata.seriesId = 'cafe-series';
+  sequel.metadata.chapter = 2;
+  sequel.metadata.requiresCompleted = ['earlier-story'];
+  for (const node of sequel.nodes) if (node.choices) node.actor = 'owner';
+  const validated = validateStoryPack(sequel);
+  assert.equal(validated.ok, true, validated.errors.join('; '));
+  const venue = venueById('cafe');
+  assert.equal(storyAvailability(validated.pack, [venue]).available, false);
+  assert.deepEqual(storyAvailability(validated.pack, [venue]).missingStoryIds, ['earlier-story']);
+  assert.equal(storyAvailability(validated.pack, [venue], ['earlier-story']).available, true);
+});
+test('canonical pack revisions are stable across object and JSON input', () => {
   const first = validateStoryPack(smallPack());
   const second = validateStoryPack(JSON.stringify(smallPack()));
   assert.equal(first.ok, true, first.errors.join(', '));
@@ -60,6 +118,44 @@ test('validates and canonicalizes a small DAG with a stable normalized revision'
   assert.equal(first.pack.revision, second.pack.revision);
   assert.equal(first.pack.nodes.length, 3);
   assert.deepEqual(first.errors, []);
+});
+
+test('story node limits default to 16, accept custom values, and treat zero as unlimited', () => {
+  const long = linearPack(20);
+  assert.equal(validateStoryPack(long).ok, false);
+  assert.equal(validateStoryPack(long, { maxNodes: 19 }).ok, false);
+  assert.equal(validateStoryPack(long, { maxNodes: 20 }).ok, true);
+  assert.equal(validateStoryPack(long, { maxNodes: 0 }).ok, true);
+  assert.equal(validateStoryPack(long, { maxNodes: -1 }).ok, false, 'invalid configured values fall back to the default');
+  assert.equal(validateStoryPack(JSON.stringify({ ...long, description: 'x'.repeat(33 * 1024) }), { maxNodes: 0 }).ok, false,
+    'unlimited node count does not remove the 32 KB JSON safety limit');
+});
+
+test('v2 references validate strictly and require a persisted triggered node, current area and selected choice', () => {
+  const draft = smallPack({ version: 2, metadata: { author: 'Sample author', release: '1.0', genre: 'Everyday', synopsis: 'A simple public summary.', participation: 'solo' },
+    references: [
+      { area: 'quiet-corner', afterNode: 'begin', afterChoice: 'stay', audience: 'fish', text: 'Fixture-only fish clue.' },
+      { area: 'quiet-corner', afterNode: 'begin', afterChoice: 'walk', audience: 'dm', text: 'Fixture-only DM clue.' },
+      { area: 'window', afterNode: 'ending-a', audience: 'player', text: 'Fixture-only player note.' },
+    ],
+  });
+  const validated = validateStoryPack(draft);
+  assert.equal(validated.ok, true, validated.errors.join('; '));
+  const pack = validated.pack;
+  const ref = pack.references[0];
+  const progress = [{ packId: pack.id, revision: pack.revision, nodeId: 'ending-a', waitingChoiceId: null,
+    options: [], done: false, triggered: ['begin'] }];
+  assert.deepEqual(normalizeStoryProgress(JSON.parse(JSON.stringify(progress))), progress);
+  const outing = { storyProgress: progress, visited: [{ area: 'quiet-corner' }], choices: [{ option: 'stay' }] };
+  assert.deepEqual(storyReferences(pack, outing, 'fish'), [ref.text]);
+  assert.deepEqual(storyReferences(pack, outing, 'dm'), []);
+  assert.deepEqual(storyReferences(pack, { ...outing, choices: [{ option: 'walk' }] }, 'fish'), []);
+  assert.deepEqual(storyReferences(pack, { ...outing, visited: [{ area: 'window' }] }, 'fish'), []);
+  assert.deepEqual(storyReferences(pack, { ...outing, storyProgress: [{ ...progress[0], triggered: [] }] }, 'fish'), []);
+  const badChoice = structuredClone(draft); badChoice.references[0].afterChoice = 'end';
+  assert.equal(validateStoryPack(badChoice).ok, false);
+  const legacy = smallPack({ references: draft.references });
+  assert.equal(validateStoryPack(legacy).ok, false);
 });
 
 test('rejects unsafe or malformed schema, oversized text, missing edges and invalid graphs', () => {
@@ -121,8 +217,27 @@ test('availability reports missing venue areas or supported phase keys without c
   assert.equal(storyAvailability(pack, [customVenue]).available, true);
 });
 
-test('built-ins bind only to existing areas and their requested evening opening windows', () => {
-  assert.equal(BUILTIN_STORY_PACKS.length, 3);
+test('release ships the four approved built-in stories including the supplied v1 packs', () => {
+  assert.deepEqual(SHIPPED_STORY_PACKS.map((pack) => pack.id), [
+    'foldtide-reply-lite', 'drizzled-list', 'bridge-echo-solo', 'swapped-plaque-riddle',
+  ]);
+  const byId = new Map(SHIPPED_STORY_PACKS.map((pack) => [pack.id, pack]));
+  const bridgeEcho = byId.get('bridge-echo-solo');
+  const plaque = byId.get('swapped-plaque-riddle');
+  const withoutRevision = ({ revision, ...pack }) => pack;
+  assert.deepEqual(withoutRevision(bridgeEcho), bridgeEchoSource);
+  assert.deepEqual(withoutRevision(plaque), swappedPlaqueSource);
+  assert.equal(bridgeEcho.nodes.length, 9);
+  assert.equal(plaque.nodes.length, 13);
+  for (const pack of [bridgeEcho, plaque]) {
+    assert.equal(storyAvailability(pack, VENUES).available, true, pack.id);
+    const venue = venueById(pack.placeId);
+    for (const node of pack.nodes) assert.ok(venue.areas.includes(node.area), `${pack.id}: ${node.area}`);
+  }
+});
+
+test('independent story fixtures bind to existing areas and requested evening opening windows', () => {
+  assert.equal(BUILTIN_STORY_PACKS.length, 4);
   const riversidePack = BUILTIN_STORY_PACKS.find((pack) => pack.placeId === 'riverside');
   const marketPack = BUILTIN_STORY_PACKS.find((pack) => pack.placeId === 'market');
   const conPack = BUILTIN_STORY_PACKS.find((pack) => pack.placeId === 'con');
@@ -225,4 +340,16 @@ test('normalizeStoryProgress caps rows and removes arbitrary keys and malformed 
   assert.equal(normalized.length, 32);
   assert.deepEqual(Object.keys(normalized[0]).sort(), ['done', 'nodeId', 'options', 'packId', 'revision', 'waitingChoiceId']);
   assert.equal(normalizeStoryProgress([{ ...entries[0], options: [{ id: 'bad', next: '../path' }] }]).length, 0);
+});
+
+test('storyStepBlock explains a phase-gated area instead of a generic refusal', () => {
+  const venue = VENUES.find((item) => item.id === 'riverside');
+  const pack = validateStoryPack(bridgeEchoSource).pack;
+  const node = pack.nodes.find((item) => item.id === 'frog');
+  assert.equal(node.area, '桥底下');
+  const day = storyStepBlock(pack, node, venue, 10 * 60 + 52, 0);
+  assert.match(day, /桥底下/);
+  assert.match(day, /夜里|清早/);
+  assert.match(day, /白天/);
+  assert.equal(storyStepBlock(pack, node, venue, 21 * 60, 0), '');
 });

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import {
   OVERRIDABLE, USER_PREFIX, blankVenue, cleanOverride, cleanUserVenue, idFromName,
-  isPresetId, mergeVenues, overrideEntries, parseVenueFile, stringifyVenueFile,
+  isPresetId, isUserPlaceId, mergeVenues, overrideEntries, parseVenueFile, stringifyVenueFile,
 } from '../src/user-venues.js';
 import { VENUES } from '../src/venues.js';
 
@@ -33,16 +33,43 @@ test('cleanUserVenue：形状跟预设完全一致（下游不用分两套逻辑
     assert.ok(userKeys.includes(key), `缺字段 ${key}`);
   }
   void presetKeys;
-  // 自填地点一律不给 scene：用户不知道素材库里有什么，硬填只会「库里没找到」。
+  // 场景名现在透传（地点册要能填），没填就是空串。
   assert.equal(venue.scene, '');
   assert.equal(venue.kind, 'custom');
+});
+
+test('cleanUserVenue：id 允许 64 字符与 place- 前缀（旧地点库迁移要保留原 id）', () => {
+  const uuid = '11111111-1111-4111-8111-111111111111';
+  const place = `place-${uuid}`;
+  assert.equal(cleanUserVenue({ id: place, name: '旧书店' }).venue.id, place);
+  assert.equal(isUserPlaceId(place), true);
+  assert.equal(isUserPlaceId('user-x'), true);
+  assert.equal(isUserPlaceId('con'), false);
+
+  const longest = `place-${'a'.repeat(58)}`; // 64 字符
+  assert.equal(cleanUserVenue({ id: longest, name: 'X' }).venue.id, longest);
+  assert.equal(cleanUserVenue({ id: `place-${'a'.repeat(59)}`, name: 'X' }).venue, null, '超过 64 字符要拒绝');
+  assert.equal(cleanUserVenue({ id: 'a'.repeat(64), name: 'X' }).venue, null, '裸 id 最多 63 字符');
+
+  const parsed = parseVenueFile({ venues: [{ id: place, name: '旧书店', playable: false,
+    hours: { open: '00:00', close: '23:59' } }], overrides: { [place]: { souvenirs: ['x'] } } });
+  assert.equal(parsed.venues.length, 1, '旧地点库的 place- id 不能被读盘丢掉');
+  assert.equal(parsed.venues[0].id, place);
+  assert.ok(!(place in parsed.overrides), 'place- 是地点 id，不进预设覆盖层');
 });
 
 test('cleanUserVenue：坏数据报得清清楚楚，不抛', () => {
   assert.equal(cleanUserVenue(null).venue, null);
   assert.equal(cleanUserVenue({}).problems.length >= 2, true);
-  const noAreas = cleanUserVenue({ name: '空地方', areas: [] });
-  assert.ok(noAreas.problems.some((p) => /能逛的/.test(p)));
+  // 没有能逛的 = 只是地图上的一个点（C 版），不是错误。
+  const noAreas = cleanUserVenue({ name: '空地方', areas: [] }, { requireId: false });
+  assert.deepEqual(noAreas.problems, []);
+  assert.equal(noAreas.venue.playable, false);
+  assert.deepEqual(noAreas.venue.hours, { open: '00:00', close: '23:59' });
+  // 硬说可玩却拿不出能逛的，才报错。
+  const forced = cleanUserVenue({ name: '硬说可玩', areas: [], playable: true }, { requireId: false });
+  assert.ok(forced.problems.some((p) => /能逛的/.test(p)));
+  assert.equal(cleanUserVenue({ name: '点', playable: false, areas: ['a'] }, { requireId: false }).venue.playable, false);
   const badHours = cleanUserVenue({ ...valid(), hours: { open: '9:00', close: '99:99' } });
   assert.ok(badHours.problems.some((p) => /HH:MM/.test(p)), `应当报时段，实际：${badHours.problems}`);
   const sameHours = cleanUserVenue({ ...valid(), hours: { open: '10:00', close: '10:00' } });
@@ -157,8 +184,8 @@ test('cleanOverride：只存真改过的字段，且校验照旧', () => {
   const dirty = cleanOverride({ ...presetForm(con), scene: '乱填的', kind: 'x', phases: [{ key: 'x' }] }, con);
   assert.ok(!('scene' in dirty.fields) && !('kind' in dirty.fields) && !('phases' in dirty.fields));
 
-  // 坏数据仍报得清清楚楚
-  const bad = cleanOverride(presetForm(con, { areas: [], hours: { open: '99:99', close: 'x' } }), con);
+  // 坏数据仍报得清清楚楚（名字空 + 时段非法；没有能逛的已经不算错）
+  const bad = cleanOverride(presetForm(con, { name: '', areas: [], hours: { open: '99:99', close: 'x' } }), con);
   assert.ok(bad.problems.length >= 2);
   assert.deepEqual(bad.fields, {});
 });

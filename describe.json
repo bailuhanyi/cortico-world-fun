@@ -152,7 +152,7 @@
     },
     {
       "name": "fun_home",
-      "description": "收摊并把已发生的经历记入纪念册。",
+      "description": "回家并把已发生的经历记入纪念册。",
       "parameters": {
         "type": "object",
         "properties": {
@@ -285,7 +285,7 @@
         "snapshot"
       ],
       "summary": {
-        "zh": "查看正在逛、未逛完或已收摊的行程。",
+        "zh": "查看正在逛、未逛完或已回家的行程。",
         "en": "View active, unfinished, or finished outings."
       }
     },
@@ -362,7 +362,7 @@
     },
     {
       "name": "fun_keepsake",
-      "description": "用 fun_view 的行程 ID 珍藏或取消珍藏一趟已收摊的行程。珍藏独立保留，不影响收藏账本。",
+      "description": "用 fun_view 的行程 ID 珍藏或取消珍藏一趟已回家的行程。珍藏独立保留，不影响收藏账本。",
       "parameters": {
         "type": "object",
         "properties": {
@@ -390,7 +390,7 @@
     },
     {
       "name": "fun_story",
-      "description": "管理本地地点剧情包，校验和预览只读，导入或启停须指定操作。",
+      "description": "管理本地故事工坊，校验和预览只读，导入或启停须指定操作。",
       "parameters": {
         "type": "object",
         "properties": {
@@ -401,6 +401,7 @@
               "template",
               "validate",
               "preview",
+              "playtest",
               "export",
               "import",
               "enable",
@@ -420,6 +421,14 @@
             "type": "string",
             "description": "template 绑定的真实地点 ID，可来自自填地点；list 提供可用 ID。"
           },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "static",
+              "free"
+            ],
+            "description": "template 的模板类型：static 选项式（默认），free 自由模式场景包。"
+          },
           "area": {
             "type": "string",
             "description": "preview 的项目，默认使用起始节点项目。"
@@ -427,6 +436,15 @@
           "time": {
             "type": "string",
             "description": "preview 的测试时刻 HH:MM，默认当前本地时刻。"
+          },
+          "path": {
+            "type": "array",
+            "maxItems": 16,
+            "items": {
+              "type": "string",
+              "maxLength": 24
+            },
+            "description": "playtest 已明确选择的选项路径；只使用临时状态。"
           },
           "replace": {
             "type": "boolean",
@@ -442,7 +460,7 @@
         "write"
       ],
       "summary": {
-        "zh": "管理、校验与预览本地地点剧情包，支持自填地点。",
+        "zh": "管理、校验与预览本地故事工坊，支持自填地点。",
         "en": "Manage, validate, and preview local story packs, including custom places."
       }
     },
@@ -467,6 +485,228 @@
         "zh": "按地点查询长期纪念品收藏和收集进度。",
         "en": "Query long-term souvenirs and collection progress by place."
       }
+    },
+    {
+      "name": "fun_story_places",
+      "description": "查询故事地点索引或单个地点详情；只读，不开始出游。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "地点稳定 ID；不填返回索引。"
+          }
+        },
+        "additionalProperties": false
+      },
+      "tags": [
+        "read",
+        "snapshot"
+      ],
+      "summary": {
+        "zh": "查询地点索引或单个地点详情，只读，不开始出游；JSON 回执经标准 text 返回。",
+        "en": "Read the place index or one place detail; does not start an outing. JSON is returned in standard text."
+      }
+    },
+    {
+      "name": "fun_story_candidates",
+      "description": "查询可用故事候选和不含未来分支的公开简介；只读，不开始故事。",
+      "parameters": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      },
+      "tags": [
+        "read",
+        "snapshot"
+      ],
+      "summary": {
+        "zh": "查询故事候选和公开简介，不返回未来分支；JSON 回执经标准 text 返回。",
+        "en": "Read story candidates and public synopses without future branches. JSON is returned in standard text."
+      }
+    },
+    {
+      "name": "fun_story_detail",
+      "description": "查询一个故事的公开资料和可用原因，不返回节点或未来分支全文。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "故事稳定 ID。"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      },
+      "tags": [
+        "read",
+        "snapshot"
+      ],
+      "summary": {
+        "zh": "查询单个故事的公开资料与可用原因，不返回节点内容；JSON 回执经标准 text 返回。",
+        "en": "Read one story’s public metadata and availability without node contents. JSON is returned in standard text."
+      }
+    },
+    {
+      "name": "fun_story_current",
+      "description": "查询当前故事的实际状态、已发生片段与当前待选项；不会推进行程。",
+      "parameters": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      },
+      "tags": [
+        "read",
+        "snapshot"
+      ],
+      "summary": {
+        "zh": "查询当前故事的状态和已发生内容，不推进故事；JSON 回执经标准 text 返回。",
+        "en": "Read current story state and actual events without advancing it. JSON is returned in standard text."
+      }
+    },
+    {
+      "name": "fun_story_recap",
+      "description": "查询已结束故事的事实回顾；只含实际发生的片段和选择。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "回忆 ID，可选；不填取最近故事回忆。"
+          }
+        },
+        "additionalProperties": false
+      },
+      "tags": [
+        "read",
+        "snapshot"
+      ],
+      "summary": {
+        "zh": "查询已保存故事的事实回顾，不写入日程或长期记忆；JSON 回执经标准 text 返回。",
+        "en": "Read an actual story recap without writing a schedule or long-term memory. JSON is returned in standard text."
+      }
+    },
+    {
+      "name": "fun_story_schedule",
+      "description": "生成故事候选的可复制短文本；复制不写入日程，也不会自动出发。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "候选故事 ID，可选。"
+          }
+        },
+        "additionalProperties": false
+      },
+      "tags": [
+        "read",
+        "snapshot"
+      ],
+      "summary": {
+        "zh": "生成可复制的故事候选短文本；复制不写日程；JSON 回执经标准 text 返回。",
+        "en": "Create copyable story-candidate text; copying does not write a schedule. JSON is returned in standard text."
+      }
+    },
+    {
+      "name": "fun_story_start",
+      "description": "在聊天里开始一段故事（需要在娱乐时间设置里开启「文字通道也能玩故事」，否则会明确报未开启）。先用 fun_story_candidates 或 fun_story_detail 拿 packId、revision 和 fun_story_current 的 startStamp；开始前会重新校验条件。用户明确说要开始才填 confirm: true。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "packId": {
+            "type": "string",
+            "description": "故事 ID，来自候选清单。"
+          },
+          "revision": {
+            "type": "string",
+            "description": "故事版本，来自候选清单。"
+          },
+          "startStamp": {
+            "type": "string",
+            "description": "fun_story_current 返回的 startStamp。"
+          },
+          "confirm": {
+            "type": "boolean",
+            "description": "用户明确说要开始时填 true。"
+          }
+        },
+        "required": [
+          "packId",
+          "revision",
+          "startStamp",
+          "confirm"
+        ],
+        "additionalProperties": false
+      },
+      "tags": [
+        "write"
+      ],
+      "summary": {
+        "zh": "在文字通道里开始一段故事（需开启文字通道开关），开始前重新校验条件；JSON 回执经标准 text 返回。",
+        "en": "Start a story from a text channel (requires the text switch), rechecking conditions. JSON is returned in standard text."
+      }
+    },
+    {
+      "name": "fun_story_act",
+      "description": "在聊天里推进当前故事：把用户这一回合的原话交给它，不替用户编选择。选项式故事按当前回合身份提交：用户回合就按用户原话（含“选第二个”这类序号）替用户提交，记为 owner；轮到鱼时以鱼的身份提交，用户没指定时鱼按自己的角色决定。原话对不上时先返回 proposalId（不提交），用户确认后再带 proposalId 和 optionId 提交。自由模式（场景包）每次 say 推进一回合。结束这一段用 intent: close 并 confirm: true。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "tripId": {
+            "type": "string",
+            "description": "当前故事行程 ID，来自 fun_story_current。"
+          },
+          "stamp": {
+            "type": "string",
+            "description": "当前进度戳，来自 fun_story_current；变了就重新读，不要猜。"
+          },
+          "intent": {
+            "type": "string",
+            "enum": [
+              "say",
+              "close"
+            ],
+            "description": "say 说一句；close 结束这一段并保存回忆。"
+          },
+          "say": {
+            "type": "string",
+            "description": "用户这一回合的原话，最多 200 字。"
+          },
+          "proposalId": {
+            "type": "string",
+            "description": "选项式故事：上一次 fun_story_act 返回的提议 ID。"
+          },
+          "optionId": {
+            "type": "string",
+            "description": "选项式故事：确认要提交的选项 ID。"
+          },
+          "from": {
+            "type": "string",
+            "description": "QQ 昵称，只用于日志归属，可选。"
+          },
+          "confirm": {
+            "type": "boolean",
+            "description": "intent 为 close 时填 true。"
+          }
+        },
+        "required": [
+          "tripId",
+          "stamp",
+          "intent"
+        ],
+        "additionalProperties": false
+      },
+      "tags": [
+        "write"
+      ],
+      "summary": {
+        "zh": "在文字通道里推进当前故事：选项式先给待确认提议，自由模式每句推进一回合；JSON 回执经标准 text 返回。",
+        "en": "Advance the current story from a text channel: option packs return a proposal, free packs advance one turn per line. JSON is returned in standard text."
+      }
     }
   ],
   "events": [],
@@ -475,7 +715,7 @@
       "key": "worlds.fun.env",
       "title": "娱乐时间",
       "role": "envPrompt",
-      "content": "## 娱乐时间\n\n出游流程：`fun_places` 查询地点 → `fun_go` 进门 → `fun_wander` 逐处游逛 → `fun_home` 收摊；现在出门可用 `fun_start`。地点、项目、纪念品和拍照点名称以工具回执为准；吃喝只填当前地点真实提供的品类。历史与收藏按需用 `fun_view`、`fun_shelf` 查询。\n\n- 连逛两处可用 `fun_route` 规划；每站自己进门、收摊，再决定下一站、换一站或提前结束，不自动移动。\n- 中断后用 `fun_view` 找未完行程，再决定续逛或按已有记录收摊。待选事件按回执的选项处理。\n- 明确表达想去或想做时用 `fun_wish` 记录、`fun_wishes` 查询；不催促、不从旧行程推断完成。\n- 发图用 `imggen_draw`：按 `fun_home` 回执填写 `scene` / `outfits` 正名，不编场景或衣服名字；库里没找到的不要填。\n- 食物只记品类。开关联动允许且实际用「鱼的每一天」的 `feast_menu` → `feast_eat` 后才能描述口感；否则只说吃喝了什么，别形容味道。本插件不会探测别的扩展装没装，不依赖其他 World。\n- 时段可能改变氛围和可逛项目；重复到访有效。历史只按需查询，不编造未发生的经历。\n- 用户自填地点通常没有素材库场景；以回执为准。地点清单和动态详情通过 `fun_places` 查询。预设删不掉，只能恢复。\n- 出门前可用 `feast_life_now` 对齐日程；收摊后按回执用 `feast_life_play` 记录实际经历。\n\n{{fun_places_block}}\n"
+      "content": "## 娱乐时间\n\n出游流程：`fun_places` 查询地点 → `fun_go` 进门 → `fun_wander` 逐处游逛 → `fun_home` 回家；现在出门可用 `fun_start`。地点、项目、纪念品和拍照点名称以工具回执为准；吃喝只填当前地点真实提供的品类。历史与收藏按需用 `fun_view`、`fun_shelf` 查询。\n\n- 连逛两处可用 `fun_route` 规划；每站自己进门、回家，再决定下一站、换一站或提前结束，不自动移动。\n- 中断后用 `fun_view` 找未完行程，再决定续逛或按已有记录回家。待选事件按回执的选项处理。\n- 明确表达想去或想做时用 `fun_wish` 记录、`fun_wishes` 查询；不催促、不从旧行程推断完成。\n- 图片按 `fun_home` 委派回执执行；默认由主对话调用 `imggen_draw`，填 `scene` / `outfits` 正名，工具未提供就说明未安装并跳过。不编场景或衣服名字；库里没找到的不要填。其他来源按回执交执行方，文字不等图片。\n- 食物只记品类。开关联动允许且实际用「鱼的每一天」的 `feast_menu` → `feast_eat` 后才能描述口感；否则只说吃喝了什么，别形容味道。本插件不会探测别的扩展装没装，不依赖其他 World。\n- 时段可能改变氛围和可逛项目；重复到访有效。历史只按需查询，不编造未发生的经历。\n- 用户自填地点通常没有素材库场景；以回执为准。地点清单和动态详情通过 `fun_places` 查询。内置地点预设删不掉，只能恢复；故事库附带四篇获批内置故事，也支持作者继续编写自定义故事。\n- 出门前可用 `feast_life_now` 对齐日程；回家后按回执用 `feast_life_play` 记录实际经历。\n\n{{fun_places_block}}\n"
     }
   ]
 }

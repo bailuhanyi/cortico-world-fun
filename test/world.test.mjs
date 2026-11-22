@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, readFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -52,10 +52,20 @@ test('describe 里 events 是空数组：这个 World 不推事件', () => {
   }
 });
 
-test('十四件工具都注册了', () => {
+test('故事公共查询工具已分离声明为只读', () => {
+  const w = funDefinition.create({ cfg: {}, dataDir: process.cwd(), timezone: TZ });
+  const names = w.tools().map((t) => t.name);
+  for (const name of ['fun_story_places', 'fun_story_candidates', 'fun_story_detail', 'fun_story_current', 'fun_story_recap', 'fun_story_schedule']) {
+    assert.ok(names.includes(name), `${name} missing`);
+    const declaration = funDefinition.describe.tools.find((tool) => tool.name === name);
+    assert.deepEqual(declaration?.tags, ['read', 'snapshot']);
+  }
+});
+
+test('二十二件工具都注册了', () => {
   const w = funDefinition.create({ cfg: {}, dataDir: process.cwd(), timezone: TZ });
   const names = w.tools().map((t) => t.name).sort();
-  assert.deepEqual(names, ['fun_choice', 'fun_go', 'fun_home', 'fun_keepsake', 'fun_places', 'fun_resume', 'fun_route', 'fun_shelf', 'fun_start', 'fun_story', 'fun_view', 'fun_wander', 'fun_wish', 'fun_wishes']);
+  assert.deepEqual(names, ['fun_choice', 'fun_go', 'fun_home', 'fun_keepsake', 'fun_places', 'fun_resume', 'fun_route', 'fun_shelf', 'fun_start', 'fun_story', 'fun_story_act', 'fun_story_candidates', 'fun_story_current', 'fun_story_detail', 'fun_story_places', 'fun_story_recap', 'fun_story_schedule', 'fun_story_start', 'fun_view', 'fun_wander', 'fun_wish', 'fun_wishes']);
 });
 
 test('envPromptVars 不常驻完整地点清单，关闭时同样为空', async () => {
@@ -79,9 +89,13 @@ test('配置段缺键会被补齐（宿主 /api/config 不合并 defaults）', a
   await world.start({ log: { info() {}, warn() {} } });
   assert.equal(persisted.length, 1);
   assert.deepEqual(Object.keys(persisted[0]).sort(),
-    ['funAskReport', 'funSessionTTLMin', 'funTasteFromFeast']);
+    ['funAskReport', 'funAutoCalls', 'funAutoSteps', 'funSessionTTLMin', 'funStoryDM', 'funStoryFree', 'funStoryFreeTurns', 'funStoryImages', 'funStoryTextOn', 'funTasteFromFeast']);
   assert.equal(persisted[0].funAskReport, true);
   assert.equal(persisted[0].funSessionTTLMin, 90);
+  assert.equal(persisted[0].funAutoSteps, 20);
+  assert.equal(persisted[0].funAutoCalls, 6);
+  assert.equal(persisted[0].funStoryImages, false);
+  assert.equal(persisted[0].funStoryDM, false);
   assert.equal(persisted[0].funTasteFromFeast, true);
 });
 
@@ -91,14 +105,15 @@ test('缺键补齐：盘上已有的值一个都不覆盖', async () => {
   const world = new FunWorld({
     cfg: {
       enabled: true, funOn: false, funSessionTTLMin: 30,
-      funAskReport: false, funTasteFromFeast: false,
+      funAskReport: false, funTasteFromFeast: false, funStoryImages: false, funStoryDM: true,
+      funStoryTextOn: true, funStoryFree: false, funStoryFreeTurns: 40, funAutoSteps: 20, funAutoCalls: 6,
     },
     dataDir: dir,
     timezone: TZ,
     persist: (patch) => { persisted.push(patch); },
   });
   await world.start({ log: { info() {}, warn() {} } });
-  assert.deepEqual(persisted, [], '四项都在，不该补任何东西');
+  assert.deepEqual(persisted, [], '十项都在，不该补任何东西');
 });
 
 test('fun_places：按开放时段排，正文带开没开和人多少', async () => {
@@ -154,7 +169,7 @@ test('kind 筛选三档都能用：大类 / 感受 / 正名', async () => {
   assert.deepEqual(coffee, ['咖啡店'], `「咖啡」应当只筛出咖啡店，实际：${coffee.join('、')}`);
 });
 
-test('完整一趟：进门 → 逛 → 买 → 拍照 → 收摊，落盘且纪念册有记录', async () => {
+test('完整一趟：进门 → 逛 → 买 → 拍照 → 回家，落盘且纪念册有记录', async () => {
   const b = await boot();
   const go = await b.tool('fun_go')({ place: '漫展', company: '小鱼' });
   assert.match(go.text, /进了漫展/);
@@ -171,7 +186,7 @@ test('完整一趟：进门 → 逛 → 买 → 拍照 → 收摊，落盘且纪
 
   b.setNow(at('2026-11-15T15:30:00+08:00'));
   const home = await b.tool('fun_home')({ note: '腿有点酸' });
-  assert.match(home.text, /收摊：这一趟在漫展/);
+  assert.match(home.text, /回家：这一趟在漫展/);
   assert.match(home.text, /买了吧唧/);
   assert.match(home.text, /scene 填「漫展」/);
   assert.match(home.text, /outfits 填「宅卫衣」/);
@@ -186,7 +201,7 @@ test('完整一趟：进门 → 逛 → 买 → 拍照 → 收摊，落盘且纪
   assert.deepEqual(saved.trips[0].souvenirs, ['吧唧']);
 });
 
-test('收摊回执里的 scene 名跟素材库对得上（水族馆 / 神社）', async () => {
+test('回家回执里的 scene 名跟素材库对得上（水族馆 / 神社）', async () => {
   const b = await boot();
   await b.tool('fun_go')({ place: '海洋馆' });
   await b.tool('fun_wander')({ area: '海底隧道' });
@@ -199,7 +214,7 @@ test('收摊回执里的 scene 名跟素材库对得上（水族馆 / 神社）'
   assert.match(home2.text, /scene 填「神社」/);
 });
 
-test('素材库里没有的场所，收摊时一个字都不提 scene', async () => {
+test('素材库里没有的场所，回家时一个字都不提 scene', async () => {
   const b = await boot();
   await b.tool('fun_go')({ place: '电影院' });
   await b.tool('fun_wander')({ area: '影厅' });
@@ -212,7 +227,7 @@ test('素材库里没有的场所，收摊时一个字都不提 scene', async ()
   assert.match(home.text, /outfits 填「外出外套」/);
 });
 
-test('自填地点同样没有 scene：收摊回执明说不用填', async () => {
+test('自填地点同样没有 scene：回家回执明说不用填', async () => {
   const b = await boot();
   await b.world.webUi('zh').invoke('places', 'save', [{
     name: '旧书店', areas: ['书架间'], recommendedOutfit: '通勤衬衫',
@@ -224,7 +239,7 @@ test('自填地点同样没有 scene：收摊回执明说不用填', async () =>
   assert.doesNotMatch(home.text, /scene 填「旧书店」/);
 });
 
-test('没进门就逛 / 没在逛就收摊：给提示不报错', async () => {
+test('没进门就逛 / 没在逛就回家：给提示不报错', async () => {
   const b = await boot();
   const wander = await b.tool('fun_wander')({});
   assert.match(wander.text, /还没进门/);
@@ -242,7 +257,7 @@ test('报了个不存在的地方：说清能去哪儿，不炸', async () => {
   assert.match(r.text, /游乐场 \/ 海洋馆 \/ 庙会 \/ 漫展/);
 });
 
-test('已经在逛时再进门：不覆盖，提示先收摊', async () => {
+test('已经在逛时再进门：不覆盖，提示先回家', async () => {
   const b = await boot();
   await b.tool('fun_go')({ place: '漫展' });
   const again = await b.tool('fun_go')({ place: '海洋馆' });
@@ -250,7 +265,7 @@ test('已经在逛时再进门：不覆盖，提示先收摊', async () => {
   assert.equal(b.world.webUi().badges[0].value.startsWith('漫展'), true);
 });
 
-test('fun_ask_report 关掉后，收摊不提记账和跟主人说话', async () => {
+test('fun_ask_report 关掉后，回家不提记账和跟主人说话', async () => {
   const b = await boot({ cfg: { funAskReport: false } });
   await b.tool('fun_go')({ place: '游乐场' });
   await b.tool('fun_wander')({ area: '过山车' });
@@ -344,7 +359,7 @@ test('吃喝：没有吃喝的地方填 consume 会被拦下', async () => {
   assert.match(r.text, /海洋馆没有能吃能喝的，没记/);
 });
 
-test('吃喝：收摊那句话里会写喝了什么，但不写味道', async () => {
+test('吃喝：回家那句话里会写喝了什么，但不写味道', async () => {
   const b = await boot();
   await b.tool('fun_go')({ place: '餐厅' });
   await b.tool('fun_wander')({ area: '窗边的位子', consume: '一桌热菜' });
@@ -533,7 +548,7 @@ test('去过的痕迹：以前买过的东西，不会再抽到同一件小事�
   }
 });
 
-test('自填地点：保存后能进门、能逛、能收摊', async () => {
+test('自填地点：保存后能进门、能逛、能回家', async () => {
   const b = await boot();
   const saved = await b.world.webUi('zh').invoke('places', 'save', [{
     name: '巷子里的旧书店',
@@ -607,7 +622,7 @@ test('B 阶段：预设能改，落的是稀疏覆盖层，且不能删', async 
   assert.equal(con.name, '漫展', '没改的字段仍来自预设');
   assert.equal(con.overridden, true, '面板要标出已改');
   assert.equal(data.overriddenCount, 1);
-  assert.equal(data.total, 20, '改预设不会多出一处，也不会少一处');
+  assert.equal(data.total, VENUES.length, '改预设不会多出一处，也不会少一处');
 
   // 落盘形状：只有改过的字段，且带 id
   const raw = JSON.parse(await readFile(join(b.dir, 'fun', 'venues.json'), 'utf8'));
@@ -690,7 +705,7 @@ test('B 阶段：自填地点与预设改动共存，互不串味', async () => 
   await ui('places', 'save', [presetForm('con', { souvenirs: ['吧唧B'] })]);
 
   const data = await ui('places', 'list', []);
-  assert.equal(data.total, 21);
+  assert.equal(data.total, VENUES.length + 1);
   assert.equal(data.userVenueCount, 1);
   assert.equal(data.overriddenCount, 1);
   assert.deepEqual(data.places.find((p) => p.id === mine.venue.id).areas, ['藤椅']);
@@ -715,7 +730,7 @@ test('自填地点：改自己的、删自己的都行', async () => {
   assert.equal(removed.ok, true);
   data = await ui('places', 'list', []);
   assert.equal(data.userVenueCount, 0);
-  assert.equal(data.total, 20, '删掉之后回到纯预设');
+  assert.equal(data.total, VENUES.length, '删掉之后回到纯预设');
 });
 
 test('自填地点：预设升级照常生效、用户改动优先', async () => {
@@ -751,7 +766,7 @@ test('鱼的开关：关掉后只说喝了什么，一个字都不提味道和 f
   assert.doesNotMatch(w.text, /味道别自己编/);
 });
 
-test('鱼的开关：关掉也不影响别的回执（进门、收摊照常）', async () => {
+test('鱼的开关：关掉也不影响别的回执（进门、回家照常）', async () => {
   const b = await boot({ cfg: { funTasteFromFeast: false } });
   const go = await b.tool('fun_go')({ place: '奶茶店' });
   assert.match(go.text, /可喝：珍珠奶茶/, '能喝什么照常列');
@@ -761,14 +776,14 @@ test('鱼的开关：关掉也不影响别的回执（进门、收摊照常）',
   assert.match(home.text, /feast_life_play/, '记账提醒跟这个开关无关');
 });
 
-test('挂太久会提醒收摊，但不替她收', async () => {
+test('挂太久会提醒回家，但不替她收', async () => {
   const b = await boot();
   await b.tool('fun_go')({ place: '漫展' });
   b.setNow(at('2026-11-15T16:00:00+08:00')); // 进门后 120 分钟 > 90
   const r = await b.tool('fun_wander')({});
   assert.match(r.text, /挂得有点久了/);
   assert.match(r.text, /fun_home/);
-  assert.ok(!/收摊：/.test(r.text));
+  assert.ok(!/回家：/.test(r.text));
   assert.ok(b.world.webUi().badges.some((x) => x.label === '正在逛'), '仍算在逛');
 });
 
@@ -803,7 +818,7 @@ test('未完行程重启后可续逛，待选事件可重读和略过', async ()
   assert.equal(trip.choices[0].result, '略过了这次选择');
 });
 
-test('面板只读识别草稿，显式收摊按原行程日期记入纪念册且不会重复', async () => {
+test('面板只读识别草稿，显式回家按原行程日期记入纪念册且不会重复', async () => {
   const b = await boot();
   await b.tool('fun_go')({ place: '漫展' });
   b.setNow(at('2026-11-15T14:10:00+08:00'));
@@ -878,7 +893,7 @@ test('fun_wander：时段收窄时说「这会儿还没开」，不是「没有�
   assert.match(r.text, /夜市没有「深夜才有的摊」这处/);
 });
 
-test('fun_view 按需查询仍保留行程 ID 与收摊备注', async () => {
+test('fun_view 按需查询仍保留行程 ID 与回家备注', async () => {
   const b = await boot();
   await b.tool('fun_go')({ place: '漫展' });
   await b.tool('fun_wander')({ area: '同人展台' });
@@ -897,8 +912,8 @@ test('同行的人进纪念册', async () => {
   assert.match(view.text, /跟阿岚一起/);
 });
 
-test('收摊日期按本地时区存，早上 8 点前不会算成前一天', async () => {
-  // 上海 06:20 收摊：UTC 还是前一天 22:20。以前纪念册会标成 11-17。
+test('回家日期按本地时区存，早上 8 点前不会算成前一天', async () => {
+  // 上海 06:20 回家：UTC 还是前一天 22:20。以前纪念册会标成 11-17。
   const b = await boot({ now: at('2026-11-18T06:20:00+08:00') });
   await b.tool('fun_go')({ place: '爬山' });
   await b.tool('fun_wander')({});
@@ -932,7 +947,7 @@ test('重启后同一趟还在（同一天）', async () => {
   });
   await world2.start({ log: { info() {}, warn() {} } });
   const again = await world2.tools().find((t) => t.name === 'fun_home').handler({});
-  assert.match(again.text, /收摊：这一趟在庙会/);
+  assert.match(again.text, /回家：这一趟在庙会/);
 });
 
 test('简称购买与拍照按正名落盘，收藏进度和重复判断一致', async () => {
@@ -1088,7 +1103,7 @@ test('结构化事件选择：逛到事件给选项，选择后解锁下一处�
   const blocked = await b.tool('fun_wander')({});
   assert.match(blocked.text, /待选择事件/);
   const picked = await b.tool('fun_choice')({ choiceId: pending.id, optionId: pending.options[0].id });
-  assert.match(picked.text, /你选择了/);
+  assert.match(picked.text, /选择已确认：/);
   const after = JSON.parse(await readFile(join(b.dir, 'fun', 'state.json'), 'utf8'));
   assert.equal(after.session.pendingChoice, null);
   assert.equal(after.session.choices.length, 1);
@@ -1105,14 +1120,14 @@ test('工具内部抛错也兜住：返回 failed 而不是炸掉整个世界', 
   assert.match(r.text, /能去逛的/);
 });
 
-test('关闭等待正在提交的收摊，不用旧状态覆盖行程记录', async () => {
+test('关闭等待正在提交的回家，不用旧状态覆盖行程记录', async () => {
   const b = await boot();
   await b.tool('fun_go')({ place: '漫展' });
   await b.tool('fun_wander')({ area: '同人展台' });
   const closing = b.tool('fun_home')({});
   await Promise.resolve();
   await b.world.stop();
-  assert.match((await closing).text, /收摊/);
+  assert.match((await closing).text, /回家/);
   const saved = JSON.parse(await readFile(b.world.stateFile(), 'utf8'));
   assert.equal(saved.session, null);
   assert.equal(saved.draft, null);
@@ -1120,7 +1135,7 @@ test('关闭等待正在提交的收摊，不用旧状态覆盖行程记录', as
   assert.equal(saved.trips[0].visited[0].area, '同人展台');
 });
 
-test('保存续逛或草稿收摊失败时仍保留原记录', async () => {
+test('保存续逛或草稿回家失败时仍保留原记录', async () => {
   const b = await boot();
   await b.tool('fun_go')({ place: '漫展' });
   b.setNow(at('2026-11-16T10:00:00+08:00'));
@@ -1152,4 +1167,81 @@ test('webUi：没在逛时给场所数和灯；在逛时多一个正在逛的徽
   assert.equal(busy.badges[0].label, '正在逛');
   assert.match(busy.badges[0].value, /^漫展/);
   assert.match(busy.lamps[0].hint, /正在漫展逛/);
+});
+
+// ---------------------------------------------------------------------------
+// C 版：地点就是场所（旧地点库并进 venues.json）
+// ---------------------------------------------------------------------------
+
+const legacyLibrary = (places, homeId) => ({
+  version: 1, revision: 3,
+  data: { places, extras: [], sources: [], homeId, defaultStyle: '' },
+  recovery: null,
+});
+
+test('C 版迁移：旧地点库的地点和原 id 并进 venues，画风 / home / 关联不断', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'fun-migrate-'));
+  const libDir = join(dir, 'fun', 'place-library');
+  await mkdir(libDir, { recursive: true });
+  const bookId = 'place-11111111-1111-4111-8111-111111111111';
+  const dockId = 'place-22222222-2222-4222-8222-222222222222';
+  const places = [
+    { id: bookId, name: '旧书店', desc: '巷子深处', kind: 'around', aliases: ['书店'], tags: ['室内'],
+      style: '水彩', scene: '', relations: [], cover: '', coverFocus: null },
+    { id: dockId, name: '旧码头', desc: '河边', kind: 'place', aliases: [], tags: [],
+      style: '', scene: '码头', relations: [{ placeId: bookId, note: '常去' }], cover: '', coverFocus: null },
+  ];
+  await writeFile(join(libDir, 'library.json'), JSON.stringify(legacyLibrary(places, bookId)));
+  await mkdir(join(dir, 'fun'), { recursive: true });
+  await writeFile(join(dir, 'fun', 'venues.json'), JSON.stringify({ venues: [], overrides: {} }));
+
+  const b = await boot({ dir });
+  const ui = b.world.webUi('zh').invoke.bind(b.world.webUi('zh'));
+  const stored = JSON.parse(await readFile(join(dir, 'fun', 'venues.json'), 'utf8'));
+  assert.deepEqual(stored.venues.map((row) => row.id).sort(), [bookId, dockId].sort());
+  assert.ok(stored.venues.every((row) => row.playable === false), '旧地点是地图上的点，不是能逛的场所');
+  assert.equal(stored.venues.find((row) => row.id === bookId).name, '旧书店');
+
+  const manifest = JSON.parse(await readFile(join(libDir, 'library.json'), 'utf8'));
+  assert.deepEqual(manifest.data.places, [], '旧表搬空');
+  assert.equal(manifest.data.homeId, bookId, 'home 不能断');
+  assert.deepEqual(manifest.data.extras.find((row) => row.id === bookId).style, '水彩', '画风搬进 extras');
+  assert.deepEqual(manifest.data.extras.find((row) => row.id === dockId).relations,
+    [{ placeId: bookId, note: '常去' }], '关联原样保留');
+
+  const snapshot = await ui('locations', 'list', []);
+  const book = snapshot.places.find((row) => row.id === bookId);
+  assert.equal(book.isHome, true);
+  assert.equal(book.style, '水彩');
+  assert.equal(book.playable, false);
+  assert.ok(!(await ui('places', 'list', [])).places.some((row) => row.id === bookId), '不可玩不进去哪儿');
+  // 「地点册」里能把它改成能逛的场所
+  const edited = await ui('locations', 'update', [{ id: dockId, revision: snapshot.revision,
+    patch: { venue: { areas: ['栈桥'] } } }]);
+  assert.equal(edited.ok, true, edited.error);
+  assert.ok((await ui('places', 'list', [])).places.some((row) => row.id === dockId), '填了能逛的就进哪儿');
+
+  // 重启不重复迁移
+  await b.world.stop();
+  const b2 = await boot({ dir });
+  const again = JSON.parse(await readFile(join(dir, 'fun', 'venues.json'), 'utf8'));
+  assert.equal(again.venues.filter((row) => row.id === bookId).length, 1);
+  await b2.world.stop();
+});
+
+test('C 版迁移：旧地点库读不出来时不迁、不覆盖 venues，保存被拦', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'fun-migrate-bad-'));
+  const libDir = join(dir, 'fun', 'place-library');
+  await mkdir(libDir, { recursive: true });
+  await writeFile(join(libDir, 'library.json'), 'not-json');
+  await mkdir(join(dir, 'fun'), { recursive: true });
+  const venues = JSON.stringify({ venues: [], overrides: {} });
+  await writeFile(join(dir, 'fun', 'venues.json'), venues);
+
+  const b = await boot({ dir });
+  assert.equal(await readFile(join(dir, 'fun', 'venues.json'), 'utf8'), venues, '坏地点库不许动 venues');
+  const saved = await b.world.webUi('zh').invoke('places', 'save', [{ name: '小院', areas: ['藤椅'] }]);
+  assert.equal(saved.ok, false);
+  assert.match(saved.error, /迁移失败|暂不允许保存地点/);
+  await b.world.stop();
 });

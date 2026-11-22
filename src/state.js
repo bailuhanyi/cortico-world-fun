@@ -1,5 +1,5 @@
 /**
- * 出游状态的纯逻辑：一趟从进门到收摊。
+ * 出游状态的纯逻辑：一趟从进门到回家。
  *
  * 不碰文件、不碰定时器、不碰宿主，便于单测；World 只负责把结果变成工具回执。
  *
@@ -18,7 +18,7 @@
  *   trips: [{ placeId, placeName, scene, outfit, enteredAt, leftAt, visited, souvenirs, photos, events }],
  * }
  *
- * `trips` 只留最近若干条，给 `fun_view` 看；**不收摊不落 trips**——
+ * `trips` 只留最近若干条，给 `fun_view` 看；**不回家不落 trips**——
  * 中途关掉应用等于这趟没逛完，不该在纪念册里出现半趟。
  */
 
@@ -27,6 +27,10 @@ import { normalizeWishes } from './wishes.js';
 import { normalizeStoryProgress } from './story-packs.js';
 import { normalizeExploration, recordExploration } from './exploration.js';
 import { normalizeTimeline, normalizeRoute, normalizeRoutes, addMoment, timelineFor } from './journeys.js';
+import { normalizeStoryCanon } from './story-canon.js';
+import { dmBudget } from './story-dm.js';
+import { normalizeStoryReceipts, storyBudget, AUTO_SEGMENTS } from './story-reliability.js';
+import { FREE_TURN_CAP } from './story-free.js';
 
 /** 纪念册最多留几趟。 */
 export const MAX_TRIPS = 40;
@@ -75,7 +79,7 @@ export function minutesIn(tz, nowMs) {
 
 /** 当天的新状态。 */
 export function newState(day) {
-  return { day, session: null, draft: null, route: null, routes: [], routeSeq: 0, exploration: [], trips: [], collection: [], keepsakeTrips: [], tripSeq: 0, wishes: [] };
+  return { day, session: null, draft: null, route: null, routes: [], routeSeq: 0, exploration: [], storyCanon: [], trips: [], collection: [], keepsakeTrips: [], tripSeq: 0, wishes: [], trash: [] };
 }
 
 export function newTripId(placeId, enteredAt, leftAt) {
@@ -85,6 +89,7 @@ export function newTripId(placeId, enteredAt, leftAt) {
 function seedCollection(trips, timezone = 'Asia/Shanghai') {
   const entries = [];
   for (const trip of Array.isArray(trips) ? trips : []) {
+    if (trip?.storyRun?.canonical === false) continue;
     const placeId = text(trip?.placeId, 40);
     const placeName = text(trip?.placeName, 40) || placeId;
     const day = tripDay(trip, timezone);
@@ -178,14 +183,94 @@ function normalizeAte(v) {
 
 function normalizeChoices(v) {
   const arr = Array.isArray(v) ? v : [];
-  return arr.map((x) => ({ event: text(x?.event, 120), option: text(x?.option, 60), result: text(x?.result, 160), at: Number(x?.at) || 0 })).filter((x) => x.event && x.option).slice(0, 20);
+  return arr.map((x) => ({
+    event: text(x?.event, 120), option: text(x?.option, 60), result: text(x?.result, 160), at: Number(x?.at) || 0,
+    ...(['owner', 'fish', 'joint'].includes(x?.actor) ? { actor: x.actor, label: text(x.label, 100) } : {}),
+    ...(x?.actor === 'fish' && x.reason ? { reason: text(x.reason, 120) } : {}),
+    ...(x?.substituted === true ? { substituted: true } : {}),
+    ...(x?.actor === 'joint' && Array.isArray(x.votes) ? { votes: x.votes.filter((vote) => ['owner', 'fish'].includes(vote.actor) && typeof vote.option === 'string').slice(0, 2).map((vote) => ({ actor: vote.actor, option: text(vote.option, 24) })) } : {}),
+  })).filter((x) => x.event && x.option).slice(0, 20);
+}
+
+const FREE_NAME_RE = /^[a-z0-9_-]{1,24}$/;
+
+/** 自由模式那一趟的持久状态；槽位合法性在读取时按场景包再裁一次。 */
+function normalizeFreeRun(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const turnCeiling = FREE_TURN_CAP * AUTO_SEGMENTS;
+  const turn = Number.isSafeInteger(raw.turn) && raw.turn >= 0 ? Math.min(raw.turn, turnCeiling) : 0;
+  const turnBase = Number.isSafeInteger(raw.turnBase) && raw.turnBase >= 0 ? Math.min(raw.turnBase, turnCeiling) : 0;
+  const segment = Number.isSafeInteger(raw.segment) && raw.segment >= 0 ? Math.min(raw.segment, AUTO_SEGMENTS - 1) : 0;
+  const facts = {};
+  if (raw.facts && typeof raw.facts === 'object' && !Array.isArray(raw.facts)) {
+    for (const [id, value] of Object.entries(raw.facts).slice(0, 24)) {
+      if (FREE_NAME_RE.test(id) && typeof value === 'string') facts[id] = text(value, 200);
+    }
+  }
+  const flags = {};
+  if (raw.flags && typeof raw.flags === 'object' && !Array.isArray(raw.flags)) {
+    for (const [id, value] of Object.entries(raw.flags).slice(0, 24)) {
+      if (FREE_NAME_RE.test(id) && typeof value === 'boolean') flags[id] = value;
+    }
+  }
+  const counters = {};
+  if (raw.counters && typeof raw.counters === 'object' && !Array.isArray(raw.counters)) {
+    for (const [id, value] of Object.entries(raw.counters).slice(0, 24)) {
+      if (FREE_NAME_RE.test(id) && Number.isSafeInteger(value)) counters[id] = Math.min(100, Math.max(0, value));
+    }
+  }
+  const log = (Array.isArray(raw.log) ? raw.log : []).slice(-40).flatMap((entry) => {
+    if (!entry || typeof entry !== 'object') return [];
+    const narration = text(entry.narration, 900);
+    if (!narration) return [];
+    return [{ turn: Number.isSafeInteger(entry.turn) && entry.turn >= 0 ? entry.turn : 0, from: text(entry.from, 40),
+      say: text(entry.say, 200), narration, at: Number.isFinite(Number(entry.at)) ? Number(entry.at) : 0 }];
+  });
+  return { turn, turnBase, segment, facts, flags, counters, summary: text(raw.summary, 200), log,
+    ended: typeof raw.ended === 'string' && FREE_NAME_RE.test(raw.ended) ? raw.ended : null };
+}
+
+function normalizeStoryRun(raw) {
+  const packId = text(raw?.packId, 24);
+  const revision = text(raw?.revision, 60);
+  const title = text(raw?.title, 80);
+  if (!packId || !revision || !title) return {};
+  const seq = Number.isSafeInteger(raw.seq) && raw.seq >= 0 ? raw.seq : 0;
+  const checkpoints = (Array.isArray(raw.checkpoints) ? raw.checkpoints : []).slice(-32).map((item) => {
+    const id = text(item?.id, 80); const nodeId = text(item?.nodeId, 24);
+    if (!id || !nodeId) return null;
+    return { id, nodeId, packId: text(item?.packId, 24) || packId, runId: text(item?.runId, 100) || null, revision: text(item?.revision, 60) || revision,
+      resourceVersion: text(item?.resourceVersion, 80) || 'legacy-unknown',
+      seq: Number.isSafeInteger(item?.seq) && item.seq >= 0 ? item.seq : 0,
+      budget: storyBudget(item?.budget),
+      progress: normalizeStoryProgress(item?.progress), events: textList(item?.events, 16, 120),
+      visited: normalizeVisited(item?.visited), choices: normalizeChoices(item?.choices), timeline: normalizeTimeline(item?.timeline),
+      ...(normalizeFreeRun(item?.free) ? { free: normalizeFreeRun(item?.free) } : {}),
+      pendingChoice: normalizePendingChoice(item?.pendingChoice), at: Number.isFinite(Number(item?.at)) ? Number(item.at) : 0 };
+  }).filter(Boolean);
+  const free = normalizeFreeRun(raw.free);
+  return { storyRun: { packId, revision, title, endingNodeId: text(raw.endingNodeId, 24) || null, seq, budget: storyBudget(raw.budget), dmBudget: dmBudget(raw.dmBudget),
+    ...(free ? { free } : {}),
+    autoplay: raw.autoplay === true,
+    freeCalls: Number.isSafeInteger(raw.freeCalls) && raw.freeCalls >= 0 ? Math.min(raw.freeCalls, 1000) : 0,
+    forkToken: typeof raw.forkToken === 'string' && /^[A-Za-z0-9_-]{16,80}$/.test(raw.forkToken) ? raw.forkToken : null,
+    participation: raw.participation === 'duo' ? 'duo' : 'solo',
+    runId: text(raw.runId, 100) || null, sourceRunId: text(raw.sourceRunId, 100) || null, sourceMemoryId: text(raw.sourceMemoryId, 100) || null,
+    sourceCheckpointId: text(raw.sourceCheckpointId, 80) || null,
+    canonical: raw.canonical !== false, resourceVersion: text(raw.resourceVersion, 80) || 'legacy-unknown', checkpoints } };
 }
 
 function normalizePendingChoice(v) {
   if (!v || typeof v !== 'object') return null;
   const options = Array.isArray(v.options) ? v.options.map((x) => ({ id: text(x?.id, 50), label: text(x?.label, 100), result: text(x?.result, 160) })).filter((x) => x.id && x.label).slice(0, 4) : [];
   const id = text(v.id, 100); const event = text(v.event, 120);
-  return id && event && options.length ? { id, event, area: text(v.area, 40), prompt: text(v.prompt, 160), options } : null;
+  if (!id || !event || !options.length) return null;
+  const votes = {};
+  for (const actor of ['owner', 'fish']) if (typeof v.votes?.[actor] === 'string' && options.some((option) => option.id === v.votes[actor])) votes[actor] = v.votes[actor];
+  const actor = ['owner', 'fish', 'joint'].includes(v.actor) ? v.actor : null;
+  const jointResolution = ['require-agreement', 'owner-final', 'fish-final'].includes(v.jointResolution) ? v.jointResolution : null;
+  return { id, event, area: text(v.area, 40), prompt: text(v.prompt, 160), options,
+    ...(actor ? { actor } : {}), ...(jointResolution ? { jointResolution } : {}), ...(Object.keys(votes).length ? { votes } : {}) };
 }
 
 function normalizeTrip(raw, fallbackId = '') {
@@ -209,18 +294,19 @@ function normalizeTrip(raw, fallbackId = '') {
     phases: [...new Set(textList(raw.phases, 20, 40))],
     branchSeen: [...new Set(textList(raw.branchSeen, 40, 100))],
     storyProgress: normalizeStoryProgress(raw.storyProgress),
+    ...normalizeStoryRun(raw.storyRun),
     timelineTruncated: raw.timelineTruncated === true || (Array.isArray(raw.timeline) && raw.timeline.length > 240),
     timeline: normalizeTimeline(raw.timeline?.length ? raw.timeline : timelineFor({ ...raw, placeName: text(raw.placeName, 40) || placeId })),
     /**
-     * 收摊那天的**本地**日期（YYYY-MM-DD）。
+     * 回家那天的**本地**日期（YYYY-MM-DD）。
      *
      * 为什么单存一个：`leftAt` 是毫秒，换算成「哪天」需要时区。老代码用
      * `toISOString().slice(0,10)` 取 UTC 日期，于是上海时间早上 8 点前收的摊
      * 会被算成前一天——「同一天早上去过两次」会被说成「上一次是昨天」。
-     * 收摊时由 World 按它自己的时区算好存下来，读的人就不用再猜了。
+     * 回家时由 World 按它自己的时区算好存下来，读的人就不用再猜了。
      */
     leftDay: DAY_RE.test(text(raw.leftDay, 10)) ? text(raw.leftDay, 10) : '',
-    /** 收摊时说的那一句（和 `visited[].note` 不是一回事：那是逛某处时记的）。 */
+    /** 回家时说的那一句（和 `visited[].note` 不是一回事：那是逛某处时记的）。 */
     note: text(raw.note, 120),
     favorite: raw.favorite === true,
     visited: normalizeVisited(raw.visited),
@@ -253,6 +339,31 @@ export function outingStatus(state, day, nowMs, ttlMin, timezone = 'Asia/Shangha
 }
 
 /** 兼容旧状态，跨天超时只暂停行程，仍保留已发生的事。 */
+/** 回收站最多留几趟；更早的自动彻底删掉。 */
+export const MAX_TRASH_TRIPS = 30;
+
+/**
+ * 回收站：删除的行程先放这里，可恢复，也可彻底删除。
+ * 只认能解析的行程；同一条不重复放。
+ */
+function normalizeTrash(raw) {
+  if (!Array.isArray(raw)) return [];
+  const out = [];
+  const seen = new Set();
+  for (const entry of raw.slice(-MAX_TRASH_TRIPS * 2)) {
+    const trip = normalizeTrip(entry?.trip);
+    if (!trip || seen.has(trip.id)) continue;
+    seen.add(trip.id);
+    out.push({
+      id: text(entry?.id, 100) || `trash-${trip.id}`,
+      from: entry?.from === 'keepsakeTrips' ? 'keepsakeTrips' : 'trips',
+      deletedAt: Number.isFinite(Number(entry?.deletedAt)) ? Number(entry.deletedAt) : 0,
+      trip,
+    });
+  }
+  return out.slice(-MAX_TRASH_TRIPS);
+}
+
 export function normalizeState(raw, day, nowMs = 0, ttlMin = DEFAULT_TTL_MIN, timezone = 'Asia/Shanghai') {
   if (!raw || typeof raw !== 'object') return newState(day);
   const { session, draft } = outingStatus({
@@ -290,7 +401,10 @@ export function normalizeState(raw, day, nowMs = 0, ttlMin = DEFAULT_TTL_MIN, ti
     route,
     routes: routes.filter((r) => r.id === route?.id || r.id === session?.routeId || r.id === draft?.routeId || [...trips, ...mergeKeptTrips(raw.keepsakeTrips, trips)].some((t) => t.routeId === r.id)),
     exploration,
+    storyCanon: normalizeStoryCanon(raw.storyCanon, [...trips, ...mergeKeptTrips(raw.keepsakeTrips, trips)]),
     wishes: normalizeWishes(raw.wishes),
+    trash: normalizeTrash(raw.trash),
+    ...(raw.storyReceipts ? { storyReceipts: normalizeStoryReceipts(raw.storyReceipts, nowMs) } : {}),
   };
 }
 
@@ -306,7 +420,7 @@ export const DEFAULT_TTL_MIN = 90;
  * 这一趟挂太久没有（跨天时用来判「还认不认昨天那一趟」）。
  *
  * 只看「上次动过之后过了多久」，不看日历。**不传 now 时返回 true**
- * （没有时间可判时宁可留着——丢错了她会「你还没进门呢」，留错了顶多提醒一句收摊）。
+ * （没有时间可判时宁可留着——丢错了她会「你还没进门呢」，留错了顶多提醒一句回家）。
  */
 export function sessionAlive(session, nowMs, ttlMin = DEFAULT_TTL_MIN) {
   if (!session) return false;
@@ -322,7 +436,7 @@ export function sessionAlive(session, nowMs, ttlMin = DEFAULT_TTL_MIN) {
 
 /**
  * 进门：把一处场所变成一趟 session。
- * 已经在逛就**不覆盖**——先让她 `fun_home` 收摊，或者她自己说换地方。
+ * 已经在逛就**不覆盖**——先让她 `fun_home` 回家，或者她自己说换地方。
  *
  * `company` 是「跟谁一起去的」，进 session 也进纪念册：只写进当次回执的话，
  * 「上一次是和阿岚去的」这种话以后永远说不出来。
@@ -365,7 +479,7 @@ export function enterVenue(state, venue, nowMs, random = Math.random, company = 
  * 池子该由 phases 决定，不该在 state 层再算一遍时间）。不传就用场所的全部。
  *
  * 项目按「剩下的优先」取——逛了三次不会连着去同一个过山车。
- * 项目全逛完了就返回 null，让调用方提醒她收摊（而不是硬编一个）。
+ * 项目全逛完了就返回 null，让调用方提醒她回家（而不是硬编一个）。
  */
 export function wanderOnce(state, venue, nowMs, random = Math.random, areas = null, events = null) {
   const s = state.session;
@@ -446,9 +560,9 @@ export function buySouvenir(state, item, nowMs) {
 }
 
 /**
- * 收摊：把 session 收成一条 trip 存进纪念册，返回这一趟和正文要用的摘要。
+ * 回家：把 session 收成一条 trip 存进纪念册，返回这一趟和正文要用的摘要。
  *
- * `note` 是她收摊时说的一句话（可空）。**回执正文由 World 拼**，
+ * `note` 是她回家时说的一句话（可空）。**回执正文由 World 拼**，
  * 这里只给结构化摘要，便于单测断言。
  *
  * `day` 必须由调用方按**本地时区**算好传进来（`dayIn(tz, nowMs)`），
@@ -478,10 +592,11 @@ export function closeSession(state, nowMs, note = '', day = '', timezone = 'Asia
     phases: [...(s.phases ?? [])],
     branchSeen: [...(s.branchSeen ?? [])],
     storyProgress: normalizeStoryProgress(s.storyProgress),
+    ...normalizeStoryRun(s.storyRun),
     timelineTruncated: s.timelineTruncated === true || (s.timeline?.length ?? 0) >= 240,
     timeline: normalizeTimeline(s.timeline),
     leftDay: DAY_RE.test(text(day, 10)) ? text(day, 10) : '',
-    // 收摊这句话以前只出现在回执里，转头就没了：纪念册重看这一趟只剩「逛了哪儿」。
+    // 回家这句话以前只出现在回执里，转头就没了：纪念册重看这一趟只剩「逛了哪儿」。
     // 「今天人很多，但很开心」这种话才是她自己的记录，必须存。
     note: said,
     favorite: false,
@@ -492,11 +607,14 @@ export function closeSession(state, nowMs, note = '', day = '', timezone = 'Asia
     events: [...s.events],
     choices: normalizeChoices(s.choices),
   };
-  addMoment(trip, 'close', said ? '收摊 · ' + said : '收摊', nowMs);
+  addMoment(trip, 'close', said ? '回家 · ' + said : '回家', nowMs);
   state.session = null;
-  state.exploration = recordExploration(state.exploration, trip, timezone);
+  if (trip.storyRun?.canonical !== false) {
+    state.storyCanon = normalizeStoryCanon(state.storyCanon, [trip]);
+    state.exploration = recordExploration(state.exploration, trip, timezone);
+    state.collection = mergeCollection(state.collection, [...new Set(s.souvenirs)].map((name) => ({ placeId: s.placeId, placeName: s.placeName, name, day, at: nowMs, tripId: trip.id })));
+  }
   state.trips.unshift(trip);
-  state.collection = mergeCollection(state.collection, [...new Set(s.souvenirs)].map((name) => ({ placeId: s.placeId, placeName: s.placeName, name, day, at: nowMs, tripId: trip.id })));
   const savedTrip = state.keepsakeTrips?.find((x) => x.id === trip.id);
   if (savedTrip) state.keepsakeTrips = state.keepsakeTrips.map((x) => x.id === trip.id ? structuredClone(trip) : x);
   if (state.trips.length > MAX_TRIPS) state.trips.length = MAX_TRIPS;
@@ -517,7 +635,7 @@ export function favoriteTrip(state, id, keep = true) {
   return { ok: true, trip, kept: keep };
 }
 
-/** 这一趟挂太久了没？超过 ttlMin 就该提醒收摊（但绝不替她收）。 */
+/** 这一趟挂太久了没？超过 ttlMin 就该提醒回家（但绝不替她收）。 */
 export function isStale(session, nowMs, ttlMin) {
   if (!session) return false;
   const ttl = Math.max(1, Math.round(Number(ttlMin) || 0));
@@ -530,7 +648,7 @@ export function visitedText(session) {
   return session.visited.map((v) => v.area).join('、');
 }
 
-/** 一趟的一句话说人话，给收摊正文和 fun_view 共用。 */
+/** 一趟的一句话说人话，给回家正文和 fun_view 共用。 */
 export function tripSummary(trip) {
   if (!trip) return '';
   const parts = [trip.placeName];
@@ -546,7 +664,7 @@ export function tripSummary(trip) {
 /**
  * 这一趟算哪一天（本地日期）。
  *
- * 优先用收摊时存下的 `leftDay`；旧记录按当前插件时区解释时间戳。
+ * 优先用回家时存下的 `leftDay`；旧记录按当前插件时区解释时间戳。
  * 只在读取时换算，不迁移、不改写旧记录；无法还原旧记录当时未保存的时区。
  */
 export function tripDay(trip, timezone = 'Asia/Shanghai') {
@@ -585,7 +703,7 @@ export function venueBundle(venue, random = Math.random) {
   };
 }
 
-/** 场所库里有这个 id 吗（收摊后仍能按 id 回查，给 fun_view 用）。 */
+/** 场所库里有这个 id 吗（回家后仍能按 id 回查，给 fun_view 用）。 */
 export function venueById(id) {
   return VENUES.find((v) => v.id === id) ?? null;
 }

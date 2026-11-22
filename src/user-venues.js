@@ -27,6 +27,21 @@ const TEXT = (v, max) => (typeof v === 'string' ? v.replace(/\s+/g, ' ').trim().
 export const USER_PREFIX = 'user-';
 
 /**
+ * 旧「地点库」写下的 id 前缀：`place-<uuid>`（43 字符）或 `place-import-<hash>`。
+ *
+ * C 版把地点库并进 venues.json 时必须**保留原 id**，否则 relations / home /
+ * 故事绑定 / 历史行程里的 placeId 全断。所以 id 校验得认这个前缀，
+ * 且不能顺手给它加 `user-`（加了就和旧数据对不上了）。
+ */
+export const LEGACY_PREFIX = 'place-';
+
+/** 这个 id 是不是「用户自己的地点」（含从旧地点库迁过来的）。 */
+export function isUserPlaceId(id) {
+  return typeof id === 'string'
+    && (id.startsWith(USER_PREFIX) || id.startsWith(LEGACY_PREFIX));
+}
+
+/**
  * 允许用户改的字段（B 阶段对预设开放的就是这些）。
  *
  * 刻意不开放：`scene`（素材库正名，用户不知道库里有什么，硬填只会「库里没找到」）、
@@ -64,10 +79,16 @@ function cleanList(v, maxItems, maxLen) {
   return out;
 }
 
-/** 场所 id 只允许小写字母数字和连字符，避免和预设或路径打架。 */
+/**
+ * 场所 id：小写字母数字和连字符，最多 64 字符。
+ *
+ * 认 `user-`（自己新建）和 `place-`（旧地点库迁进来的）两种前缀；
+ * 其它只给一个裸 id，由调用方决定加不加 `user-`。
+ */
 function cleanId(v) {
   const s = String(v ?? '').trim().toLowerCase();
-  if (!/^[a-z0-9][a-z0-9-]{1,40}$/.test(s)) return '';
+  if (s.length > 64) return '';
+  if (!/^(?:user-|place-)?[a-z0-9][a-z0-9-]{0,62}$/.test(s)) return '';
   return s;
 }
 
@@ -83,22 +104,27 @@ export function cleanUserVenue(raw, { requireId = true } = {}) {
   if (!raw || typeof raw !== 'object') return { venue: null, problems: ['不是一个对象'] };
 
   let id = cleanId(raw.id);
-  if (requireId && !id) problems.push('id 只能用英文小写、数字和连字符');
-  if (id && !id.startsWith(USER_PREFIX)) id = `${USER_PREFIX}${id}`;
+  if (requireId && !id) problems.push('id 只能用英文小写、数字和连字符（最多 64 位）');
+  // 旧的 `place-` id 原样保留（迁移要接住 relations/home/故事绑定）；
+  // 其它裸 id 补上 `user-`，和预设常量分开。
+  if (id && !isUserPlaceId(id)) id = `${USER_PREFIX}${id}`;
 
   const name = TEXT(raw.name, 40);
   if (!name) problems.push('名字不能空');
 
+  // 一处「地点」是不是能逛，只看有没有能逛的：有就是场所，没有就只是地图上的一个点。
+  // C 版把这两种都存进 venues.json，用 `playable` 记着，面板不必再分两套。
+  const areas = cleanList(raw.areas, 30, 40);
+  const playable = raw.playable === false ? false : areas.length > 0;
+  if (raw.playable === true && !areas.length) problems.push('至少要写一处能逛的');
+
   const hours = raw.hours && typeof raw.hours === 'object' ? raw.hours : {};
-  const open = cleanHm(hours.open) || '09:00';
-  const close = cleanHm(hours.close) || '21:00';
+  const open = cleanHm(hours.open) || (playable ? '09:00' : '00:00');
+  const close = cleanHm(hours.close) || (playable ? '21:00' : '23:59');
   if (raw.hours && (!cleanHm(hours.open) || !cleanHm(hours.close))) {
     problems.push('开放时段要写成 HH:MM，例如 09:00 / 21:00');
   }
-  if (open === close) problems.push('开门和关门时间不能一样');
-
-  const areas = cleanList(raw.areas, 30, 40);
-  if (!areas.length) problems.push('至少要写一处能逛的');
+  if (playable && open === close) problems.push('开门和关门时间不能一样');
 
   const crowd = CROWD_OK.has(raw.crowd) ? raw.crowd : 'normal';
 
@@ -118,13 +144,16 @@ export function cleanUserVenue(raw, { requireId = true } = {}) {
   return {
     venue: {
       id,
-      kind: 'custom',
+      // 分类只影响筛选：自建的默认 `custom`，从地点册/旧地点库来的一律保留原分类。
+      kind: TEXT(raw.kind, 40) || 'custom',
+      playable,
       name,
       aliases: cleanList(raw.aliases, 8, 40),
       tags: cleanList(raw.tags, 10, 20),
       desc: TEXT(raw.desc, 400) || `${name}：这样一个地方。`,
-      // 用户不知道素材库里有什么，一律不给 scene（等于「库里没有」，下游会明说不用填）。
-      scene: '',
+      // 场景名是素材库里的正名。用户自己填时等于「库里没有」（下游会明说不用填），
+      // 但从地点册升级来的地点会把原来的场景名带过来，所以这里只做透传、不做拦截。
+      scene: TEXT(raw.scene, 40),
       recommendedOutfit: TEXT(raw.recommendedOutfit, 40),
       crowd,
       hours: { open, close },
@@ -293,13 +322,13 @@ export function parseVenueFile(raw) {
   if (Array.isArray(src.venues)) {
     for (const item of src.venues) {
       const { venue } = cleanUserVenue(item, { requireId: false });
-      if (venue && String(venue.id).startsWith(USER_PREFIX)) venues.push(venue);
+      if (venue && isUserPlaceId(venue.id)) venues.push(venue);
     }
   }
   const overrides = {};
   if (src.overrides && typeof src.overrides === 'object' && !Array.isArray(src.overrides)) {
     for (const [id, fields] of Object.entries(src.overrides)) {
-      if (!id || String(id).startsWith(USER_PREFIX)) continue;
+      if (!id || isUserPlaceId(id)) continue;
       if (!fields || typeof fields !== 'object' || Array.isArray(fields)) continue;
       const clean = {};
       for (const key of OVERRIDABLE) {
