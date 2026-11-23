@@ -1,6 +1,14 @@
-# 从0开始的肥鱼大冒险 0.7.5（故事工坊收口，已装机）交接文档
+# 从0开始的肥鱼大冒险 0.7.6（修复共同决定，待发布）交接文档
 
-更新日期：2026-11-23 下午（Asia/Shanghai）。本文是当前接手的入口；**本轮的详细接手（0.7.5 故事工坊 + 0.7.4 地点册、装机步骤、坑）见 [`HANDOFF-2026-11-23-0.7.5-接手.md`](HANDOFF-2026-11-23-0.7.5-接手.md)**；地点册版式重做的过程记录见 [`HANDOFF-2026-11-23-地点册版式-交接.md`](HANDOFF-2026-11-23-地点册版式-交接.md)。
+更新日期：2026-11-23 晚（Asia/Shanghai）。本文是当前接手的入口；**本轮的详细接手（0.7.5 故事工坊 + 0.7.4 地点册、装机步骤、坑）见 [`HANDOFF-2026-11-23-0.7.5-接手.md`](HANDOFF-2026-11-23-0.7.5-接手.md)**；地点册版式重做的过程记录见 [`HANDOFF-2026-11-23-地点册版式-交接.md`](HANDOFF-2026-11-23-地点册版式-交接.md)。
+
+> **发布状态（2026-11-23 20:3x，0.7.6）**：修共同决定（两席同票）——**异票不再吞掉对方那一票**。已提交、已打包，**未 push、未发 npm**（npm 上 latest 仍是 0.7.5）。
+> - 根因：`src/world.js` 异票分支「只保留后投的那一票」，主人投 A、鱼投 B 后主人那票被删；再投又把鱼的删掉，两人只能互相清票，永远凑不出「两边一致」，面板停在「现在轮到你 / 轮到鱼」。现在异票时两票都保留，谁都能改自己那一票，改成一致才前进；`fun_story_act` 支持 `as: "fish"` / `"owner"`；异票僵住时「先回家」仍可用。
+> - 产物：`story-world\artifacts\release-0.7.6\`。`cortico-world-fun-0.7.6.tgz` **1,716,751 B** / SHA-256 `6E8327730C05D62CF04A68DFC55456E1DFDEFFC9AAF4D859DFCB3B94AA903F2E`；群友包 **1,743,009 B** / `2D96793A06607C9DA0C80C389075EC2308A51C4D4651465C2111378B7FDEBA15`；`dist/webui.js` `C71EBB9B020D7BEB64156714434530831808CEAC9E2CF72AA5970A45F472BD10`（与 0.7.5 不同，面板文案改了）。`verify-published` 通过。
+> - **简介重写**：`package.json` 的顶层 description 与中英 `locales.description` 改成产品介绍，不再逐版罗列历史（版本细节只留 `CHANGELOG.md`）。0.7.6 中文简介 763 字、英文 1,631 字。
+> - 本机 Coo 的 vendor 已手工同步 `src/world.js` + `dist/webui.js`（备份 `*.bak-20261123-202311`），**版本号仍写着 0.7.5**；要让它显示 0.7.6，需在 Coo 退出后跑 `install.ps1 -CooRoot E:\Coopanion`。
+> - 测试：`test/story-text.test.mjs` 新增三条回归（异票不吞票、鱼改自己那一票不顶掉主人、异票僵住能回家）；全量 `npm test` 需完整权限（DPAPI 用例在受限沙箱里假失败），`npm run verify` 全绿。
+> - **已知既存问题（与本次无关）**：全量 `npm test` 串跑时 `test/story-stages.test.mjs` 会随机挂**一条**，每轮挂的还不是同一条（见过 `images remain independent…`、`live DM config disable…`、`reference audiences…`）；单独跑 3 次全过 11/11，stash 掉本次改动后的干净基线同样会挂。像是全量串跑的时序/资源竞争，待单独排查。
 
 > **发布状态（2026-11-23 15:5x，已装机，取代下面 14:5x 那条）**：0.7.5 **已装进本机 Coo**。装机时间 15:50:13，`npm run verify` 与全量 `npm test` 此前已全绿；源码已本地提交（`44993cd`）。
 > - 装机核验：vendor `package.json` = 0.7.5；`/api/extensions` 里 `cortico-world-fun` **0.7.5 / `state=loaded` / `enabled=true` / `webUi=served`**；`/assets/extensions/cortico-world-fun/0.7.5/webui.js` 200、**452,497 B**、SHA-256 `0C879FC80BDFD9B6772C327F2421A3505EFD3BA7604DD436F67547774DE551D3` 与 `dist/webui.js` 一致；日志 `[15:51:24] worlds.fun: 从0开始的肥鱼大冒险已启动`；`node_modules\cortico-world-fun` junction 与 `data\extensions\package.json` 的 `file:` 依赖均指向 vendor。
