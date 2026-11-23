@@ -4,7 +4,8 @@
 
 > **发布状态（2026-11-23 20:3x，0.7.6）**：修共同决定（两席同票）——**异票不再吞掉对方那一票**。已提交、已打包，**未 push、未发 npm**（npm 上 latest 仍是 0.7.5）。
 > - 根因：`src/world.js` 异票分支「只保留后投的那一票」，主人投 A、鱼投 B 后主人那票被删；再投又把鱼的删掉，两人只能互相清票，永远凑不出「两边一致」，面板停在「现在轮到你 / 轮到鱼」。现在异票时两票都保留，谁都能改自己那一票，改成一致才前进；`fun_story_act` 支持 `as: "fish"` / `"owner"`；异票僵住时「先回家」仍可用。
-> - 产物：`story-world\artifacts\release-0.7.6\`。`cortico-world-fun-0.7.6.tgz` **1,716,751 B** / SHA-256 `6E8327730C05D62CF04A68DFC55456E1DFDEFFC9AAF4D859DFCB3B94AA903F2E`；群友包 **1,743,009 B** / `2D96793A06607C9DA0C80C389075EC2308A51C4D4651465C2111378B7FDEBA15`；`dist/webui.js` `C71EBB9B020D7BEB64156714434530831808CEAC9E2CF72AA5970A45F472BD10`（与 0.7.5 不同，面板文案改了）。`verify-published` 通过。
+> - 产物：`story-world\artifacts\release-0.7.6\`。`cortico-world-fun-0.7.6.tgz` **1,716,751 B** / SHA-256 `6E8327730C05D62CF04A68DFC55456E1DFDEFFC9AAF4D859DFCB3B94AA903F2E`；`dist/webui.js` `C71EBB9B020D7BEB64156714434530831808CEAC9E2CF72AA5970A45F472BD10`（与 0.7.5 不同，面板文案改了）。`verify-published` 通过。
+> - **约定变更（用户 2026-11-23 定）：以后不再打「群友测试包」zip**，发布产物只出 tgz + 安装形态目录（`cortico-world-fun-x.y.z\`，含 `install.ps1` / `安装.cmd` / `安装说明.md`）。0.7.6 的 zip 生成后已删除，`安装说明.md` 标题同步改成「本地安装包」。
 > - **简介重写**：`package.json` 的顶层 description 与中英 `locales.description` 改成产品介绍，不再逐版罗列历史（版本细节只留 `CHANGELOG.md`）。0.7.6 中文简介 763 字、英文 1,631 字。
 > - 本机 Coo 的 vendor 已手工同步 `src/world.js` + `dist/webui.js`（备份 `*.bak-20261123-202311`），**版本号仍写着 0.7.5**；要让它显示 0.7.6，需在 Coo 退出后跑 `install.ps1 -CooRoot E:\Coopanion`。
 > - 测试：`test/story-text.test.mjs` 新增三条回归（异票不吞票、鱼改自己那一票不顶掉主人、异票僵住能回家）；全量 `npm test` 需完整权限（DPAPI 用例在受限沙箱里假失败），`npm run verify` 全绿。
