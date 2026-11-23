@@ -4,6 +4,7 @@ import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ACTIVITIES, blankRoom, defaultActivityAt, HomeRoom, HomeRoomError, phaseAtHour } from '../src/home-room.js';
+import { cleanup } from './tmp.mjs';
 
 const PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
 const OTHER_PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
@@ -12,7 +13,7 @@ const dataUrl = (base64) => `data:image/png;base64,${base64}`;
 async function home(t) {
   const dir = await mkdtemp(join(tmpdir(), 'fun-home-room-'));
   const room = new HomeRoom({ dataDir: dir });
-  t.after(() => rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 25 }));
+  cleanup(t, dir);
   return { dir, room, file: join(dir, 'fun', 'home', 'room.json'), art: join(dir, 'fun', 'home', 'art') };
 }
 

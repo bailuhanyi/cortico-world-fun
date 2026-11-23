@@ -14,6 +14,7 @@ import { join } from 'node:path';
 import { DEFAULTS } from '../src/config.js';
 import { funDefinition } from '../src/definition.js';
 import { FunWorld } from '../src/world.js';
+import { cleanup } from './tmp.mjs';
 
 const TZ = 'Asia/Shanghai';
 const NOW = Date.parse('2026-11-22T21:30:00+08:00');
@@ -24,7 +25,7 @@ async function mount(t) {
     cfg: { ...DEFAULTS, enabled: true }, dataDir: dir, timezone: TZ, now: () => NOW, persist: () => {},
   });
   await world.start({ log: { info() {}, warn() {} } });
-  t.after(async () => { await world.stop(); await rm(dir, { recursive: true, force: true }); });
+  cleanup(t, dir, world);
   const tool = (name) => world.tools().find((item) => item.name === name).handler;
   return { dir, world, tool, stateFile: join(dir, 'fun', 'state.json'), roomFile: join(dir, 'fun', 'home', 'room.json') };
 }

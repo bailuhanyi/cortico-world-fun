@@ -1,23 +1,27 @@
-import test from 'node:test';
+import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { DEFAULTS } from '../src/config.js';
 import { FunWorld } from '../src/world.js';
 import { VENUES } from '../src/venues.js';
 import funDefinition from '../src/definition.js';
+import { cleanupAll, tempDir, trackWorld } from './tmp.mjs';
+
+// 临时目录与 World 统一登记：文件结束时先 stop 再删（见 test/tmp.mjs）。
+after(cleanupAll);
+const makeWorld = (options) => trackWorld(new FunWorld(options));
 
 const TZ = 'Asia/Shanghai';
 const at = (s) => Date.parse(s);
 
 async function boot(overrides = {}) {
-  const dir = overrides.dir ?? await mkdtemp(join(tmpdir(), 'fun-'));
+  const dir = overrides.dir ?? await tempDir('fun-');
   let now = overrides.now ?? at('2026-11-15T14:00:00+08:00');
   const persisted = [];
   const host = { log: { info() {}, warn() {}, error() {} } };
-  const world = new FunWorld({
+  const world = makeWorld({
     cfg: { ...DEFAULTS, enabled: true, ...overrides.cfg },
     dataDir: dir,
     timezone: TZ,
@@ -34,7 +38,7 @@ async function boot(overrides = {}) {
 }
 
 test('definition 的 create() 必须纯：不读盘、不建目录、不起定时器', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'fun-pure-'));
+  const dir = await tempDir('fun-pure-');
   const w = funDefinition.create({ cfg: {}, dataDir: dir, timezone: TZ });
   assert.equal(typeof w, 'object');
   // 纯的意思：create 之后目录里什么都还没建。
@@ -95,15 +99,15 @@ test('envPromptVars 不常驻完整地点清单，关闭时同样为空', async 
   const b = await boot();
   assert.equal(b.world.envPromptVars().fun_places_block, '');
 
-  const off = new FunWorld({ cfg: { ...DEFAULTS, funOn: false }, dataDir: b.dir, timezone: TZ });
+  const off = makeWorld({ cfg: { ...DEFAULTS, funOn: false }, dataDir: b.dir, timezone: TZ });
   await off.start({ log: { info() {}, warn() {} } });
   assert.equal(off.envPromptVars().fun_places_block, '');
 });
 
 test('配置段缺键会被补齐（宿主 /api/config 不合并 defaults）', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'fun-cfg-'));
+  const dir = await tempDir('fun-cfg-');
   const persisted = [];
-  const world = new FunWorld({
+  const world = makeWorld({
     cfg: { enabled: true, funOn: true }, // 只给了两项
     dataDir: dir,
     timezone: TZ,
@@ -128,9 +132,9 @@ test('配置段缺键会被补齐（宿主 /api/config 不合并 defaults）', a
 });
 
 test('缺键补齐：盘上已有的值一个都不覆盖', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'fun-cfg2-'));
+  const dir = await tempDir('fun-cfg2-');
   const persisted = [];
-  const world = new FunWorld({
+  const world = makeWorld({
     cfg: {
       enabled: true, funOn: false, funSessionTTLMin: 30,
       funAskReport: false, funTasteFromFeast: false, funHomeAutoGo: false, funStoryImages: false, funStoryDM: true,
@@ -616,7 +620,7 @@ test('自填地点：重启之后还在', async () => {
   assert.equal(saved.ok, true);
   await b.world.stop();
 
-  const world2 = new FunWorld({
+  const world2 = makeWorld({
     cfg: { ...DEFAULTS, enabled: true },
     dataDir: b.dir,
     timezone: TZ,
@@ -686,7 +690,7 @@ test('B 阶段：预设改动重启后还在；恢复一处 / 恢复全部都回
   assert.equal((await ui('places', 'list', [])).overriddenCount, 2);
 
   await b.world.stop();
-  const world2 = new FunWorld({
+  const world2 = makeWorld({
     cfg: { ...DEFAULTS, enabled: true }, dataDir: b.dir, timezone: TZ,
     now: () => at('2026-11-15T14:00:00+08:00'), random: () => 0,
   });
@@ -968,7 +972,7 @@ test('重启后同一趟还在（同一天）', async () => {
   await b.tool('fun_go')({ place: '庙会' });
   await b.tool('fun_wander')({ area: '抽签处' });
 
-  const world2 = new FunWorld({
+  const world2 = makeWorld({
     cfg: { ...DEFAULTS, enabled: true },
     dataDir: b.dir,
     timezone: TZ,
@@ -1210,7 +1214,7 @@ const legacyLibrary = (places, homeId) => ({
 });
 
 test('C 版迁移：旧地点库的地点和原 id 并进 venues，画风 / home / 关联不断', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'fun-migrate-'));
+  const dir = await tempDir('fun-migrate-');
   const libDir = join(dir, 'fun', 'place-library');
   await mkdir(libDir, { recursive: true });
   const bookId = 'place-11111111-1111-4111-8111-111111111111';
@@ -1260,7 +1264,7 @@ test('C 版迁移：旧地点库的地点和原 id 并进 venues，画风 / home
 });
 
 test('C 版迁移：旧地点库读不出来时不迁、不覆盖 venues，保存被拦', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'fun-migrate-bad-'));
+  const dir = await tempDir('fun-migrate-bad-');
   const libDir = join(dir, 'fun', 'place-library');
   await mkdir(libDir, { recursive: true });
   await writeFile(join(libDir, 'library.json'), 'not-json');

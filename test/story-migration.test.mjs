@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { StoryLibrary, ADDITIONAL_STORY_IDS, ADDITIONAL_STORY_MIGRATION, PROMOTED_STORY_IDS, PROMOTED_STORY_MIGRATION, RETIRED_STORY_IDS, STORY_PRESET_MIGRATION, migratePromotedStoryCopies, migrateStoryPresets } from '../src/story-library.js';
 import { BUILTIN_STORY_PACKS, SAMPLE_STORY, storyFixtureJson } from './fixtures/story-presets.mjs';
 import { BUILTIN_STORY_PACKS as SHIPPED_STORY_PACKS } from '../src/story-examples.js';
+import { cleanup } from './tmp.mjs';
 
 const plain = (pack) => JSON.parse(storyFixtureJson(pack));
 const minimal = (id, title = id) => ({ ...plain(BUILTIN_STORY_PACKS[0]), id, title });
@@ -17,7 +18,7 @@ const makeRaw = () => ({ version: 1,
 
 test('migration removes exactly five fixed IDs, preserves the original backup and unrelated fields', async (t) => {
   const dir = await mkdtemp(join(tmpdir(), 'fun-r4-migration-'));
-  t.after(() => rm(dir, { recursive: true, force: true }));
+  cleanup(t, dir);
   const file = join(dir, 'stories.json');
   const raw = makeRaw();
   const source = JSON.stringify(raw, null, 2) + '\n';
@@ -34,7 +35,7 @@ test('migration removes exactly five fixed IDs, preserves the original backup an
 
 test('completed migration never removes a later user story reusing a retired ID', async (t) => {
   const dir = await mkdtemp(join(tmpdir(), 'fun-r4-once-'));
-  t.after(() => rm(dir, { recursive: true, force: true }));
+  cleanup(t, dir);
   const file = join(dir, 'stories.json');
   const raw = { version: 1, packs: [minimal('my-original-story')], disabledIds: [], migrations: { [STORY_PRESET_MIGRATION]: true } };
   const source = JSON.stringify(raw, null, 2);
@@ -52,7 +53,7 @@ test('completed migration never removes a later user story reusing a retired ID'
 
 test('backup failure leaves source byte-for-byte intact and blocks StoryLibrary writes', async (t) => {
   const dir = await mkdtemp(join(tmpdir(), 'fun-r4-fail-'));
-  t.after(() => rm(dir, { recursive: true, force: true }));
+  cleanup(t, dir);
   const file = join(dir, 'stories.json');
   const source = JSON.stringify(makeRaw(), null, 2);
   await writeFile(file, source, 'utf8');
@@ -78,7 +79,7 @@ test('backup failure leaves source byte-for-byte intact and blocks StoryLibrary 
 
 test('replacement failure retains the exact backup and original without leaving a migration temp file', async (t) => {
   const dir = await mkdtemp(join(tmpdir(), 'fun-r4-rename-fail-'));
-  t.after(() => rm(dir, { recursive: true, force: true }));
+  cleanup(t, dir);
   const file = join(dir, 'stories.json');
   const raw = makeRaw();
   const source = JSON.stringify(raw) + '\r\n';
@@ -93,7 +94,7 @@ test('replacement failure retains the exact backup and original without leaving 
 
 test('new built-in promotion backs up and removes only exact copies of the two newly added stories', async (t) => {
   const dir = await mkdtemp(join(tmpdir(), 'fun-new-builtins-'));
-  t.after(() => rm(dir, { recursive: true, force: true }));
+  cleanup(t, dir);
   const file = join(dir, 'stories.json');
   const withoutRevision = (pack) => { const copy = structuredClone(pack); delete copy.revision; return copy; };
   const bridge = withoutRevision(SHIPPED_STORY_PACKS.find(({ id }) => id === ADDITIONAL_STORY_IDS[0]));
@@ -119,7 +120,7 @@ test('new built-in promotion backs up and removes only exact copies of the two n
 
 test('StoryLibrary upgrade after the 0.3.3 migration also promotes the two newly built-in stories', async (t) => {
   const dir = await mkdtemp(join(tmpdir(), 'fun-new-builtins-upgrade-'));
-  t.after(() => rm(dir, { recursive: true, force: true }));
+  cleanup(t, dir);
   const file = join(dir, 'stories.json');
   const withoutRevision = (pack) => { const copy = structuredClone(pack); delete copy.revision; return copy; };
   const bridge = withoutRevision(SHIPPED_STORY_PACKS.find(({ id }) => id === ADDITIONAL_STORY_IDS[0]));

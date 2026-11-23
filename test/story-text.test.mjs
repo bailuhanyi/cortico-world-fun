@@ -4,12 +4,13 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { FunWorld } from '../src/world.js';
 import { jointActor, jointStage } from '../src/joint.js';
+import { cleanup } from './tmp.mjs';
 
 const AT = '2026-11-22T14:00:00+08:00';
 
 async function boot(t, options = {}) {
   const dir = await mkdtemp(join(process.env.TEMP || process.cwd(), 'fun-text-'));
-  t.after(() => rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 25 }));
+  cleanup(t, dir);
   const cognition = options.cognition ?? { request: async () => ({ text: JSON.stringify({ optionId: 'left', reason: '随便' }) }) };
   const cfg = { enabled: true, funStoryTextOn: true, ...(options.cfg ?? {}) };
   const now = options.now ?? (() => Date.parse(AT));

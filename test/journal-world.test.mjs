@@ -1,13 +1,13 @@
-import test from 'node:test';
+import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { readFile } from 'node:fs/promises';
 import { FunWorld } from '../src/world.js';
+import { cleanupAll, tempDir, trackWorld } from './tmp.mjs';
+after(cleanupAll);
 async function boot(opts={}) {
-  const dir=opts.dir ?? await mkdtemp(join(tmpdir(),'fun-journal-'));
+  const dir=opts.dir ?? await tempDir('fun-journal-');
   let now=opts.now ?? Date.parse('2026-11-19T18:00:00+08:00');
-  const world=new FunWorld({cfg:{enabled:true},dataDir:dir,timezone:'Asia/Shanghai',now:()=>now,random:()=>0});
+  const world=trackWorld(new FunWorld({cfg:{enabled:true},dataDir:dir,timezone:'Asia/Shanghai',now:()=>now,random:()=>0}));
   await world.start({log:{info(){},warn(){}}});
   return {dir,world,tool:(name,args={})=>world.tools().find((x)=>x.name===name).handler(args),setNow:(n)=>{now=n;},data:(panel='places',method='list',args=[])=>world.webUi().invoke(panel,method,args)};
 }

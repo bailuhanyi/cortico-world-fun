@@ -7,6 +7,8 @@
  * 用法：test('名字', fn) 注册，最后 await report() 跑完并决定退出码。
  * 注意 `report()` 必须 `await`——不 await 的话测试还没跑完进程就退出了。
  */
+import { cleanupAll } from './tmp.mjs';
+
 const tests = [];
 
 export function test(name, fn) {
@@ -28,6 +30,8 @@ export async function report() {
     }
   }
   console.log(`\n${passed}/${tests.length} 通过`);
+  // 先停 World 再删临时目录：迟到的写盘落进 rm 会 ENOTEMPTY（见 test/tmp.mjs）。
+  await cleanupAll();
   if (failed.length) process.exitCode = 1;
   return failed.length;
 }

@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { PlaceLibrary } from '../src/place-library.js';
+import { cleanup } from './tmp.mjs';
 
 const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aJ1sAAAAASUVORK5CYII=';
 const venue = { id: 'creek', name: 'Creek', desc: 'Authoritative text', kind: 'park',
@@ -52,7 +53,7 @@ function venueStore(initial) {
 
 async function setup(t, initial = [venue]) {
   const root = await mkdtemp(join(tmpdir(), 'fun-place-test-'));
-  t.after(() => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 25 }));
+  cleanup(t, root);
   const store = venueStore(initial);
   const library = () => new PlaceLibrary({ userDataDir: root, venues: store.read,
     saveVenue: (raw) => store.saveVenue(raw), removeVenue: (id) => store.removeVenue(id) });

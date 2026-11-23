@@ -4,10 +4,11 @@ import * as fs from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { migrateSampleVenue, markVenueMigration, RETIRED_SAMPLE_VENUE_ID } from '../src/story-venue-migration.js';
+import { cleanup } from './tmp.mjs';
 
 async function rig(t) {
   const dir = await fs.mkdtemp(join(tmpdir(), 'fun-venue-033-'));
-  t.after(() => fs.rm(dir, { recursive: true, force: true }));
+  cleanup(t, dir);
   return { dir, file: join(dir, 'venues.json') };
 }
 

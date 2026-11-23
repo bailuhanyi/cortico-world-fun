@@ -13,6 +13,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DEFAULTS } from '../src/config.js';
 import { FunWorld } from '../src/world.js';
+import { cleanup } from './tmp.mjs';
 
 const TZ = 'Asia/Shanghai';
 const NOW = Date.parse('2026-11-22T21:30:00+08:00');
@@ -44,7 +45,7 @@ async function mount(t, { seed = null } = {}) {
     cfg: { ...DEFAULTS, enabled: true }, dataDir: dir, timezone: TZ, now: () => NOW, persist: () => {},
   });
   await world.start({ log: { info() {}, warn() {} } });
-  t.after(async () => { await world.stop(); await rm(dir, { recursive: true, force: true }); });
+  cleanup(t, dir, world);
   const call = (method, payload) => world.webUi('zh').invoke('home', method, payload === undefined ? [] : [payload]);
   return { dir, world, call, stateFile: join(dir, 'fun', 'state.json') };
 }

@@ -13,10 +13,10 @@
  */
 import { test, report } from './harness.mjs';
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { loadStandaloneWebUi } from '../tools/load-webui.mjs';
+import { tempDir, trackWorld } from './tmp.mjs';
 
 const loadPanelClient = () => loadStandaloneWebUi(new URL('../dist/webui.js', import.meta.url));
 
@@ -200,16 +200,16 @@ const run = `${process.pid}-${Date.now().toString(36)}`;
 
 async function mountPanels({ language = 'zh', failList = false, cfg = {}, nowMs, random = () => 0.42 } = {}) {
   // 每个用例一个独立目录：共用的话，上一趟的 session 会漏到下一个用例里。
-  const dataDir = await mkdtemp(join(tmpdir(), `fun-panels-${run}-${seq += 1}-`));
+  const dataDir = await tempDir(`fun-panels-${run}-${seq += 1}-`);
   let now = nowMs ?? Date.parse('2026-11-15T14:00:00+08:00');
-  const world = new FunWorld({
+  const world = trackWorld(new FunWorld({
     cfg: { ...DEFAULTS, enabled: true, ...cfg },
     dataDir,
     timezone: 'Asia/Shanghai',
     now: () => now,
     random,
     persist: () => {},
-  });
+  }));
   await world.start({ log: { info() {}, warn() {} } });
   const decl = world.webUi(language);
 
@@ -1445,7 +1445,7 @@ test('book 面板可珍藏和取消珍藏，重载后仍保留', async () => {
   favorite.fire();
   await waitFor(() => root.querySelector('.fun-trip')?.findByText('取消珍藏'), '服务端写入珍藏');
   await world.stop();
-  const restarted = new FunWorld({ cfg: { enabled: true }, dataDir: world.dataDir, timezone: 'Asia/Shanghai' });
+  const restarted = trackWorld(new FunWorld({ cfg: { enabled: true }, dataDir: world.dataDir, timezone: 'Asia/Shanghai' }));
   await restarted.start({ log: { info() {}, warn() {} } });
   data = await restarted.webUi('zh').invoke('book', 'list', []);
   assert.equal(data.keepsakeCount, 1);

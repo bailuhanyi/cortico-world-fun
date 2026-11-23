@@ -7,6 +7,7 @@ import { FunWorld } from '../src/world.js';
 import { StorySecrets } from '../src/story-secrets.js';
 import { DEFAULTS, configGroup, text } from '../src/config.js';
 import { SAMPLE_STORY, SAMPLE_VENUE } from './fixtures/story-presets.mjs';
+import { cleanup } from './tmp.mjs';
 
 const VENUE = { ...SAMPLE_VENUE, id: 'user-config-venue' };
 const STORY = { ...SAMPLE_STORY, id: 'user-config-story', placeId: VENUE.id };
@@ -30,7 +31,7 @@ async function rig(t, options = {}) {
   await world.start(host);
   const call = (method, payload = {}) => world.webUi().invoke('story', method, [payload]);
   const panel = (id, method, payload = {}) => world.webUi().invoke(id, method, [payload]);
-  t.after(async () => { await world.stop(); await rm(dir, { recursive: true, force: true }); });
+  cleanup(t, dir, world);
   const start = async () => {
     success(await panel('places', 'save', VENUE));
     success(await call('authorImport', { json: JSON.stringify(STORY), replace: true }));
@@ -90,7 +91,7 @@ test('story node limit reads configuration, zero means unlimited, and lowering i
 
 test('old story-node-limit.json migrates into config once and a configured value always wins', async (t) => {
   const dir = await mkdtemp(join(tmpdir(), 'fun-node-limit-migrate-'));
-  t.after(() => rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 25 }));
+  cleanup(t, dir);
   await mkdir(join(dir, 'fun'), { recursive: true });
   await writeFile(join(dir, 'fun', 'story-node-limit.json'), JSON.stringify({ version: 1, nodeLimit: 22 }));
   const patches = [];
@@ -108,7 +109,7 @@ test('old story-node-limit.json migrates into config once and a configured value
 
   // 宿主会把「默认值」合并进 cfg：旧文件仍要能搬，不能被「键已存在」挡住。
   const merged = await mkdtemp(join(tmpdir(), 'fun-node-limit-merged-'));
-  t.after(() => rm(merged, { recursive: true, force: true, maxRetries: 10, retryDelay: 25 }));
+  cleanup(t, merged);
   await mkdir(join(merged, 'fun'), { recursive: true });
   await writeFile(join(merged, 'fun', 'story-node-limit.json'), JSON.stringify({ version: 1, nodeLimit: 22 }));
   const mergedPatches = [];
@@ -124,7 +125,7 @@ test('old story-node-limit.json migrates into config once and a configured value
 
   const configured = { funStoryNodeLimit: 5 };
   const other = await mkdtemp(join(tmpdir(), 'fun-node-limit-config-'));
-  t.after(() => rm(other, { recursive: true, force: true, maxRetries: 10, retryDelay: 25 }));
+  cleanup(t, other);
   await mkdir(join(other, 'fun'), { recursive: true });
   await writeFile(join(other, 'fun', 'story-node-limit.json'), JSON.stringify({ version: 1, nodeLimit: 22 }));
   const second = new FunWorld({ dataDir: other, cfg: configured, persist: () => { throw new Error('configured value must not be overwritten'); } });
@@ -266,7 +267,7 @@ test('image source comes from configuration; the panel no longer writes it', asy
 
 test('legacy story-images settings.json migrates its source into config and keeps the workflow only', async (t) => {
   const dir = await mkdtemp(join(tmpdir(), 'fun-image-source-migrate-'));
-  t.after(() => rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 25 }));
+  cleanup(t, dir);
   await mkdir(join(dir, 'fun', 'story-images'), { recursive: true });
   await writeFile(join(dir, 'fun', 'story-images', 'settings.json'), JSON.stringify({ source: '旧的绘图插件', workflow: '' }));
   const patches = [];
@@ -302,7 +303,7 @@ test('top-bar auto-image switch persists, validates, and rolls back a failed wri
   assert.equal(success(await r.call('status')).images.auto, true);
 
   const dir = await mkdtemp(join(tmpdir(), 'fun-auto-images-fail-'));
-  t.after(() => rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 25 }));
+  cleanup(t, dir);
   const cfg = { funStoryAutoImages: true };
   const failing = new FunWorld({ dataDir: dir, cfg, persist: () => { throw new Error('disk full'); } });
   await failing.start({ log: { info() {}, warn() {} } });

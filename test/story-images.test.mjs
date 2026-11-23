@@ -4,6 +4,7 @@ import { mkdtemp, rm, readdir, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { StoryImages, STORY_IMAGE_MAX_BYTES, validateStoryImageSource, validateStoryWorkflow, materializeWorkflow } from '../src/story-images.js';
+import { cleanup } from './tmp.mjs';
 
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a5V8AAAAASUVORK5CYII=', 'base64');
 const draft = { enabled: true, scene: '窗边', outfits: '蓝色外套', prompt: '温暖的午后，水彩画' };
@@ -21,7 +22,7 @@ const tick = () => new Promise((resolve) => setImmediate(resolve));
  */
 async function setup(t, options = {}) {
   const dataDir = await mkdtemp(join(tmpdir(), 'fun-r2-images-'));
-  t.after(() => rm(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 25 }));
+  cleanup(t, dataDir);
   const { source: initialSource = '', ...rest } = options;
   const config = { source: initialSource };
   const images = new StoryImages({ dataDir, ...rest, source: () => config.source });

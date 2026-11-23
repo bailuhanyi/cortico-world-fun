@@ -14,6 +14,7 @@ import { join } from 'node:path';
 import { DEFAULTS, configGroup } from '../src/config.js';
 import { HomeRoom } from '../src/home-room.js';
 import { FunWorld } from '../src/world.js';
+import { cleanup } from './tmp.mjs';
 
 const TZ = 'Asia/Shanghai';
 const NOON = Date.parse('2026-11-22T12:00:00+08:00');
@@ -24,7 +25,7 @@ const dataUrl = () => `data:image/png;base64,${PNG}`;
 async function home(t) {
   const dir = await mkdtemp(join(tmpdir(), 'fun-home-circle-'));
   const room = new HomeRoom({ dataDir: dir, now: () => NOON });
-  t.after(() => rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 25 }));
+  cleanup(t, dir);
   return { dir, room };
 }
 
@@ -85,7 +86,7 @@ test('导出/导入：只含引用不含字节；只允许空房间；缺图失�
   assert.equal(exported.snapshots.length, 1);
 
   const targetDir = await mkdtemp(join(tmpdir(), 'fun-home-circle-target-'));
-  t.after(() => rm(targetDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 25 }));
+  cleanup(t, targetDir);
   const target = new HomeRoom({ dataDir: targetDir, now: () => NOON });
   await mkdir(join(targetDir, 'fun', 'home', 'art'), { recursive: true });
   await writeFile(join(targetDir, 'fun', 'home', 'art', withArt.art.background), PNG_BYTES);
@@ -101,7 +102,7 @@ test('导出/导入：只含引用不含字节；只允许空房间；缺图失�
 
   // 空房间但缺图：拒绝，且没有写出 room.json。
   const brokenDir = await mkdtemp(join(tmpdir(), 'fun-home-circle-broken-'));
-  t.after(() => rm(brokenDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 25 }));
+  cleanup(t, brokenDir);
   const broken = new HomeRoom({ dataDir: brokenDir, now: () => NOON });
   await assert.rejects(broken.importRoom(exported), (error) => error.code === 'INVALID_ROOM');
   await assert.rejects(readFile(join(brokenDir, 'fun', 'home', 'room.json')), { code: 'ENOENT' });
@@ -128,7 +129,7 @@ test('自己出门：只剩许可，不再自带时段或叫醒；时间跟着�
     cfg: { ...DEFAULTS, enabled: true, funHomeAutoGo: true }, dataDir: onDir, timezone: TZ, now: () => NOON,
   });
   await world.start(host);
-  t.after(async () => { await world.stop(); await rm(onDir, { recursive: true, force: true }); });
+  cleanup(t, onDir, world);
 
   const block = world.envPromptVars().fun_places_block;
   assert.match(block, /主人允许你自己出门/);
@@ -143,7 +144,7 @@ test('自己出门：只剩许可，不再自带时段或叫醒；时间跟着�
   const offDir = await mkdtemp(join(tmpdir(), 'fun-home-selfgo-off-'));
   const off = new FunWorld({ cfg: { ...DEFAULTS, enabled: true }, dataDir: offDir, timezone: TZ, now: () => NOON });
   await off.start(host);
-  t.after(async () => { await off.stop(); await rm(offDir, { recursive: true, force: true }); });
+  cleanup(t, offDir, off);
   assert.doesNotMatch(off.envPromptVars().fun_places_block, /主人允许你自己出门/, '关着就没有这段许可');
 });
 
@@ -153,7 +154,7 @@ test('出门回执提示写进日程；面板不再有撤销自动出门', async
     cfg: { ...DEFAULTS, enabled: true, funHomeAutoGo: true }, dataDir: dir, timezone: TZ, now: () => NOON,
   });
   await world.start({ log: { info() {}, warn() {} } });
-  t.after(async () => { await world.stop(); await rm(dir, { recursive: true, force: true }); });
+  cleanup(t, dir, world);
 
   const go = world.tools().find((tool) => tool.name === 'fun_go').handler;
   const entered = await go({ place: '咖啡店' });

@@ -7,11 +7,12 @@ import { SAMPLE_STORY, SAMPLE_VENUE } from './fixtures/story-presets.mjs';
 const TEST_VENUE = { ...SAMPLE_VENUE, id: 'user-panel-creek' };
 const TEST_STORY = { ...SAMPLE_STORY, id: 'user-panel-letter', placeId: TEST_VENUE.id };
 import { requestStoryDecision, StoryAutonomy } from '../src/story-panel.js';
+import { cleanup } from './tmp.mjs';
 
 const base = 'fun-world-story-';
 async function rig(t, cognition) {
   const dir = await mkdtemp(join(process.cwd(), base));
-  t.after(() => rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 25 }));
+  cleanup(t, dir);
   const clock = { now: Date.parse('2026-11-20T13:00:00+08:00') };
   const create = async () => {
     const world = new FunWorld({ dataDir: dir, now: () => clock.now, random: () => 0 });

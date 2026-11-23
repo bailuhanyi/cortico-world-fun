@@ -8,6 +8,7 @@ import {
   applyFreeDelta, checkEnd, continueFreeSegment, effectiveMaxTurns, evaluateWhen, freeCanContinue, freeSegmentsLeft, freeTurn,
   freeTurnsLeft, newFreeState, normalizeFreeState, parseFreeOutput,
 } from '../src/story-free.js';
+import { cleanup } from './tmp.mjs';
 
 const AT = '2026-11-21T14:00:00+08:00';
 
@@ -54,7 +55,7 @@ const narration = (extra = '') => `雨声盖住了脚步，看灯人把灯举高
 
 async function boot(t, options = {}) {
   const dir = await mkdtemp(join(process.env.TEMP || process.cwd(), 'fun-free-'));
-  t.after(() => rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 25 }));
+  cleanup(t, dir);
   const replies = [...(options.replies ?? [])];
   const requests = [];
   const cognition = {

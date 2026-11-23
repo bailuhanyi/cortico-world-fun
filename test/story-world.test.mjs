@@ -1,15 +1,16 @@
-import test from 'node:test';
+import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, writeFile, mkdir, readdir } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { readFile, writeFile, mkdir, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { FunWorld } from '../src/world.js';
 import { BUILTIN_STORY_PACKS, storyFixtureJson } from './fixtures/story-presets.mjs';
+import { cleanupAll, tempDir, trackWorld } from './tmp.mjs';
+after(cleanupAll);
 const at=(text)=>Date.parse(text);
 async function boot(opts={}) {
- const dir=opts.dir ?? await mkdtemp(join(tmpdir(),'fun-story-'));
+ const dir=opts.dir ?? await tempDir('fun-story-');
  let now=opts.now ?? at('2026-11-19T14:00:00+08:00');
- const world=new FunWorld({cfg:{enabled:true,funStoryTextOn:true},dataDir:dir,timezone:'Asia/Shanghai',now:()=>now,random:()=>0});
+ const world=trackWorld(new FunWorld({cfg:{enabled:true,funStoryTextOn:true},dataDir:dir,timezone:'Asia/Shanghai',now:()=>now,random:()=>0}));
  await world.start({log:{info(){},warn(){}}});
  return {dir,world,tool:(name,args={})=>world.tools().find((x)=>x.name===name).handler(args),panel:(method,args={})=>world.webUi().invoke('stories',method,[args]),invoke:(panel,method,args=[])=>world.webUi().invoke(panel,method,args)};
 }
@@ -202,7 +203,7 @@ test('错误包不落盘，只读方法不能通过参数变成导入，重复�
 });
 
 test('坏文件不影响启动，后续修改先备份；写盘失败保留原剧情设置',async()=>{
- const dir=await mkdtemp(join(tmpdir(),'fun-story-bad-'));await mkdir(join(dir,'fun'));
+ const dir=await tempDir('fun-story-bad-');await mkdir(join(dir,'fun'));
  await writeFile(join(dir,'fun','stories.json'),'{broken','utf8');
  const b=await boot({dir});assert.ok((await b.panel('list')).warnings.length);
  const venue=await custom(b);assert.equal((await b.panel('import',{json:JSON.stringify(pack(venue))})).ok,true);
