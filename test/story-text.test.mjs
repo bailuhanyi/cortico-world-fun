@@ -185,6 +185,55 @@ test('文字通道：共同决定的票和该谁投能从 fun_story_current 读�
   assert.match(current.trip.hint, /鱼/);
 });
 
+test('共同决定：异票不吞任何一席，两边改到一致才前进', async (t) => {
+  const b = await boot(t);
+  const started = await startPack(b, jointPack(b.venue.id));
+  const status = await reachJoint(b, started);
+  const owner = await b.panel('story', 'choose', { tripId: status.trip.id, stamp: status.trip.stamp, choiceId: status.trip.pending.id, optionId: 'rail' });
+  assert.equal(owner.ok, true, owner.error);
+  const fish = await b.json('fun_story_act', { tripId: owner.trip.id, stamp: owner.trip.stamp, intent: 'say', say: '一起坐长椅' });
+  assert.equal(fish.ok, true, fish.error);
+  assert.equal(fish.as, 'fish');
+  const disagree = (await b.panel('story', 'status')).trip;
+  assert.ok(disagree.pending, '异票不前进');
+  assert.deepEqual(disagree.pending.votes, { owner: 'rail', fish: 'bench' }, '鱼投的票不能把主人那一票顶掉');
+  assert.equal(disagree.actor, 'owner', '两票都在时回到主人这一席');
+  const merged = await b.panel('story', 'choose', { tripId: disagree.id, stamp: disagree.stamp, choiceId: disagree.pending.id, optionId: 'bench' });
+  assert.equal(merged.ok, true, merged.error);
+  assert.equal(merged.trip.pending, null, '两边一致才前进');
+  assert.deepEqual(merged.trip.choices.at(-1).votes, [{ actor: 'owner', option: 'bench' }, { actor: 'fish', option: 'bench' }]);
+});
+
+test('共同决定：鱼可以改自己那一票，主人那一票也不会被顶掉', async (t) => {
+  const b = await boot(t);
+  const started = await startPack(b, jointPack(b.venue.id));
+  const status = await reachJoint(b, started);
+  const owner = await b.panel('story', 'choose', { tripId: status.trip.id, stamp: status.trip.stamp, choiceId: status.trip.pending.id, optionId: 'rail' });
+  const fish = await b.json('fun_story_act', { tripId: owner.trip.id, stamp: owner.trip.stamp, intent: 'say', say: '一起坐长椅' });
+  assert.equal(fish.as, 'fish');
+  const disagree = (await b.panel('story', 'status')).trip;
+  const changed = await b.json('fun_story_act', { tripId: disagree.id, stamp: disagree.stamp, intent: 'say', say: '一起看栏杆', as: 'fish' });
+  assert.equal(changed.ok, true, changed.error);
+  assert.equal(changed.as, 'fish');
+  const after = (await b.panel('story', 'status')).trip;
+  assert.equal(after.pending, null, '鱼改成和主人一样就前进');
+  assert.deepEqual(after.choices.at(-1).votes, [{ actor: 'owner', option: 'rail' }, { actor: 'fish', option: 'rail' }]);
+});
+
+test('共同决定：异票僵住时也回得了家', async (t) => {
+  const b = await boot(t);
+  const started = await startPack(b, jointPack(b.venue.id));
+  const status = await reachJoint(b, started);
+  const owner = await b.panel('story', 'choose', { tripId: status.trip.id, stamp: status.trip.stamp, choiceId: status.trip.pending.id, optionId: 'rail' });
+  await b.json('fun_story_act', { tripId: owner.trip.id, stamp: owner.trip.stamp, intent: 'say', say: '一起坐长椅' });
+  const stuck = (await b.panel('story', 'status')).trip;
+  assert.ok(stuck.pending, '确实停在异票状态');
+  const home = await b.panel('story', 'close', { tripId: stuck.id, stamp: stuck.stamp });
+  assert.equal(home.ok, true, home.error);
+  const after = await b.panel('story', 'status');
+  assert.equal(after.trip, null, '回家成功，不再卡在这一步');
+});
+
 test('主人在面板上点的配图会进她的提示词，45 分钟后自己消失', async (t) => {
   const clock = { now: Date.parse(AT) };
   const b = await boot(t, { cfg: { funStoryImages: true }, now: () => clock.now });

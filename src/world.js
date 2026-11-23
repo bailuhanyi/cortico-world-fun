@@ -967,18 +967,19 @@ export class FunWorld {
     }
     if (choice.actor === 'joint') {
       if (!['owner', 'fish'].includes(submitter)) return { text: '共同选择需要用户或鱼分别提交有效选项。', failed: true };
-      // 两席各自一票：先补缺的那一席；两票都在而不同时，才回到用户重选。
-      const expectedVoter = !choice.votes?.owner ? 'owner' : !choice.votes?.fish ? 'fish' : 'owner';
       const optionLabel = (id) => choice.options.find(({ id: value }) => value === id)?.label ?? id;
-      if (submitter !== expectedVoter) {
-        return { text: expectedVoter === 'owner'
-          ? `鱼那一票已经记下了（${optionLabel(choice.votes?.fish)}）；这一步等你（主人）自己投，鱼不能代投。`
-          : `你那一票已经记下了（${optionLabel(choice.votes?.owner)}）；这一步等鱼自己投她那一票，你不能代投。`, failed: true };
+      const seats = choice.votes ?? {};
+      // 只差一席时，只有缺的那一席能投；两席都投过（且不一致）时，谁都可以改自己那一票。
+      const missing = !seats.owner ? 'owner' : !seats.fish ? 'fish' : null;
+      if (missing && submitter !== missing) {
+        return { text: missing === 'owner'
+          ? `鱼那一票已经记下了（${optionLabel(seats.fish)}）；这一步等你（主人）自己投，鱼不能代投。`
+          : `你那一票已经记下了（${optionLabel(seats.owner)}）；这一步等鱼自己投她那一票，你不能代投。`, failed: true };
       }
       if (optionId === 'skip') return { text: '共同选择不能用略过代替双方决定。', failed: true };
       const valid = choice.options.some(({ id }) => id === optionId);
       if (!valid) return { text: this.#choiceHint(choice), failed: true };
-      const votes = { ...(choice.votes ?? {}), [submitter]: optionId };
+      const votes = { ...seats, [submitter]: optionId };
       if (!votes.owner || !votes.fish) {
         session.pendingChoice = { ...choice, votes };
         session.lastAt = this.#now();
@@ -988,11 +989,12 @@ export class FunWorld {
           : `鱼的选择已保存（${optionLabel(optionId)}）。现在等你（主人）自己投这一票；没有以等待或超时当作同意。` };
       }
       if (votes.owner !== votes.fish && choice.jointResolution === 'require-agreement') {
-        session.choices.push({ event: choice.event, option: `${votes.owner}|${votes.fish}`, result: '双方意见不同，决定仍待确认', at: this.#now(), actor: 'joint', votes: [{ actor: 'owner', option: votes.owner }, { actor: 'fish', option: votes.fish }] });
-        session.pendingChoice = { ...choice, votes: { [submitter]: optionId } };
+        // 异票不清任何一席：两票都留在票面上，谁都可以改自己那一票，两边一致才前进。
+        // （此前是「只保留后投的那一票」，会静默吞掉对方刚投的票，两个人只能互相清票。）
+        session.pendingChoice = { ...choice, votes };
         session.lastAt = this.#now();
         await this.#commitState(next);
-        return { text: `双方选择不同（${optionLabel(votes.owner)} / ${optionLabel(votes.fish)}）；这一轮重新来：只保留${submitter === 'owner' ? '你' : '鱼'}刚才那一票（${optionLabel(optionId)}），另一方要重新明确选一次。不会按超时视为同意。` };
+        return { text: `两边票不一样（你：${optionLabel(votes.owner)} / 鱼：${optionLabel(votes.fish)}）：这一轮不前进，也不清掉任何一席的票。谁都可以改自己那一票，两边一致才递交；也可以先回家。` };
       }
       optionId = votes.owner === votes.fish ? votes.owner
         : choice.jointResolution === 'owner-final' ? votes.owner : votes.fish;
@@ -2320,7 +2322,10 @@ export class FunWorld {
     }
     const pending = trip.pending;
     if (!pending) return { text: '现在没有待选择的节点，这一步不需要 say。', failed: true };
-    const voter = this.#textVoter(pending);
+    // 两席都投过（且不一致）时谁都可以改自己那一票，所以允许调用方显式声明 as；
+    // 只差一席时由 #choiceTool 按「缺哪一席」把关，声明错了会被明确拒绝。
+    const declared = args.as === 'fish' ? 'fish' : args.as === 'owner' ? 'owner' : null;
+    const voter = declared ?? this.#textVoter(pending);
     const say = typeof args.say === 'string' ? args.say.replace(/\s+/g, ' ').trim().slice(0, 200) : '';
     if (args.proposalId || args.optionId) {
       const proposal = this.#textProposal;
@@ -2365,13 +2370,15 @@ export class FunWorld {
     const joint = pending?.actor === 'joint';
     const votes = joint ? { ...(pending.votes ?? {}) } : null;
     const waitingFor = joint ? (trip?.actor ?? 'owner') : null;
+    const disagree = Boolean(joint && votes?.owner && votes?.fish && votes.owner !== votes.fish);
     return {
       ok: true, ...extra, step: trip?.step ?? '', stamp: trip?.stamp ?? '', nextArea: trip?.nextArea ?? null,
       pending, narration: trip?.events?.at(-1) ?? '',
-      ...(joint ? { joint: { resolution: pending.jointResolution ?? null, votes, waitingFor } } : {}),
+      ...(joint ? { joint: { resolution: pending.jointResolution ?? null, votes, waitingFor, disagree } } : {}),
       hint: !pending ? '故事已经走完，可以用 intent: close 收尾。'
-        : joint ? `共同决定：${waitingFor === 'fish' ? '现在轮到你（鱼）明确提交这一票' : '现在等用户自己提交这一票'}；同票才前进，异票只会重来，等待不算同意。`
-          : '把事件和选项告诉用户；用户说完再用 say 交进来（原话命中选项会直接生效）。',
+        : disagree ? '共同决定：两席的票不一样，这一轮不前进，两票都保留。谁都可以改自己那一票（改鱼那一票要带 as: "fish"），两边一致才递交；也可以先回家。'
+          : joint ? `共同决定：${waitingFor === 'fish' ? '现在轮到你（鱼）明确提交这一票' : '现在等用户自己提交这一票'}；同票才前进，异票只会重来，等待不算同意。`
+            : '把事件和选项告诉用户；用户说完再用 say 交进来（原话命中选项会直接生效）。',
     };
   }
 

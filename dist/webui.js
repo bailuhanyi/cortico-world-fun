@@ -2603,7 +2603,7 @@ function mountPanel(root, ctx) {
       const votes = pending.votes ?? {};
       if (!votes.owner) return "两席各投一票，同票才出发：你先选，选完等鱼自己投她那一票。";
       if (!votes.fish) return "你这一票已经记下了。这一票要鱼自己投：到聊天里让她说，或者打开右侧「鱼自己游玩」由她决定。两票相同才会前进。";
-      return "两边的票不一样，这一轮重新来：你可以改选，鱼也会被要求重选。同票才前进，等待不算同意。";
+      return "两边票不一样：这一轮不前进，两票都留着。谁都可以改自己那一票，两边一致才递交；也可以先回家。";
     }
     return "选一条你想走的路。点击后会等待保存确认。";
   }
@@ -2890,7 +2890,7 @@ function mountPanel(root, ctx) {
     if (pending) {
       const { block, canSubstitute } = pendingPicker(state, current, "sw-choices");
       const joint = pending.actor === "joint";
-      action.append(node("div", { class: "sw-kicker" }, joint && current.actor === "fish" ? "现在轮到鱼" : "现在轮到你了"));
+      action.append(node("div", { class: "sw-kicker" }, joint && current.actor === "fish" ? "现在轮到鱼" : joint && pending.votes?.owner && pending.votes?.fish ? "两边票不一样" : "现在轮到你了"));
       if (pending.prompt) action.append(node("p", { class: "sw-prose" }, text(pending.prompt)));
       if (joint) action.append(jointBoard(pending));
       action.append(block, note(optionsHint(state, current, canSubstitute)));
