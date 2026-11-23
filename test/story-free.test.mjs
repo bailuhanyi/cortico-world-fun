@@ -54,7 +54,7 @@ const narration = (extra = '') => `雨声盖住了脚步，看灯人把灯举高
 
 async function boot(t, options = {}) {
   const dir = await mkdtemp(join(process.env.TEMP || process.cwd(), 'fun-free-'));
-  t.after(() => rm(dir, { recursive: true, force: true }));
+  t.after(() => rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 25 }));
   const replies = [...(options.replies ?? [])];
   const requests = [];
   const cognition = {

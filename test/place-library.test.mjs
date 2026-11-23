@@ -52,7 +52,7 @@ function venueStore(initial) {
 
 async function setup(t, initial = [venue]) {
   const root = await mkdtemp(join(tmpdir(), 'fun-place-test-'));
-  t.after(() => rm(root, { recursive: true, force: true }));
+  t.after(() => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 25 }));
   const store = venueStore(initial);
   const library = () => new PlaceLibrary({ userDataDir: root, venues: store.read,
     saveVenue: (raw) => store.saveVenue(raw), removeVenue: (id) => store.removeVenue(id) });

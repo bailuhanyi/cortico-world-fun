@@ -24,7 +24,7 @@ const dataUrl = () => `data:image/png;base64,${PNG}`;
 async function home(t) {
   const dir = await mkdtemp(join(tmpdir(), 'fun-home-circle-'));
   const room = new HomeRoom({ dataDir: dir, now: () => NOON });
-  t.after(() => rm(dir, { recursive: true, force: true }));
+  t.after(() => rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 25 }));
   return { dir, room };
 }
 
@@ -85,7 +85,7 @@ test('导出/导入：只含引用不含字节；只允许空房间；缺图失�
   assert.equal(exported.snapshots.length, 1);
 
   const targetDir = await mkdtemp(join(tmpdir(), 'fun-home-circle-target-'));
-  t.after(() => rm(targetDir, { recursive: true, force: true }));
+  t.after(() => rm(targetDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 25 }));
   const target = new HomeRoom({ dataDir: targetDir, now: () => NOON });
   await mkdir(join(targetDir, 'fun', 'home', 'art'), { recursive: true });
   await writeFile(join(targetDir, 'fun', 'home', 'art', withArt.art.background), PNG_BYTES);
@@ -101,7 +101,7 @@ test('导出/导入：只含引用不含字节；只允许空房间；缺图失�
 
   // 空房间但缺图：拒绝，且没有写出 room.json。
   const brokenDir = await mkdtemp(join(tmpdir(), 'fun-home-circle-broken-'));
-  t.after(() => rm(brokenDir, { recursive: true, force: true }));
+  t.after(() => rm(brokenDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 25 }));
   const broken = new HomeRoom({ dataDir: brokenDir, now: () => NOON });
   await assert.rejects(broken.importRoom(exported), (error) => error.code === 'INVALID_ROOM');
   await assert.rejects(readFile(join(brokenDir, 'fun', 'home', 'room.json')), { code: 'ENOENT' });

@@ -11,7 +11,7 @@ import { requestStoryDecision, StoryAutonomy } from '../src/story-panel.js';
 const base = 'fun-world-story-';
 async function rig(t, cognition) {
   const dir = await mkdtemp(join(process.cwd(), base));
-  t.after(() => rm(dir, { recursive: true, force: true }));
+  t.after(() => rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 25 }));
   const clock = { now: Date.parse('2026-11-20T13:00:00+08:00') };
   const create = async () => {
     const world = new FunWorld({ dataDir: dir, now: () => clock.now, random: () => 0 });

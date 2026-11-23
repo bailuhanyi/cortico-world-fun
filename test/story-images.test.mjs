@@ -21,7 +21,7 @@ const tick = () => new Promise((resolve) => setImmediate(resolve));
  */
 async function setup(t, options = {}) {
   const dataDir = await mkdtemp(join(tmpdir(), 'fun-r2-images-'));
-  t.after(() => rm(dataDir, { recursive: true, force: true }));
+  t.after(() => rm(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 25 }));
   const { source: initialSource = '', ...rest } = options;
   const config = { source: initialSource };
   const images = new StoryImages({ dataDir, ...rest, source: () => config.source });

@@ -8,7 +8,7 @@ const AT = '2026-11-22T14:00:00+08:00';
 
 async function boot(t) {
   const dir = await mkdtemp(join(process.env.TEMP || process.cwd(), 'fun-trash-'));
-  t.after(() => rm(dir, { recursive: true, force: true }));
+  t.after(() => rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 25 }));
   const world = new FunWorld({ dataDir: dir, cfg: { enabled: true }, timezone: 'Asia/Shanghai', now: () => Date.parse(AT), random: () => 0 });
   await world.start({ log: { info() {}, warn() {} } });
   const invoke = (panel, method, args = []) => world.webUi().invoke(panel, method, args);

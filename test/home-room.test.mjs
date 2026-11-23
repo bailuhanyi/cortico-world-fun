@@ -12,7 +12,7 @@ const dataUrl = (base64) => `data:image/png;base64,${base64}`;
 async function home(t) {
   const dir = await mkdtemp(join(tmpdir(), 'fun-home-room-'));
   const room = new HomeRoom({ dataDir: dir });
-  t.after(() => rm(dir, { recursive: true, force: true }));
+  t.after(() => rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 25 }));
   return { dir, room, file: join(dir, 'fun', 'home', 'room.json'), art: join(dir, 'fun', 'home', 'art') };
 }
 

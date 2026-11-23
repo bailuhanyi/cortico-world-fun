@@ -6,11 +6,27 @@ import { FunWorld } from '../src/world.js';
 import { BUILTIN_STORY_PACKS, SAMPLE_STORY, SAMPLE_VENUE, storyFixtureJson } from './fixtures/story-presets.mjs';
 
 const ok = (r) => { assert.equal(r.ok, true, r.error); return r; };
+/** 轮询到世界把迟到的异步写入落定；只在超时后返回最后一次结果，断言仍会照旧检查。 */
+async function settle(read, done, timeout = 1000) {
+  const started = Date.now();
+  for (;;) {
+    const value = await read();
+    if (done(value) || Date.now() - started >= timeout) return value;
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+}
 const step = (s) => ({ tripId: s.trip.id, stamp: s.trip.stamp });
 const choice = (s, optionId) => ({ ...step(s), choiceId: s.trip.pending.id, optionId });
 async function rig(t, options = {}) {
   const dir = await mkdtemp(join(process.env.TEMP || process.cwd(), 'fun-stages-'));
-  t.after(() => rm(dir, { recursive: true, force: true }));
+  // 用例从不主动停 World；它们的内存态与写队列会活到用例结束之后。清理目录前必须逐个
+  // stop（stop 会排到该 World 写队列的队尾），否则迟到的保存会正好落在 rm 遍历目录时，
+  // Windows 的 rmdir 抛 ENOTEMPTY，node:test 把这次清理失败记到当前用例头上（随机一条）。
+  const worlds = [];
+  t.after(async () => {
+    for (const world of worlds.reverse()) await world.stop().catch(() => {});
+    await rm(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 50 });
+  });
   const clock = { now: Date.parse('2026-11-21T13:00:00+08:00') };
   let answer = 'follow';
   const requests = [];
@@ -20,6 +36,7 @@ async function rig(t, options = {}) {
     // 这组用例要直接读六个故事查询；保持 cfg 的对象身份，live-config 用例还会改它。
     if (cfg.funStoryTextOn === undefined) cfg.funStoryTextOn = true;
     const world = new FunWorld({ dataDir: dir, cfg, timezone: 'Asia/Shanghai', now: () => clock.now, random: () => 0 });
+    worlds.push(world);
     await world.start({ cognition });
     const panel = (id, method, payload = {}) => world.webUi().invoke(id, method, [payload]);
     if (!seeded) {
@@ -289,7 +306,9 @@ test('live DM config disable cancels pending proposal and rejects a late result'
   release({ text: JSON.stringify({ narration: 'A stale proposal.', optionId: 'window-seat' }), usage: { inputTokens: 3, outputTokens: 2 } });
   const stale = await pending;
   assert.equal(stale.ok, false);
-  s = ok(await r.rpc('status'));
+  // 取消只结束本地等待：上游返回后 recordUsage 仍会排队写盘（见 src/world.js 的 recordUsage）。
+  // await pending 只等到取消，等不到这次记账，所以轮询到用量真的落下再断言。
+  s = ok(await settle(() => r.rpc('status'), (status) => status.ok && status.dm.budget.totalTokens === 5));
   assert.equal(s.dm.proposal, null);
   assert.equal(s.dm.enabled, false);
   assert.equal(s.dm.budget.calls, 1);
