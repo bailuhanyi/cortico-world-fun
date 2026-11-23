@@ -1,6 +1,13 @@
-# 从0开始的肥鱼大冒险 0.7.6（共同决定修复 + 收口，待发布）交接文档
+# 从0开始的肥鱼大冒险 0.7.7（面板两处修复，待发布）交接文档
 
 更新日期：2026-11-23 晚（Asia/Shanghai）。本文是当前接手的入口；**本轮的详细接手（0.7.5 故事工坊 + 0.7.4 地点册、装机步骤、坑）见 [`HANDOFF-2026-11-23-0.7.5-接手.md`](HANDOFF-2026-11-23-0.7.5-接手.md)**；地点册版式重做的过程记录见 [`HANDOFF-2026-11-23-地点册版式-交接.md`](HANDOFF-2026-11-23-地点册版式-交接.md)。
+
+> **发布状态（2026-11-23 21:4x，0.7.7）**：0.7.7 = 0.7.6 之后的两处面板修复——① 行程回忆里「从最近可继续检查点开分支」建好后**直接跳到「出游」**；② 对话式出游的**选项区可滚动**，4 个选项不再被裁成 3 个（矮屏收起装饰性场景条、卡片固定 `74vh`）。没有数据迁移；故事包格式、存储键与面板 id 都不变。代码已本地提交、产物已打包；**未 push、未发 npm**（npm 上 latest 仍是 0.7.6）。
+> - 产物：`story-world\artifacts\release-0.7.7\`。`cortico-world-fun-0.7.7.tgz` **1,722,521 B** / SHA-256 `CC2375C19CAEACB618813AAED4A7C4BBCE1EE58ED48EA6C0A2EB57D3C0CD07D5`（npm shasum `f05562e7fb072e9968df410157c008b9339f3f71`）；安装形态目录 `cortico-world-fun-0.7.7\`（含 `install.ps1` / `安装.cmd` / `安装说明.md`）；`dist/webui.js` **451,856 B** / SHA-256 `83D96A8CD424E55FE46CDBDE88F15695773335562E7971F81F2B361950DCDA41`（仓库与包内一致）。
+> - 打包核验：`node tools/verify-published.mjs --file …0.7.7.tgz` 通过；`node tools/publish-check.mjs --online` **26 通过 / 0 失败 / 1 已知警告**（没截 screenshots），并确认 0.7.7 未被占用、线上 latest 仍是 0.7.6。
+> - 测试：全量 `npm test` 37 个套件 **555 条 0 失败**、`npm run verify` 全绿；`webui/story/webui.test.mjs` 43/43（含新增「开分支后直接落到出游」）；布局在 headless Edge 的 905 / 805 / 705 / 605 / 505 五档视口实测：4 个选项在 ≥705px 全部可见，更矮时可滚到第 4 个，卡片不再有被裁内容。
+> - 本机 Coo 已经**通过市场装了 0.7.6**（`data\extensions\node_modules\cortico-world-fun`）；`data\extensions\vendor\cortico-world-fun` 仍是 0.7.5 的旧手动副本，市场路径不使用它。0.7.7 发 npm 后可继续从市场升级，或用本目录的 `install.ps1`。
+> - **待人工（本轮未执行）**：① `git push`；② `npm publish .\cortico-world-fun-0.7.7.tgz`（或从仓库 `npm publish`；`prepublishOnly` 会重跑 npm test + verify + publish-check）；③ 装进本机 Coo 并核对 `/api/extensions`、asset 哈希与 fun 数据快照。
 
 > **发布状态（2026-11-23 21:0x，0.7.6 重打包，取代下面 20:3x 那条）**：0.7.6 = 共同决定异票修复 + 收口（`src/joint.js` 单一派生、`docs/JOINT-DECISION-SPEC.md`、矩阵测试），并含**行为变更：空票面两席都能先投**。代码已本地提交（`881100e`），已重新打包；**未 push、未发 npm**（npm 上 latest 仍是 0.7.5，`publish-check --online` 确认 0.7.6 未被占用）。
 > - 产物：`story-world\artifacts\release-0.7.6\`。`cortico-world-fun-0.7.6.tgz` **1,721,527 B** / SHA-256 `73E533C6FABB4E9D09D373AED9C04D46897F694D8BBDF177B409FAC37D779BDB`；安装形态目录 `cortico-world-fun-0.7.6\`（含 `install.ps1` / `安装.cmd` / `安装说明.md`；说明已改成「发到 npm 后…」并补上空票面先投）；`dist/webui.js` **451,318 B** / SHA-256 `CD4D5B70AFE15BAF89FFDFA23D84A59A580C7A8F0CB354FED0AF5C7C4E7BA2AE`（仓库与包内一致）。旧产物（1,716,751 B，20:27）在 `_prev-20261123-2055\`。
@@ -9,8 +16,8 @@
 > - 测试：全量 `npm test` 37 个套件 **554 条 0 失败**（完整权限下含 DPAPI 10/10）、`npm run verify` 全绿；`test/story-text.test.mjs` **41/41**（3 种 resolution × 主人/鱼先投 × 第二票的矩阵 + 三条一致性）；`test/story-stages.test.mjs` **11/11**。
 > - 既存 flake 已修：`8248fb0` 让用例结束前先 `world.stop()` 再删临时目录（并加重试），全量串跑不再随机挂 story-stages。
 > - 测试基础设施（紧接着的一轮）：新增 `test/tmp.mjs`（`tempDir` / `trackWorld` / `cleanup(t, dir, world)` / `cleanupAll`），13 个测试文件与 `test/harness.mjs` 统一走它（先 stop World 再删目录，ENOTEMPTY 重试 20 次）；`tools/clean-tmp.mjs` 清掉系统临时目录里 9,441 个历史 `fun-*` 残留（剩 1,172 个是近一小时的，会自然过期）。清理后全量重跑：37 套件 554 条 **0 失败**，临时目录**零新增**。
-> - 本机 Coo 的 vendor 仍是 0.7.5（20:31 手工同步过旧的 `src/world.js` + `dist/webui.js`），**版本号没改**；要显示 0.7.6 需在 Coo 完全退出后跑 `install.ps1 -CooRoot E:\Coopanion`。
-> - **main 上还有未发版的改动**（2026-11-23 21:3x）：`6bfbddc` 从回忆「从最近可继续检查点开分支」建好后**直接跳到「出游」**（`controller.fork` 返回是否真的建出新行程，面板据此 `navigate('play')`；没建出来就留在原地看错误）。另修对话式出游的布局：**4 个选项不再被裁成 3 个**——`.sw-play-action` 可收缩且内部滚动、`.sw-reading` 改 `flex:1 1 0`、卡片固定 `74vh`，矮屏（≤860px 高）收起装饰性场景条与元信息行。0.7.6 已经发到 npm，这些改动进不了它，**下次发版一起带**；当前未升版本、未重新打包。
+> - 本机 Coo 的 vendor 当时仍是 0.7.5（20:31 手工同步过旧的 `src/world.js` + `dist/webui.js`）；后来已通过市场装到 **0.7.6**（`data\extensions\node_modules`），见上。
+> - **当时记下的未发版改动**（2026-11-23 21:3x，现已全部进入 0.7.7，见上）：`6bfbddc` 从回忆「从最近可继续检查点开分支」建好后直接跳到「出游」；对话式出游选项区可滚动、4 个选项不再被裁。
 > - 代码已 push 到 `origin/main`；**0.7.6 已发 npm**（latest = 0.7.6；`dist.shasum` `feedf3d3d097c4b5da7a363df2cd97dd7b36186c`、`unpackedSize` 2,663,552，与本地 `release-0.7.6\cortico-world-fun-0.7.6.tgz` 同一份字节；`node tools/verify-published.mjs 0.7.6` 对线上包已通过）。真机点选验收（面板、412 窄屏、暗色）没做。
 > - **待人工**：装进本机 Coo（当前 vendor 仍是 0.7.5）——退出 Coo 后跑 `install.ps1 -CooRoot E:\Coopanion`，再核对 `/api/extensions`、asset 哈希与 fun 数据快照。
 
