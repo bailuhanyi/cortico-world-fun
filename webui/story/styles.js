@@ -14,16 +14,19 @@ export const STYLES = `
 .sw-trash{margin-top:18px}.sw-trash>summary{cursor:pointer;font-size:12px;color:var(--sw-muted);padding:9px 0;list-style:none}.sw-trash>summary::-webkit-details-marker{display:none}.sw-trash>summary:before{content:'›';display:inline-block;margin-right:6px;transition:transform .15s}.sw-trash[open]>summary:before{transform:rotate(90deg)}.sw-trash-body{margin-top:8px}.sw-trash-list{display:flex;flex-direction:column;gap:10px;margin:10px 0}.sw-trash-row{display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap;border-top:1px dashed var(--sw-line);padding-top:10px}.sw-trash-row:first-child{border-top:0;padding-top:0}.sw-trash-meta{display:flex;flex-direction:column;gap:3px;min-width:0}.sw-trash-meta small{color:var(--sw-muted);font-size:10px}.sw-trash-meta .sw-badge{align-self:flex-start}
 .sw-free-log{list-style:none;padding:0;margin:0}.sw-free-log li+li{border-top:1px dashed var(--sw-line);padding-top:14px;margin-top:14px}.sw-free-log small{display:block;color:var(--sw-muted);font-size:10px;margin-bottom:5px}.sw-free-say{font-size:13px;color:var(--sw-green);margin-bottom:6px;overflow-wrap:anywhere}.sw-free-state .sw-story-meta{margin-top:6px}.sw-free-input{width:100%;min-height:76px;resize:vertical;font:inherit;font-size:13px;line-height:1.7;padding:10px 12px;border:1px solid var(--sw-line);border-radius:9px;background:var(--sw-paper);color:var(--sw-ink)}.sw-free-compose{align-items:flex-start}.sw-free-compose .sw-stack{flex:1;min-width:min(100%,260px)}
 /* 出游页 · 对话式（默认）：头尾钉住，只有中间那段滚 */
-.sw-play{--sw-play-h:min(68vh,760px)}
-.sw-play>article.sw-card{display:flex;flex-direction:column;min-height:0;max-height:var(--sw-play-h);overflow:hidden}
+.sw-play{--sw-play-h:min(74vh,780px)}
+.sw-play>article.sw-card{display:flex;flex-direction:column;min-height:0;height:var(--sw-play-h);overflow:hidden}
 .sw-play .sw-play-head{flex:none}
 .sw-play .sw-play-context{flex:none;display:flex;gap:7px;align-items:center;padding:0 22px 10px;color:var(--sw-muted);font-size:11px}
 .sw-dot-sep{opacity:.5}
 .sw-play .sw-play-strip{flex:none;height:84px;min-height:84px;aspect-ratio:auto;border-radius:0}
 .sw-play .sw-play-strip .sw-scene-label{bottom:12px;left:18px;right:18px}
 .sw-play .sw-play-strip .sw-scene-label h2{font-size:16px;margin:0}
-.sw-play .sw-reading{flex:1 1 auto;min-height:0;overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable;padding-bottom:10px;-webkit-mask-image:linear-gradient(180deg,transparent 0,#000 18px);mask-image:linear-gradient(180deg,transparent 0,#000 18px)}
-.sw-play .sw-play-action{flex:none;display:flex;flex-direction:column;gap:7px;padding:13px 22px 12px;border-top:1px solid var(--sw-line);background:color-mix(in srgb,var(--sw-green) 4%,var(--sw-paper))}
+.sw-play .sw-reading{flex:1 1 0;min-height:0;overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable;padding-bottom:10px;-webkit-mask-image:linear-gradient(180deg,transparent 0,#000 18px);mask-image:linear-gradient(180deg,transparent 0,#000 18px)}
+.sw-play .sw-play-action{flex:0 1 auto;min-height:0;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin;display:flex;flex-direction:column;gap:7px;padding:13px 22px 12px;border-top:1px solid var(--sw-line);background:color-mix(in srgb,var(--sw-green) 4%,var(--sw-paper))}
+/* 选项多（v2 最多 4 个）或窗口矮时：先收装饰性的场景条与一行元信息，让选项和正文都有地方；
+   底部这一块自己滚，绝不裁掉最后一个选项。 */
+@media (max-height:860px){.sw-play .sw-play-strip,.sw-play .sw-play-context{display:none}}
 .sw-play .sw-play-action .sw-choices{margin-top:0}
 .sw-play .sw-play-action .sw-prose{font-size:13px;line-height:1.8;max-width:none}
 .sw-play .sw-play-foot{flex:none}
