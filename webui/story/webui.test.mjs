@@ -117,11 +117,30 @@ test('decide snapshot with a changed stamp never reaches auto', async () => {
   assert.ok(h.calls.filter((call) => call.method === 'status').length >= 2);
   controller.dispose();
 });
+// 服务端会把共同决定的视图算好放在 trip.joint（见 src/joint.js）；这里只仿一份给面板用。
+function jointPayload(votes = {}) {
+  const label = (id) => ({ follow: '沿溪寻找', keep: '先把信收好' })[id] ?? '';
+  const stage = votes.owner && votes.fish ? (votes.owner === votes.fish ? 'agreed' : 'disagree')
+    : votes.owner ? 'waiting-fish' : votes.fish ? 'waiting-owner' : 'empty';
+  const headline = { empty: '两席各选一项', 'waiting-fish': '现在轮到鱼', 'waiting-owner': '现在轮到你了', disagree: '两边票不一样', agreed: '两票一致' }[stage];
+  return {
+    stage, seat: stage === 'waiting-fish' ? 'fish' : 'owner', resolution: 'require-agreement', votes: { ...votes },
+    canVote: { owner: stage === 'empty' || stage === 'waiting-owner' || stage === 'disagree', fish: stage === 'empty' || stage === 'waiting-fish' || stage === 'disagree' },
+    seats: [
+      { seat: 'owner', name: '你这一席', voted: Boolean(votes.owner), optionId: votes.owner ?? null, label: label(votes.owner) },
+      { seat: 'fish', name: '鱼那一席', voted: Boolean(votes.fish), optionId: votes.fish ?? null, label: label(votes.fish) },
+    ],
+    headline, hint: '两席各投一票，同票才出发：谁先投都行；两票一致才前进。', note: '共同决定：等待与超时都不算同意。',
+    resolutionNote: '双方必须明确同意；分歧保持待定',
+    seatsText: `你${votes.owner ? `已选「${label(votes.owner)}」` : '还没投'}，鱼${votes.fish ? `已选「${label(votes.fish)}」` : '还没投'}`,
+  };
+}
 test('共同决定：用户投完票后，面板说清轮到鱼、并摆出两席的票', async () => {
   const initial = snapshot();
   initial.trip.actor = 'fish';
   initial.trip.pending = { id: 'choice-joint', event: '两处都可以去', prompt: '两席各自明确选一项。', actor: 'joint', jointResolution: 'require-agreement',
     votes: { owner: 'follow' }, options: [{ id: 'follow', label: '沿溪寻找' }, { id: 'keep', label: '先把信收好' }] };
+  initial.trip.joint = jointPayload({ owner: 'follow' });
   const h = harness(null, initial);
   globalThis.document = h.env.document; globalThis.window = h.env.window;
   const root = document.createElement('div');
@@ -330,6 +349,8 @@ test('image validation rejects active formats, MIME spoofing and excessive bytes
 test('double-player panel shows actor, keeps owner choices explicit and disables fish choices', async () => {
   const initial = snapshot(); initial.trip.actor = 'fish';
   initial.trip.pending.actor = 'joint'; initial.trip.pending.jointResolution = 'require-agreement';
+  initial.trip.pending.votes = { owner: 'follow' };
+  initial.trip.joint = jointPayload({ owner: 'follow' });
   const h = harness(null, initial); globalThis.document = h.env.document; globalThis.window = h.env.window;
   const root = document.createElement('div'); const mounted = mountPanel(root, h.ctx); await flush();
   root.querySelector('[data-focus="nav-play"]').click();

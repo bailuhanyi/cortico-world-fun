@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { FunWorld } from '../src/world.js';
+import { jointActor, jointStage } from '../src/joint.js';
 
 const AT = '2026-11-22T14:00:00+08:00';
 
@@ -40,10 +41,10 @@ function duoPack(placeId) {
   };
 }
 
-function jointPack(placeId) {
+function jointPack(placeId, resolution = 'require-agreement') {
   return {
     version: 2, id: 'joint-test', title: '两席同票', placeId,
-    metadata: { author: '测试', release: '1.0.0', genre: '日常', synopsis: '两个人一起选一处。', participation: 'duo', jointResolution: 'require-agreement' },
+    metadata: { author: '测试', release: '1.0.0', genre: '日常', synopsis: '两个人一起选一处。', participation: 'duo', jointResolution: resolution },
     start: 'a',
     nodes: [
       { id: 'a', area: '步道', event: '两个人站在步道上', prompt: '往哪边走？', actor: 'owner', choices: [
@@ -232,6 +233,228 @@ test('共同决定：异票僵住时也回得了家', async (t) => {
   assert.equal(home.ok, true, home.error);
   const after = await b.panel('story', 'status');
   assert.equal(after.trip, null, '回家成功，不再卡在这一步');
+});
+
+// ---------------------------------------------------------------------------
+// §5 矩阵：先投顺序 × 选项是否一致 × 三种 jointResolution，外加「被拒必须是纯拒绝」。
+// 规则见 docs/JOINT-DECISION-SPEC.md：空票面两席都能先投；只剩一席没投时只有那一席能投；
+// 异票时两席都能改自己那一票；同票（或 owner-final / fish-final 裁定）才前进。
+// ---------------------------------------------------------------------------
+
+const JOINT_LABEL = { rail: '一起看栏杆', bench: '一起坐长椅' };
+const RESOLUTIONS = ['require-agreement', 'owner-final', 'fish-final'];
+
+const readTrip = async (b) => (await b.panel('story', 'status')).trip;
+
+async function openJoint(t, resolution = 'require-agreement') {
+  const b = await boot(t);
+  const started = await startPack(b, jointPack(b.venue.id, resolution));
+  const status = await reachJoint(b, started);
+  return { b, trip: status.trip };
+}
+
+/** 以某一席的身份投一票：主人走面板，鱼走文字通道并显式带 as: 'fish'。 */
+function castVote(b, trip, seat, optionId) {
+  if (seat === 'owner') return b.panel('story', 'choose', { tripId: trip.id, stamp: trip.stamp, choiceId: trip.pending.id, optionId });
+  return b.tool('fun_story_act', { tripId: trip.id, stamp: trip.stamp, intent: 'say', say: JOINT_LABEL[optionId], as: 'fish' });
+}
+
+function assertVoteAccepted(result, seat) {
+  if (seat === 'owner') { assert.equal(result.ok, true, result.error); return; }
+  assert.equal(result.failed, undefined, result.text);
+  assert.equal(JSON.parse(result.text).as, 'fish');
+}
+
+function assertRejected(result) {
+  if (typeof result.ok === 'boolean') assert.equal(result.ok, false, result.error);
+  else assert.equal(result.failed, true, result.text);
+}
+
+async function prepareVotes(b, pairs) {
+  let trip = await readTrip(b);
+  for (const [seat, optionId] of pairs) {
+    assertVoteAccepted(await castVote(b, trip, seat, optionId), seat);
+    trip = await readTrip(b);
+  }
+  return trip;
+}
+
+for (const resolution of RESOLUTIONS) {
+  for (const first of ['owner', 'fish']) {
+    for (const second of ['same', 'different']) {
+      test(`共同决定矩阵：${resolution} · ${first === 'owner' ? '主人先投' : '鱼先投'} · 第二票${second === 'same' ? '相同' : '不同'}`, async (t) => {
+        const { b, trip } = await openJoint(t, resolution);
+        const firstOption = 'rail';
+        const secondOption = second === 'same' ? 'rail' : 'bench';
+        const other = first === 'owner' ? 'fish' : 'owner';
+
+        assertVoteAccepted(await castVote(b, trip, first, firstOption), first);
+        const waiting = await readTrip(b);
+        assert.deepEqual(waiting.pending?.votes, { [first]: firstOption }, '第一票只写自己那一席，不前进');
+        assert.equal(waiting.actor, first === 'owner' ? 'fish' : 'owner');
+        assert.equal(waiting.joint.stage, first === 'owner' ? 'waiting-fish' : 'waiting-owner');
+
+        assertVoteAccepted(await castVote(b, waiting, other, secondOption), other);
+        const after = await readTrip(b);
+        const votes = { [first]: firstOption, [other]: secondOption };
+        const advances = second === 'same' || resolution !== 'require-agreement';
+        if (!advances) {
+          assert.ok(after.pending, '异票在 require-agreement 下保持待定');
+          assert.deepEqual(after.pending.votes, votes, '两票都留，谁都不清');
+          assert.equal(after.actor, 'owner');
+          assert.equal(after.joint.stage, 'disagree');
+          assert.match(after.joint.hint, /不一样/);
+          assert.equal(after.choices.length, trip.choices.length, '异票不额外写 choices');
+          return;
+        }
+        assert.equal(after.pending, null, '前进就是清空 pendingChoice');
+        assert.notEqual(after.step, 'choose');
+        const expected = second === 'same' ? firstOption
+          : resolution === 'owner-final' ? votes.owner : votes.fish;
+        const last = after.choices.at(-1);
+        assert.equal(last.option, expected, '按 resolution 取哪一票');
+        assert.equal(last.actor, 'joint');
+        assert.deepEqual(last.votes, [{ actor: 'owner', option: votes.owner }, { actor: 'fish', option: votes.fish }]);
+      });
+    }
+  }
+}
+
+const EXTRA_CASES = [
+  {
+    name: '只剩主人一票时，主人不能改票，也不能连投第二次',
+    prepare: [['owner', 'rail']],
+    act: (b, trip) => b.panel('story', 'choose', { tripId: trip.id, stamp: trip.stamp, choiceId: trip.pending.id, optionId: 'bench' }),
+    expect: { rejected: true, votes: { owner: 'rail' } },
+  },
+  {
+    name: '只剩鱼一票时，鱼不能改票，也不能连投第二次',
+    prepare: [['fish', 'rail']],
+    act: (b, trip) => b.tool('fun_story_act', { tripId: trip.id, stamp: trip.stamp, intent: 'say', say: JOINT_LABEL.bench, as: 'fish' }),
+    expect: { rejected: true, votes: { fish: 'rail' } },
+  },
+  {
+    name: '空票面时 skip 也非法',
+    prepare: [],
+    act: (b, trip) => b.panel('story', 'choose', { tripId: trip.id, stamp: trip.stamp, choiceId: trip.pending.id, optionId: 'skip' }),
+    expect: { rejected: true, votes: {} },
+  },
+  {
+    name: '异票时 skip 仍非法',
+    prepare: [['owner', 'rail'], ['fish', 'bench']],
+    act: (b, trip) => b.panel('story', 'choose', { tripId: trip.id, stamp: trip.stamp, choiceId: trip.pending.id, optionId: 'skip' }),
+    expect: { rejected: true, votes: { owner: 'rail', fish: 'bench' } },
+  },
+  {
+    name: '非法 optionId 被拒，票面一点不动',
+    prepare: [],
+    act: (b, trip) => b.panel('story', 'choose', { tripId: trip.id, stamp: trip.stamp, choiceId: trip.pending.id, optionId: 'no-such-option' }),
+    expect: { rejected: true, votes: {} },
+  },
+  {
+    name: '共同决定不接受替一席代投',
+    prepare: [],
+    act: (b, trip) => b.panel('story', 'choose', { tripId: trip.id, stamp: trip.stamp, choiceId: trip.pending.id, optionId: 'rail', substitute: true }),
+    expect: { rejected: true, votes: {} },
+  },
+  {
+    name: '异票时主人改自己那一票，改到一致就前进',
+    prepare: [['owner', 'rail'], ['fish', 'bench']],
+    act: (b, trip) => b.panel('story', 'choose', { tripId: trip.id, stamp: trip.stamp, choiceId: trip.pending.id, optionId: 'bench' }),
+    expect: { advanced: true, option: 'bench', votes: { owner: 'bench', fish: 'bench' } },
+  },
+  {
+    name: '异票时鱼改自己那一票，改到一致就前进',
+    prepare: [['owner', 'rail'], ['fish', 'bench']],
+    act: (b, trip) => b.tool('fun_story_act', { tripId: trip.id, stamp: trip.stamp, intent: 'say', say: JOINT_LABEL.rail, as: 'fish' }),
+    expect: { advanced: true, option: 'rail', votes: { owner: 'rail', fish: 'rail' } },
+  },
+  {
+    name: '异票僵住时先回家，不卡在这一步',
+    prepare: [['owner', 'rail'], ['fish', 'bench']],
+    act: (b, trip) => b.panel('story', 'close', { tripId: trip.id, stamp: trip.stamp }),
+    expect: { closed: true },
+  },
+];
+
+for (const row of EXTRA_CASES) {
+  test(`共同决定动作：${row.name}`, async (t) => {
+    const { b } = await openJoint(t, 'require-agreement');
+    const before = await prepareVotes(b, row.prepare);
+    const result = await row.act(b, before);
+    const after = await readTrip(b);
+    if (row.expect.rejected) {
+      assertRejected(result);
+      assert.equal(after.stamp, before.stamp, '拒绝不能刷进度戳');
+      assert.deepEqual(after.pending?.votes ?? {}, row.expect.votes, '拒绝不能改票面');
+      assert.equal(after.choices.length, before.choices.length, '拒绝不写 choices');
+      return;
+    }
+    if (typeof result.ok === 'boolean') assert.equal(result.ok, true, result.error);
+    else { assert.equal(result.failed, undefined, result.text); assert.equal(JSON.parse(result.text).ok, true); }
+    if (row.expect.closed) { assert.equal(after, null, '回家成功'); return; }
+    assert.equal(after.pending, null, '改到一致就前进');
+    assert.notEqual(after.step, 'choose');
+    const last = after.choices.at(-1);
+    assert.equal(last.option, row.expect.option);
+    assert.equal(last.actor, 'joint');
+    assert.deepEqual(last.votes, [{ actor: 'owner', option: row.expect.votes.owner }, { actor: 'fish', option: row.expect.votes.fish }]);
+  });
+}
+
+test('共同决定：空票面时鱼可以先投，并且那一票记在鱼名下', async (t) => {
+  const { b, trip } = await openJoint(t, 'require-agreement');
+  const fish = await b.tool('fun_story_act', { tripId: trip.id, stamp: trip.stamp, intent: 'say', say: JOINT_LABEL.rail, as: 'fish' });
+  assert.equal(fish.failed, undefined, fish.text);
+  assert.equal(JSON.parse(fish.text).as, 'fish');
+  const after = await readTrip(b);
+  assert.deepEqual(after.pending.votes, { fish: 'rail' }, '票记在鱼名下，不能变成 { owner: X }');
+  assert.notDeepEqual(after.pending.votes, { owner: 'rail' });
+  assert.equal(after.actor, 'owner');
+  assert.equal(after.joint.stage, 'waiting-owner');
+});
+
+test('共同决定：同一份票面，只读查询、面板与文字通道给出同一个答案', async (t) => {
+  const combos = [
+    { name: '空票面', votes: [] },
+    { name: '只有主人一票', votes: [['owner', 'rail']] },
+    { name: '只有鱼一票', votes: [['fish', 'rail']] },
+    { name: '两票不同', votes: [['owner', 'rail'], ['fish', 'bench']] },
+  ];
+  for (const combo of combos) {
+    await t.test(combo.name, async (t2) => {
+      const { b } = await openJoint(t2, 'require-agreement');
+      const trip = await prepareVotes(b, combo.votes);
+      const current = await b.json('fun_story_current');
+      assert.equal(current.trip.actor, trip.actor, '只读查询与面板的 actor 一致');
+      assert.equal(current.trip.joint.stage, trip.joint.stage, '阶段一致');
+      assert.equal(current.trip.joint.seat, trip.joint.seat, '该提示谁一致');
+      assert.deepEqual(current.trip.joint.canVote, trip.joint.canVote, '谁能投一致');
+      assert.equal(trip.actor, jointActor(trip.pending), 'actor 来自 jointActor');
+      assert.equal(trip.joint.stage, jointStage(trip.pending), 'stage 来自 jointStage');
+      const say = trip.actor === 'fish' ? JOINT_LABEL.rail : JOINT_LABEL.bench;
+      const acted = await b.tool('fun_story_act', { tripId: trip.id, stamp: trip.stamp, intent: 'say', say });
+      assert.equal(acted.failed, undefined, acted.text);
+      assert.equal(JSON.parse(acted.text).as, trip.actor, '文字通道默认身份与两个入口一致');
+    });
+  }
+});
+
+test('共同决定：面板文案跟着服务端阶段走，不是面板自己猜票面', async (t) => {
+  const { b } = await openJoint(t, 'require-agreement');
+  await prepareVotes(b, [['owner', 'rail']]);
+  const waiting = await readTrip(b);
+  assert.equal(waiting.joint.stage, 'waiting-fish');
+  assert.match(waiting.joint.headline, /鱼/);
+  assert.match(waiting.joint.hint, /鱼/);
+  assert.equal(waiting.joint.canVote.owner, false, '等鱼那一票时主人点不了');
+  assert.equal(waiting.joint.canVote.fish, true);
+  await prepareVotes(b, [['fish', 'bench']]);
+  const disagree = await readTrip(b);
+  assert.equal(disagree.joint.stage, 'disagree');
+  assert.match(`${disagree.joint.headline} ${disagree.joint.hint} ${disagree.joint.note}`, /不一样/);
+  assert.equal(disagree.joint.canVote.owner, true, '异票时两席都能改自己那一票');
+  assert.equal(disagree.joint.canVote.fish, true);
 });
 
 test('主人在面板上点的配图会进她的提示词，45 分钟后自己消失', async (t) => {

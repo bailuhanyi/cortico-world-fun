@@ -54,6 +54,7 @@ import { readStoryQuery } from './story-read.js';
 import { randomUUID } from 'node:crypto';
 import { pickStory, advanceStoryChoice, normalizeStoryProgress, storyReferences } from './story-packs.js';
 import { describeMemory, describePack, describeStoryTrip, requestStoryDecision, STORY_ACTIONS, storyFailure, storyStamp, StoryAutonomy } from './story-panel.js';
+import { jointActor, jointCanVote, jointDecision, jointView } from './joint.js';
 import {
   continueFreeSegment, effectiveMaxTurns, freeCanContinue, freePromptPayload, freeSummaryText, freeTurn, freeTurnsLeft,
   isFreePack, newFreeState, normalizeFreeState, requestFreeTurn,
@@ -966,38 +967,27 @@ export class FunWorld {
       substituted = true;
     }
     if (choice.actor === 'joint') {
-      if (!['owner', 'fish'].includes(submitter)) return { text: '共同选择需要用户或鱼分别提交有效选项。', failed: true };
+      // 规则、权限与文案都从 src/joint.js 取：空票面两席都能先投；只剩一席没投时只有那一席
+      // 能投；异票时两席都能改自己那一票，只写自己这一席。世界不再自己比对票面。
       const optionLabel = (id) => choice.options.find(({ id: value }) => value === id)?.label ?? id;
-      const seats = choice.votes ?? {};
-      // 只差一席时，只有缺的那一席能投；两席都投过（且不一致）时，谁都可以改自己那一票。
-      const missing = !seats.owner ? 'owner' : !seats.fish ? 'fish' : null;
-      if (missing && submitter !== missing) {
-        return { text: missing === 'owner'
-          ? `鱼那一票已经记下了（${optionLabel(seats.fish)}）；这一步等你（主人）自己投，鱼不能代投。`
-          : `你那一票已经记下了（${optionLabel(seats.owner)}）；这一步等鱼自己投她那一票，你不能代投。`, failed: true };
-      }
-      if (optionId === 'skip') return { text: '共同选择不能用略过代替双方决定。', failed: true };
-      const valid = choice.options.some(({ id }) => id === optionId);
-      if (!valid) return { text: this.#choiceHint(choice), failed: true };
-      const votes = { ...seats, [submitter]: optionId };
-      if (!votes.owner || !votes.fish) {
-        session.pendingChoice = { ...choice, votes };
-        session.lastAt = this.#now();
-        await this.#commitState(next);
-        return { text: submitter === 'owner'
-          ? `你的选择已保存（${optionLabel(optionId)}）。现在等鱼自己提交她那一票；没有以等待或超时当作同意。`
-          : `鱼的选择已保存（${optionLabel(optionId)}）。现在等你（主人）自己投这一票；没有以等待或超时当作同意。` };
-      }
-      if (votes.owner !== votes.fish && choice.jointResolution === 'require-agreement') {
+      const before = jointView(choice, optionLabel, this.language);
+      if (!['owner', 'fish'].includes(submitter)) return { text: before.invalidText, failed: true };
+      if (args?.substitute === true) return { text: before.substituteText, failed: true };
+      if (!jointCanVote(choice, submitter)) return { text: before.blocked[submitter] ?? before.invalidText, failed: true };
+      if (optionId === 'skip') return { text: before.skipText, failed: true };
+      if (!choice.options.some(({ id }) => id === optionId)) return { text: this.#choiceHint(choice), failed: true };
+      const votes = { ...(choice.votes ?? {}), [submitter]: optionId };
+      const after = jointView({ ...choice, votes }, optionLabel, this.language);
+      const decision = jointDecision({ ...choice, votes });
+      if (!decision.advance) {
         // 异票不清任何一席：两票都留在票面上，谁都可以改自己那一票，两边一致才前进。
         // （此前是「只保留后投的那一票」，会静默吞掉对方刚投的票，两个人只能互相清票。）
         session.pendingChoice = { ...choice, votes };
         session.lastAt = this.#now();
         await this.#commitState(next);
-        return { text: `两边票不一样（你：${optionLabel(votes.owner)} / 鱼：${optionLabel(votes.fish)}）：这一轮不前进，也不清掉任何一席的票。谁都可以改自己那一票，两边一致才递交；也可以先回家。` };
+        return { text: decision.stage === 'disagree' ? after.hint : after.saved[submitter] };
       }
-      optionId = votes.owner === votes.fish ? votes.owner
-        : choice.jointResolution === 'owner-final' ? votes.owner : votes.fish;
+      optionId = decision.optionId;
       jointVotes = [{ actor: 'owner', option: votes.owner }, { actor: 'fish', option: votes.fish }];
       submitter = 'joint';
     }
@@ -1298,7 +1288,7 @@ export class FunWorld {
       if (rows.some(({ pack }) => isFreePack(pack))) {
         return { text: '这一段是自由模式，用 fun_story_act 说一句来推进；想收尾就用 intent: close。', failed: true };
       }
-      const step = describeStoryTrip(session, false, rows, venue, nowMin, visitsBefore, [], this.cfg?.funStoryFreeTurns);
+      const step = describeStoryTrip(session, false, rows, venue, nowMin, visitsBefore, [], this.cfg?.funStoryFreeTurns, this.language);
       if (step.step !== 'move' || (wanted && wanted !== step.nextArea)) {
         return { text: step.blocked || (step.nextArea ? `下一处是「${step.nextArea}」。` : '故事已经走完，可以回家。'), failed: true };
       }
@@ -2006,6 +1996,7 @@ export class FunWorld {
       visitCount: (id) => this.#history(id)?.visitCount ?? 0,
       completedStoryIds: () => this.#completedStoryIds(),
       freeEnabled: this.cfg?.funStoryFree === true,
+      language: this.language,
       runId: this.#state.session?.storyRun?.runId ?? this.#state.draft?.storyRun?.runId ?? null,
     });
   }
@@ -2027,7 +2018,7 @@ export class FunWorld {
     const place = (id) => places.find((venue) => venue.id === id);
     const visits = (id) => this.#history(id)?.visitCount ?? 0;
     const completed = this.#completedStoryIds();
-    const trip = describeStoryTrip(outing, Boolean(state.draft), catalog, place(outing?.placeId), nowMin, visits(outing?.placeId), completed, this.cfg?.funStoryFreeTurns);
+    const trip = describeStoryTrip(outing, Boolean(state.draft), catalog, place(outing?.placeId), nowMin, visits(outing?.placeId), completed, this.cfg?.funStoryFreeTurns, this.language);
     if (trip) trip.dmBudget = dmBudget(outing.storyRun.dmBudget);
     // 新的一屏 = 一次「要不要配图」的机会；同一个进度戳只准备一次，不会反复刷。
     this.#maybeAutoImageRequest(trip, outing);
@@ -2295,16 +2286,12 @@ export class FunWorld {
   }
 
   /**
-   * 文字通道里这一票是谁的。
-   * 普通回合看节点 actor；共同决定看**还缺哪一席的票**——缺鱼就是鱼投，
-   * 两票都在（异票要重选）才回到用户。不能只看 `pending.actor === 'joint'` 就当成用户。
+   * 文字通道里这一票默认记在谁名下。
+   * 普通回合看节点 actor；共同决定只看 `jointActor`（空票面与异票回主人，缺鱼那一票才是鱼）。
+   * 这不是权限：空票面时鱼也能先投，调用方带 `as: "fish"` 即可（规则见 src/joint.js）。
    */
   #textVoter(pending) {
-    if (pending?.actor === 'joint') {
-      if (!pending.votes?.owner) return 'owner';
-      return pending.votes?.fish ? 'owner' : 'fish';
-    }
-    return pending?.actor === 'fish' ? 'fish' : 'owner';
+    return jointActor(pending) ?? (pending?.actor === 'fish' ? 'fish' : 'owner');
   }
 
   async #storyTextStatic(args, trip) {
@@ -2322,8 +2309,8 @@ export class FunWorld {
     }
     const pending = trip.pending;
     if (!pending) return { text: '现在没有待选择的节点，这一步不需要 say。', failed: true };
-    // 两席都投过（且不一致）时谁都可以改自己那一票，所以允许调用方显式声明 as；
-    // 只差一席时由 #choiceTool 按「缺哪一席」把关，声明错了会被明确拒绝。
+    // 空票面时两席都能先投，两票不同时两席都能改自己那一票：这两种状态允许调用方显式声明
+    // `as`。只剩一席没投时，声明成另一席会被 #choiceTool 的 jointCanVote 明确拒绝。
     const declared = args.as === 'fish' ? 'fish' : args.as === 'owner' ? 'owner' : null;
     const voter = declared ?? this.#textVoter(pending);
     const say = typeof args.say === 'string' ? args.say.replace(/\s+/g, ' ').trim().slice(0, 200) : '';
@@ -2368,17 +2355,16 @@ export class FunWorld {
   #textStaticPayload(trip, extra = {}) {
     const pending = trip?.pending ?? null;
     const joint = pending?.actor === 'joint';
-    const votes = joint ? { ...(pending.votes ?? {}) } : null;
-    const waitingFor = joint ? (trip?.actor ?? 'owner') : null;
-    const disagree = Boolean(joint && votes?.owner && votes?.fish && votes.owner !== votes.fish);
+    const labelOf = (id) => pending?.options?.find(({ id: value }) => value === id)?.label ?? id;
+    const view = joint ? jointView(pending, labelOf, this.language) : null;
     return {
       ok: true, ...extra, step: trip?.step ?? '', stamp: trip?.stamp ?? '', nextArea: trip?.nextArea ?? null,
       pending, narration: trip?.events?.at(-1) ?? '',
-      ...(joint ? { joint: { resolution: pending.jointResolution ?? null, votes, waitingFor, disagree } } : {}),
+      // stage / seat / canVote 与面板、只读查询同源，主持不用自己比对票面。
+      ...(view ? { joint: { stage: view.stage, resolution: view.resolution, votes: view.votes, waitingFor: view.seat, disagree: view.stage === 'disagree', canVote: view.canVote } } : {}),
       hint: !pending ? '故事已经走完，可以用 intent: close 收尾。'
-        : disagree ? '共同决定：两席的票不一样，这一轮不前进，两票都保留。谁都可以改自己那一票（改鱼那一票要带 as: "fish"），两边一致才递交；也可以先回家。'
-          : joint ? `共同决定：${waitingFor === 'fish' ? '现在轮到你（鱼）明确提交这一票' : '现在等用户自己提交这一票'}；同票才前进，异票只会重来，等待不算同意。`
-            : '把事件和选项告诉用户；用户说完再用 say 交进来（原话命中选项会直接生效）。',
+        : view ? view.hint
+          : '把事件和选项告诉用户；用户说完再用 say 交进来（原话命中选项会直接生效）。',
     };
   }
 

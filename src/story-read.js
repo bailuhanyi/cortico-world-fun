@@ -12,6 +12,7 @@ import { areasNow, descNow } from './phases.js';
 import { hoursState } from './venues.js';
 import { minutesIn } from './state.js';
 import { describeMemory, describePack } from './story-panel.js';
+import { jointView } from './joint.js';
 
 /** 一篇故事的公开卡：只有元数据与「能不能玩」，不返回节点内容或未来分支。 */
 function publicCard(ctx, row) {
@@ -80,6 +81,10 @@ export async function readStoryQuery(ctx) {
     const status = ctx.status();
     if (!status.ok) return status;
     const trip = status.trip;
+    const pending = trip?.pending ?? null;
+    const labelOf = (id) => pending?.options?.find(({ id: value }) => value === id)?.label ?? id;
+    // 共同决定只从 joint.js 取一份：阶段、该谁投、谁能投、文案全在里面。
+    const joint = pending?.actor === 'joint' ? jointView(pending, labelOf, ctx.language) : null;
     return { ok: true, queryAt, state: trip ? trip.state : 'none', startStamp: status.startStamp, trip: trip ? {
       id: trip.id, runId: ctx.runId,
       title: trip.title, packId: trip.packId, revision: trip.revision, placeId: trip.placeId, placeName: trip.placeName,
@@ -89,10 +94,13 @@ export async function readStoryQuery(ctx) {
         prompt: trip.pending.prompt, actor: trip.pending.actor ?? 'owner',
         jointResolution: trip.pending.jointResolution ?? null, votes: { ...(trip.pending.votes ?? {}) },
         options: trip.pending.options.map(({ id, label }) => ({ id, label })) } : null,
-      // 文字通道只看这一行就知道该谁投：共同决定缺哪一席，就是那一席的回合。
-      hint: trip.step !== 'choose' ? null : trip.actor === 'fish'
-        ? '这一票轮到鱼（你）自己提交：把她的选择用 say 交进来即可，不要等用户替她选。'
-        : trip.actor === 'owner' ? '这一票等用户（主人）自己提交；鱼不能代投。' : null,
+      // 文字通道只看这一行就知道该谁投：共同决定里空票面两席都能先投，只剩一席时才是那一席的回合。
+      joint: joint ? { stage: joint.stage, seat: joint.seat, resolution: joint.resolution, canVote: joint.canVote,
+        votes: joint.votes, seats: joint.seats, hint: joint.hint } : null,
+      hint: trip.step !== 'choose' ? null : joint ? joint.hint
+        : trip.actor === 'fish'
+          ? '这一票轮到鱼（你）自己提交：把她的选择用 say 交进来即可，不要等用户替她选。'
+          : trip.actor === 'owner' ? '这一票等用户（主人）自己提交；鱼不能代投。' : null,
       timeline: [...trip.timeline],
     } : null };
   }

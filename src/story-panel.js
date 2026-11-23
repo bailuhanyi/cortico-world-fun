@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { pickStory, storyAvailability, storyReferences, storyStepBlock } from './story-packs.js';
 import { effectiveMaxTurns, evaluateWhen, freeCanContinue, freeSegmentsLeft, freeTurnsLeft, isFreePack, normalizeFreeState } from './story-free.js';
+import { jointActor, jointView } from './joint.js';
 
 export const STORY_ACTIONS = ['start', 'move', 'choose', 'resume', 'close', 'mode', 'pause', 'decide', 'auto', 'fork', 'segment'];
 import { AUTO_SEGMENTS, autoLimits, budgetStop, storyBudget } from './story-reliability.js';
@@ -112,7 +113,7 @@ export function freeTripView(outing, row, venue, isDraft, freeTurnLimit) {
   };
 }
 
-export function describeStoryTrip(outing, isDraft, catalog, venue, nowMin, visits, completedStoryIds = [], freeTurnLimit) {
+export function describeStoryTrip(outing, isDraft, catalog, venue, nowMin, visits, completedStoryIds = [], freeTurnLimit, language = 'zh') {
   const run = outing?.storyRun;
   if (!run) return null;
   const row = catalog.find(({ pack }) => pack.id === run.packId && pack.revision === run.revision);
@@ -132,9 +133,10 @@ export function describeStoryTrip(outing, isDraft, catalog, venue, nowMin, visit
   else if (pickStory([row], venue, nextNode.area, nowMin, outing, visits, completedStoryIds)) step = 'move';
   else blocked = storyStepBlock(row.pack, nextNode, venue, nowMin, visits) || '现在不满足下一处区域的开放或触发条件。可以稍后再试，或按已有记录回家。';
   const duo = row?.pack.version === 2 && row.pack.metadata?.participation === 'duo';
+  // 「现在该提示谁」只从 joint.js 取；面板显示与权限分开：能投不能投看 trip.joint.canVote。
   const currentActor = duo
     ? step === 'close' ? 'owner'
-      : pending?.actor === 'joint' ? (!pending.votes?.owner ? 'owner' : !pending.votes?.fish ? 'fish' : 'owner')
+      : pending?.actor === 'joint' ? jointActor(pending)
         : pending?.actor ?? (step === 'move' ? nextNode?.actor === 'fish' ? 'fish' : 'owner' : 'owner')
     : null;
   return {
@@ -144,6 +146,8 @@ export function describeStoryTrip(outing, isDraft, catalog, venue, nowMin, visit
     actor: currentActor,
     jointVotes: pending?.actor === 'joint' ? { ...(pending.votes ?? {}) } : undefined,
     jointResolution: pending?.jointResolution ?? null,
+    // 面板只读这一份：阶段、谁能投、两席票面与各处文案都在里面（joint.js 单一派生）。
+    joint: pending?.actor === 'joint' ? jointView(pending, (id) => pending.options.find(({ id: value }) => value === id)?.label ?? id, language) : null,
     pending: pending ? { id: pending.id, event: pending.event, prompt: pending.prompt, actor: pending.actor ?? null,
       jointResolution: pending.jointResolution ?? null, votes: { ...(pending.votes ?? {}) },
       options: pending.options.map(({ id, label }) => ({ id, label })) } : null,

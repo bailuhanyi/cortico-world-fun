@@ -2569,8 +2569,9 @@ function mountPanel(root, ctx) {
     const pending = current.pending;
     const isDraft = current.state === "draft";
     const manually = canAct(state) && !state.snapshot.autonomy.enabled;
-    const ownerTurn = manually && current.actor !== "fish";
-    const canSubstitute = !isDraft && current.step === "choose" && !state.autoAuthorized && state.snapshot.autonomy.canSubstitute === true;
+    const joint = pending?.actor === "joint" ? current.joint : null;
+    const ownerTurn = manually && (joint ? joint.canVote?.owner === true : current.actor !== "fish");
+    const canSubstitute = !joint && !isDraft && current.step === "choose" && !state.autoAuthorized && state.snapshot.autonomy.canSubstitute === true;
     const pick = async (option) => {
       if (!canSubstitute) return controller.mutate("choose", { choiceId: pending.id, optionId: option.id });
       const label2 = text(option.label, option.id);
@@ -2597,29 +2598,18 @@ function mountPanel(root, ctx) {
   function optionsHint(state, current, canSubstitute) {
     if (current.state === "draft") return "先继续行程，再选择下一步。";
     if (state.autoAuthorized) return "鱼正在考虑这些有效选项。你可以随时关闭右侧开关接管。";
+    if (current.pending?.actor === "joint" && current.joint?.hint) return current.joint.hint;
     if (canSubstitute) return "鱼这一步没法自己决定：你可以替她选一个，点下去会先问你确认；也可以先收尾，或者点右侧「再来一段」。";
-    const pending = current.pending;
-    if (pending?.actor === "joint") {
-      const votes = pending.votes ?? {};
-      if (!votes.owner) return "两席各投一票，同票才出发：你先选，选完等鱼自己投她那一票。";
-      if (!votes.fish) return "你这一票已经记下了。这一票要鱼自己投：到聊天里让她说，或者打开右侧「鱼自己游玩」由她决定。两票相同才会前进。";
-      return "两边票不一样：这一轮不前进，两票都留着。谁都可以改自己那一票，两边一致才递交；也可以先回家。";
-    }
     return "选一条你想走的路。点击后会等待保存确认。";
   }
-  function jointBoard(pending) {
-    const votes = pending?.votes ?? {};
-    const labelOf = (id) => list(pending?.options).find((option) => option.id === id)?.label ?? "";
-    const seat = (who, name) => {
-      const picked = labelOf(votes[who]);
-      return node(
-        "div",
-        { class: `sw-vote${picked ? " sw-vote-done" : ""}` },
-        node("small", {}, name),
-        node("strong", {}, picked || "还没投")
-      );
-    };
-    return node("div", { class: "sw-votes", "aria-label": "共同决定的两席票" }, seat("owner", "你这一席"), seat("fish", "鱼那一席"));
+  function jointBoard(joint) {
+    const seats = list(joint?.seats);
+    return node("div", { class: "sw-votes", "aria-label": "共同决定的两席票" }, seats.map((seat) => node(
+      "div",
+      { class: `sw-vote${seat.voted ? " sw-vote-done" : ""}` },
+      node("small", {}, seat.name),
+      node("strong", {}, seat.label || "还没投")
+    )));
   }
   function advanceButton(state, current, opts = {}) {
     const manually = canAct(state) && !state.snapshot.autonomy.enabled;
@@ -2846,7 +2836,8 @@ function mountPanel(root, ctx) {
     const isDraft = current.state === "draft";
     const pending = current.pending;
     const manually = canAct(state) && !snapshot.autonomy.enabled;
-    const ownerTurn = manually && current.actor !== "fish";
+    const joint = pending?.actor === "joint" ? current.joint : null;
+    const ownerTurn = manually && (joint ? joint.canVote?.owner === true : current.actor !== "fish");
     const left = node("article", { class: "sw-card sw-play-main" });
     left.append(node("div", { class: "sw-play-head" }, node(
       "div",
@@ -2877,10 +2868,9 @@ function mountPanel(root, ctx) {
       reading.append(node("ul", { class: "sw-event-history" }, events.slice(-3).map((event) => node("li", {}, node("p", { class: "sw-prose" }, text(event))))));
     } else reading.append(node("p", { class: "sw-prose" }, current.step === "move" ? "路就在眼前。走近一点，看看会遇见什么。" : "这一趟的故事，将随着真实的行动在这里展开。"));
     if (current.actor) {
-      const joint = pending?.actor === "joint" ? pending : null;
-      const picked = (id) => list(joint?.options).find((option) => option.id === id)?.label ?? "";
-      const seats = joint ? ` · 你${joint.votes?.owner ? `已选「${picked(joint.votes.owner)}」` : "还没投"}，鱼${joint.votes?.fish ? `已选「${picked(joint.votes.fish)}」` : "还没投"}` : "";
-      reading.append(note(`当前行动者：${current.actor === "fish" ? "鱼" : "你"}${pending?.actor === "joint" ? ` · 共同决定：${pending.jointResolution === "require-agreement" ? "双方必须明确同意；分歧保持待定" : pending.jointResolution === "owner-final" ? "分歧按你的明确选择" : "分歧按鱼的明确选择"}` : ""}${seats}。等待不会当作同意。`));
+      const who = (joint?.seat ?? current.actor) === "fish" ? "鱼" : "你";
+      const jointLine = joint ? ` · 共同决定：${joint.resolutionNote}${joint.seatsText ? ` · ${joint.seatsText}` : ""}` : "";
+      reading.append(note(`当前行动者：${who}${jointLine}。等待不会当作同意。`));
     }
     for (const reference of list(current.references)) reading.append(note(reference));
     if (current.blocked) reading.append(node("div", { class: "sw-notice sw-notice-error" }, icon("info"), node("p", {}, text(current.blocked, "当前无法推进，请核对场所与故事条件。"))));
@@ -2889,12 +2879,11 @@ function mountPanel(root, ctx) {
     const action = node("div", { class: "sw-play-action", "aria-label": "当前这一步" });
     if (pending) {
       const { block, canSubstitute } = pendingPicker(state, current, "sw-choices");
-      const joint = pending.actor === "joint";
-      action.append(node("div", { class: "sw-kicker" }, joint && current.actor === "fish" ? "现在轮到鱼" : joint && pending.votes?.owner && pending.votes?.fish ? "两边票不一样" : "现在轮到你了"));
+      action.append(node("div", { class: "sw-kicker" }, joint ? joint.headline : "现在轮到你了"));
       if (pending.prompt) action.append(node("p", { class: "sw-prose" }, text(pending.prompt)));
-      if (joint) action.append(jointBoard(pending));
+      if (joint) action.append(jointBoard(joint));
       action.append(block, note(optionsHint(state, current, canSubstitute)));
-      if (joint && current.actor === "fish" && canAct(state)) {
+      if (joint?.seat === "fish" && canAct(state)) {
         action.append(actionRow(button(
           "刷新，看鱼投了没",
           () => {
@@ -2921,7 +2910,7 @@ function mountPanel(root, ctx) {
     const checked = state.autoplay === true;
     const running = state.autoAuthorized === true;
     const stopped = Boolean(snapshot.autonomy.stop);
-    const modeSubtitle = stopped ? snapshot.autonomy.canContinue ? "这一段走完了，可以再来一段" : "这一段走完了，等你收尾" : running ? "这一趟，由鱼自己决定" : checked ? current.actor === "owner" ? "轮到你选择；选完鱼会接着走" : "鱼会接着往下走" : current.actor === "fish" ? "这一步等鱼提交，可以去聊天里让她说" : "下一步，等你来选择";
+    const modeSubtitle = stopped ? snapshot.autonomy.canContinue ? "这一段走完了，可以再来一段" : "这一段走完了，等你收尾" : running ? "这一趟，由鱼自己决定" : checked ? (joint?.seat ?? current.actor) === "owner" ? "轮到你选择；选完鱼会接着走" : "鱼会接着往下走" : (joint?.seat ?? current.actor) === "fish" ? "这一步等鱼提交，可以去聊天里让她说" : "下一步，等你来选择";
     modeCard.append(node(
       "div",
       { class: "sw-mode" },
@@ -2991,6 +2980,7 @@ function mountPanel(root, ctx) {
   function playImmersive(state, current) {
     const isDraft = current.state === "draft";
     const pending = current.pending;
+    const joint = pending?.actor === "joint" ? current.joint : null;
     const events = list(current.events);
     const wrap = node("div", { class: "sw-imm" });
     wrap.append(scene(null, text(current.area, current.placeName), "", { location: current.locationArt, class: "sw-imm-scene", tag: text(current.placeName, "当前地点") }));
@@ -3000,11 +2990,11 @@ function mountPanel(root, ctx) {
       node("div", { class: "sw-kicker" }, isDraft ? "等待继续" : `此刻 · ${text(current.area, current.placeName)}`),
       node("p", { class: "sw-imm-lead" }, text(events.at(-1), current.step === "move" ? "路就在眼前。走近一点，看看会遇见什么。" : "这一趟的故事，将随着真实的行动在这里展开。")),
       pending?.prompt ? node("p", { class: "sw-imm-ask" }, text(pending.prompt)) : null,
-      current.actor === "joint" || pending?.actor === "joint" ? note(`共同决定：${current.actor === "fish" ? "现在轮到鱼投她那一票" : "现在等你投这一票"}；两边同票才会前进，等待与超时都不算同意。`) : null
+      joint ? note(joint.note) : null
     ));
     if (pending) {
       const { block, canSubstitute } = pendingPicker(state, current, "sw-imm-choices");
-      if (pending.actor === "joint") wrap.append(jointBoard(pending));
+      if (joint) wrap.append(jointBoard(joint));
       wrap.append(block, note(optionsHint(state, current, canSubstitute)));
     } else {
       const advance = advanceButton(state, current, { block: true });
