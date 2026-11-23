@@ -8,6 +8,7 @@
 > - 备份：`vendor\cortico-world-fun.bak-20261123-155013`、`data\extensions\package.json.bak-20261123-155013`、`data\home\companion\config.json.bak-20261123-155013`。
 > - 顺带清理：删掉 0.7.4 起已废弃的 `worlds.fun.funHomeAutoSlots`（`config.json` 17,661 B → 17,614 B，只少这一行；删前备份 `config.json.bak-20261123-155240`）。注意 `config.json` 由 Coo 自己序列化，若它退出时按内存重写，这个键可能被写回——无害，0.7.5 不读它。
 > - **仍未 push、未发 npm**；真机点选验收（地点册封面/编辑/插画/412 滚动、故事工坊三个起点/选文件/折叠）仍未做。
+> - **产物已在 16:0x 重打**（换新图标 + 补「鱼的小世界已并入」简介之后）：`release-0.7.5\cortico-world-fun-0.7.5.tgz` **1,718,106 B** / SHA-256 `71470950BD6D4D5BAE8AABB082E023FEEFFCAD0FBAA1A87EF11AAF084FEC95A9`；群友包 `…-群友测试包.zip` **1,744,851 B** / `3CBB04A6EF02BAB5CC92DD51ED62A1CA76C9C03BF944D3C034196263C16C14DA`；`dist/webui.js` 仍是 `0C879FC8…51D3`；`assets/icon.png` `DB2E3FC8…C76442`（113,960 B）。`node tools/verify-published.mjs --file …tgz` 通过。**旧产物（1,669,920 B / `BCD13EC6…`）已移到 `release-0.7.5\_prev-20261123-1600\`，下面 14:5x 那条记的哈希作废。**
 
 > **发布状态（2026-11-23 14:5x）**：0.7.5 故事工坊版式收口完成、已本地提交（`44993cd`）、已打包，`npm run verify` 与全量 `npm test` 全绿；**未 push、未发 npm、按用户要求未装 Coo**（本机 Coo 仍是 0.7.4）。
 > - 产物：`story-world\artifacts\release-0.7.5\`。`cortico-world-fun-0.7.5.tgz` SHA-256 `BCD13EC6DD7429C6BC260368FE5F13D48A551806D5FA0E17A4358E6BA75441FB`（1,669,920 B）；群友包 `…-群友测试包.zip` SHA-256 `BAC706B576B035C42BAA1F70FE6BBA3C636B5DD4887CAD77BB2B34BC3CC6CB31`（1,696,527 B）；`dist/webui.js` SHA-256 `0C879FC80BDFD9B6772C327F2421A3505EFD3BA7604DD436F67547774DE551D3`（包内与仓库一致）。

@@ -14,7 +14,7 @@
 - 测试：`panels.test` 补三个起点 / 窄屏可达 / 选文件读入 / 超 32 KB 与坏 JSON 不清空；`webui/story` 的作者视图模式数同步为 3；全链与 `npm run verify` 全绿。
 - **新图标**：`assets/icon.png` 换成新的 512×512 立绘（取自用户提供的原图，黑底补成正方形、不裁切，256 色调色板压到 111 KB）。
 - **简介**：中英文简介都写明「鱼的小世界」（`cortico-world-map`）已并入——地点与房间就是本插件的「地点册」与「家」，旧备份可从「地点册 → 整理与设置 → 从小世界迁入」搬过来。
-- 版本号升到 0.7.5；已打包到 `story-world\artifacts\release-0.7.5`（tgz `BCD13EC6…5441FB` + 群友测试包 `BAC706B5…C6CB31`），并已装进本机 Coo（vendor 0.7.5、`/api/extensions` `0.7.5 / loaded`、asset 452,497 B 与 `dist/webui.js` 同哈希；装前备份 `vendor\cortico-world-fun.bak-20261123-155013`）。
+- 版本号升到 0.7.5；已打包到 `story-world\artifacts\release-0.7.5`（tgz 1,718,106 B / `71470950…FEC95A9` + 群友测试包 1,744,851 B / `3CBB04A6…C16C14DA`；换图标与补简介后于 16:0x 重打，旧产物在 `_prev-20261123-1600`），并已装进本机 Coo（vendor 0.7.5、`/api/extensions` `0.7.5 / loaded`、asset 452,497 B 与 `dist/webui.js` 同哈希；装前备份 `vendor\cortico-world-fun.bak-20261123-155013`）。
 
 ## 0.7.4
 
