@@ -9,10 +9,10 @@
  * **API Key 与自定义工作流不在配置里**：前者只存本机 DPAPI 密文，后者是 32 KB
  * JSON（宿主 string 只渲染单行输入），入口都在「出游 → 设置 → 高级」。
  *
- * 她什么时候出门：`funHomeAutoGo` 是「主人允许她自己出门」的许可，
- * `funHomeAutoSlots` 是叫醒她的时段（方案 B）。两个都有，且时段非空时，
- * World 才会在到点推一条 internal 事件叫她「看一眼日程」；去不去、去哪儿、
- * 去几次仍由她和主对话定。本 World 不读「鱼的每一天」的日程、不挑地方、不替她出门。
+ * 她什么时候出门：`funHomeAutoGo` 是「主人允许她自己出门」的许可，本身不带时段。
+ * 几点算她自己的时间由「鱼的每一天」的「她自己的时间」决定；那边叫醒她时，
+ * 空着的时段就是她可以出门的许可。去不去、去哪儿、去几次仍由她和主对话定。
+ * 本 World 不读「鱼的每一天」的日程、不挑地方、不替她出门，也不再注册自己的叫醒。
  */
 
 export const ID = 'fun';
@@ -40,16 +40,11 @@ export const DEFAULTS = Object.freeze({
    * 「只说我喝了什么」——所以开着也不会编味道。
    */
   funTasteFromFeast: true,
-  /** 「家」的「允许她自己出门」：默认关；开着才叫醒，叫醒也不替她挑地方。 */
-  funHomeAutoGo: false,
   /**
-   * 自己出门的时段（24 小时制 HH:MM，逗号分隔）。
-   *
-   * 到点推一条 internal 事件叫她看一眼日程；去不去由她和主对话定。
-   * 这是方案 B：本 World 只负责叫醒，不读「鱼的每一天」的日程、也不替她出门。
-   * 留空 = 只留许可，不叫醒。
+   * 「家」的「允许她自己出门」：默认关；只是许可，不带自己的叫醒时段。
+   * 时段跟着「鱼的每一天」的「她自己的时间」走——本 World 不读它的日程、不挑地方。
    */
-  funHomeAutoSlots: '10:30,15:30,19:30',
+  funHomeAutoGo: false,
   /** 剧情图片独立开关；来源在故事面板设置，默认回执委派，显式本地URL可选直连。 */
   funStoryImages: false,
   /**
@@ -123,9 +118,7 @@ const ZH = {
     funTasteFromFeast: '吃喝的味道去「鱼的每一天」拿',
     funTasteFromFeastDesc: '开启时，咖啡店/奶茶店/餐厅/夜市的回执会让她用 feast_menu → feast_eat 去「鱼的每一天」点一道真的，那里才有九维口感、香气和余韵。关掉就只说「在这儿喝了什么」，一个字都不提味道。\n\n注意：这不是自动检测——本插件不会去探测别的扩展装没装（World 契约不允许互相依赖）。所以装没装都要你自己定这一项：装了鱼的每一天建议开着。',
     funHomeAutoGo: '家：允许她自己出门',
-    funHomeAutoGoDesc: '打开后，她会按「自己出门的时段」收到一条只有她看得到的提醒：先看她当天的日程（feast_life_now），自由就出门、写着上班睡觉就不出门。去不去、去哪儿、去几次都由她和主对话定；本插件不替她挑地方，也不会自己把她送出门。默认关闭。',
-    funHomeAutoSlots: '自己出门的时段',
-    funHomeAutoSlotsDesc: '24 小时制 HH:MM，逗号分隔；每个时段最多叫一次。到点只提醒她「这会儿是你自己的时间」，剩下的由她看日程决定。留空 = 不叫，只保留上面的许可。',
+    funHomeAutoGoDesc: '打开后，她自己出门的许可跟着「鱼的每一天」的「她自己的时间」走：那边叫醒她时，先看当天日程（feast_life_now），自由就出门、写着上班睡觉就不出门。本插件不再单独设「自己出门的时段」，也不读对方的日程、不挑地方、不会自己把她送出门。默认关闭。',
     funStoryDM: '可选文本主持',
     funStoryDMDesc: '默认关闭。接口地址与模型名就在下面；API Key 不放进配置，请到「出游 → 设置 → 高级」填写，只存本机 DPAPI 密文。地址、模型都留空沿用宿主 cognition.request；填了地址和密钥则由本插件直连 OpenAI 兼容 POST /chat/completions，它们不传给宿主或其他插件。Windows 使用 DPAPI 当前用户加密，其他平台禁用凭据保存；换机器或重装需重填。可立即清除。主持只提议合法选项，当前行动者明确提交才执行。每趟 6 次、每步 2 次（含重试、失败、取消），未知 token 不估算。',
     funStoryNodeLimit: '故事长度（节点上限）',
@@ -184,9 +177,7 @@ const EN = {
     funTasteFromFeast: 'Get tastes from Fish Every Day',
     funTasteFromFeastDesc: 'On: receipts at the coffee shop, tea stand, restaurant and night market tell her to order something real via feast_menu → feast_eat in Fish Every Day, where the nine-axis flavour profile lives. Off: she only says what she had, and never describes a taste.\n\nNote: this is not auto-detection — a World must not probe whether another extension is installed (the contract forbids interdependence). Set it yourself; leave it on if you have Fish Every Day.',
     funHomeAutoGo: 'Home: let her go out on her own',
-    funHomeAutoGoDesc: 'On: at each of her own-time slots she gets an internal reminder to check that day\'s schedule (feast_life_now) — go out if the stretch is free, stay in if it says work or sleep. Whether, where and how often is hers and the main conversation\'s call; this plugin never picks a place and never sends her out by itself. Off by default.',
-    funHomeAutoSlots: 'Her own-time slots',
-    funHomeAutoSlotsDesc: '24-hour HH:MM, comma separated; each slot wakes her at most once. The reminder only says the stretch is hers — what to do with it is decided against her schedule. Blank = no wake-ups, just the permission above.',
+    funHomeAutoGoDesc: 'On: her permission to head out follows "her own time" in Fish Every Day. When that wake-up arrives she checks the day\'s schedule (feast_life_now) first — go out if the stretch is free, stay in if it says work or sleep. This plugin no longer keeps its own time slots, does not read the other world\'s schedule, never picks a place and never sends her out by itself. Off by default.',
     funStoryDM: 'Optional text DM',
     funStoryDMDesc: 'Off by default. The endpoint and model name are right below; the API key is not stored in configuration — enter it in Outing → Settings → Advanced, where only local DPAPI ciphertext is kept. Leave endpoint and model blank to use the host cognition.request, or fill the endpoint and a key to call OpenAI-compatible POST /chat/completions directly from this plugin; neither is sent to the host or other plugins. Windows DPAPI CurrentUser encryption only; saving is disabled elsewhere. Re-enter after changing machines or reinstalling; clear immediately at any time. The current actor must explicitly submit a valid proposal. Limits: 6 calls per run, 2 attempts per step, including retries, failures and cancellations; unknown tokens remain unknown.',
     funStoryNodeLimit: 'Story length (node limit)',
@@ -314,12 +305,6 @@ export function configGroup(language = 'zh') {
           type: 'boolean',
           title: t.funHomeAutoGo,
           description: t.funHomeAutoGoDesc,
-          'x-hot': true,
-        },
-        [`${K}.funHomeAutoSlots`]: {
-          type: 'string',
-          title: t.funHomeAutoSlots,
-          description: t.funHomeAutoSlotsDesc,
           'x-hot': true,
         },
         [`${K}.funStoryNodeLimit`]: {

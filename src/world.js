@@ -10,13 +10,12 @@
  *   - 买纪念品、拍照点各有一个小口子（在 `fun_wander` 回执里递到嘴边）；
  *   - `fun_home` 回家，回执把这一趟收成一句话，交给她 `feast_life_play` 记一笔。
  *
- * **方案 B：只叫醒，不替她决定**。到了她自己出门的时段（`funHomeAutoSlots`），
- * 推一条 internal 事件 `fun.home.free` 提醒她先看当天的日程，再决定出不出门。
- * 本 World **不读**「鱼的每一天」的日程、不挑地方、不替她出门；关着
- * `funHomeAutoGo` 或时段留空时，这条路径连定时器都不注册。
+ * **出门许可跟随「她自己的时间」**：`funHomeAutoGo` 只是主人的许可，不再自带
+ * 叫醒时段——几点算她自己的时间由「鱼的每一天」的「她自己的时间」决定。
+ * 本 World **不读**「鱼的每一天」的日程、不挑地方、不替她出门、也不注册自己的
+ * 叫醒定时器；没有别人的叫醒时，这条许可只在提示词里等她主动用。
  *
  * 状态是纯 JSON，落在 `<dataDir>/fun/state.json`；历史保留，跨天超时的行程等待续逛或回家。
- * 叫醒记录落在 `<dataDir>/fun/auto-go.json`（同一个时段一天只叫一次）。
  *
  * 红线（World 契约）：不调别的 World 的工具、不读别人的状态或日程文件、
  * `envPromptVars()` 永不抛错、`create()` 保持纯。
@@ -76,10 +75,6 @@ import { ACTIVITIES, ACTIVITY_HINTS, ACTIVITY_LABELS, HomeRoom, defaultActivityA
 const ENV_PROMPT = fileURLToPath(new URL('./ENV_PROMPT.md', import.meta.url));
 /** 面板委派出去的配图请求，在她的提示词里保留多久。 */
 const IMAGE_DELEGATION_TTL_MS = 45 * 60 * 1000;
-/** 方案 B：自己出门的叫醒事件。 */
-const EVENT_HOME_FREE = 'fun.home.free';
-/** 叫醒的补发窗口：定时器晚了一两分钟也还算这个时段。 */
-const AUTO_GO_CATCHUP_MIN = 10;
 /** 六个只读故事查询的记忆化窗口：同一参数 10 分钟内只回一条「没变化」。 */
 const STORY_READ_TTL_MS = 10 * 60 * 1000;
 /** 只读查询里唯一允许穿透缓存、强制重取的参数。 */
@@ -94,22 +89,6 @@ const STORY_TEXT_ONLY = [
 ];
 
 const msg = (err) => (err instanceof Error ? err.message : String(err));
-
-/** `'10:30, 15:30'` → `[630, 930]`；认不出的片段直接丢掉，不抛。 */
-function parseAutoSlots(value) {
-  if (typeof value !== 'string') return [];
-  const out = [];
-  for (const part of value.split(',')) {
-    const match = /^(\d{1,2}):(\d{2})$/.exec(part.trim());
-    if (!match) continue;
-    const hour = Number(match[1]);
-    const minute = Number(match[2]);
-    if (hour > 23 || minute > 59) continue;
-    const total = hour * 60 + minute;
-    if (!out.includes(total)) out.push(total);
-  }
-  return out.sort((a, b) => a - b);
-}
 
 function clampInt(v, min, max, fallback) {
   const n = Number(v);
@@ -442,10 +421,6 @@ export class FunWorld {
   #imageDelegation = null;
   /** 自动配图：上一次准备过参数的进度戳，同一个戳不重复准备。 */
   #autoImageStamp = '';
-  /** 自己出门的叫醒定时器：只在「允许」开着且时段非空时注册。 */
-  #inviteTimer = null;
-  /** 今天已经叫过哪些时段（落盘，重启不重复叫）。 */
-  #inviteLog = null;
   #venueMigrationError;
   /** 只读故事查询的记忆化：键 = 工具 + 参数，值 = 上一次的完整回执。 */
   #readCache = new Map();
@@ -697,15 +672,17 @@ export class FunWorld {
   }
 
   /**
-   * 主人允许她自己出门时，加一句许可：不限次数，但要落在她当天的日程里，
-   * 由她和主对话定。叫醒走 `runAutoInvite()`；这里只写「会提醒你，但不替你挑地方」。
+   * 主人允许她自己出门时，加一句许可：不限次数，但要落在她当天的日程里。
+   * 时段不归本插件管——「她自己的时间」由「鱼的每一天」决定，那边叫醒她时，
+   * 这一段许可让她可以把空着的时段当成出门的许可；本插件不叫醒、不挑地方。
    */
   #selfGoBlock() {
     if (this.cfg?.funHomeAutoGo !== true) return '';
     return '\n\n### 主人允许你自己出门（不限次数）\n'
-      + '想出去就出去，不用等主人开口；但每一趟都要落进你今天的日程：先用 feast_life_now 看这会儿本来安排了什么，'
-      + '要改计划就用 feast_life_adjust 把这一段改成出门。几点、去哪儿、去几次都由你和主对话定——'
-      + '到了你自己出门的时段我会提醒你一声，但不会替你挑地方，也不会自己把你送出门。回来用 feast_life_play 记一笔。';
+      + '想出去就出去，不用等主人开口。出门的时间跟着「鱼的每一天」的「她自己的时间」走：'
+      + '那边叫醒你时，先用 feast_life_now 看这会儿本来安排了什么——日程空着，就把这一趟当成你自己的出门；'
+      + '写着上班、通勤或睡觉就不出门。要改计划就用 feast_life_adjust 把这一段改成出门；'
+      + '几点、去哪儿、去几次都由你和主对话定，我不会替你挑地方，也不会自己把你送出门。回来用 feast_life_play 记一笔。';
   }
 
   /**
@@ -3157,81 +3134,6 @@ export class FunWorld {
     }
   }
 
-  #inviteFile() { return join(this.dataDir, 'fun', 'auto-go.json'); }
-
-  /** 今天已经叫过哪些时段；读不出来就当没叫过（宁可多叫一次，不能弄坏出门）。 */
-  async #loadInviteLog() {
-    if (this.#inviteLog) return this.#inviteLog;
-    try {
-      const raw = JSON.parse(await readFile(this.#inviteFile(), 'utf8'));
-      this.#inviteLog = {
-        date: typeof raw?.date === 'string' ? raw.date : '',
-        slots: Array.isArray(raw?.slots) ? raw.slots.filter((n) => Number.isInteger(n) && n >= 0 && n < 1440) : [],
-      };
-    } catch {
-      this.#inviteLog = { date: '', slots: [] };
-    }
-    return this.#inviteLog;
-  }
-
-  async #saveInviteLog(log) {
-    try {
-      await mkdir(join(this.dataDir, 'fun'), { recursive: true });
-      await writeFile(this.#inviteFile(), JSON.stringify(log), 'utf8');
-    } catch { /* 记不住就下一次再叫一遍；不影响出门 */ }
-  }
-
-  #autoInviteText(now) {
-    const hm = hmIn(this.timezone, now);
-    return [
-      '【从0开始的肥鱼大冒险 · 自己的时间】',
-      `这会儿 ${hm}。先看你今天的日程：feast_life_now 这会儿本来安排了什么。`,
-      '· 这一段是自由的（或者你想临时改）：想出去就 fun_start 看看能去哪儿，再用 fun_go 进门；回来 feast_life_play 记一笔。',
-      '· 这一段写着上班、通勤或睡觉：别出门，这条就当没看见。',
-      '去不去、去哪儿、去几次都由你定；本插件不挑地方，也不会自己把你送出门。没有 feast_life_now 就按自己的感觉来。',
-    ].join('\n');
-  }
-
-  /**
-   * 方案 B：到她自己的时段，推一条 internal 事件叫她看一眼日程。
-   *
-   * 只负责叫醒：**不读**「鱼的每一天」的日程、不挑地方、不替她出门。
-   * 同一个时段一天只叫一次（落盘记着）；正在出门或还有没逛完的行程就不叫。
-   */
-  async runAutoInvite(now = this.#now()) {
-    return this.#serial(async () => {
-      if (this.cfg?.funHomeAutoGo !== true) return { ok: false, skipped: 'off' };
-      if (typeof this.#host?.pushEvent !== 'function') return { ok: false, skipped: 'nohost' };
-      const slots = parseAutoSlots(this.cfg?.funHomeAutoSlots);
-      if (!slots.length) return { ok: false, skipped: 'noslots' };
-      const { session, draft } = this.#outings(now);
-      if (session || draft) return { ok: false, skipped: 'trip' };
-      const nowMin = minutesIn(this.timezone, now);
-      const today = dayIn(this.timezone, now);
-      const log = await this.#loadInviteLog();
-      const done = log.date === today ? log.slots : [];
-      const due = slots.find((slot) => nowMin >= slot && nowMin - slot < AUTO_GO_CATCHUP_MIN && !done.includes(slot));
-      if (due === undefined) return { ok: false, skipped: 'noslot' };
-      const text = this.#autoInviteText(now);
-      try {
-        await this.#host.pushEvent({
-          type: EVENT_HOME_FREE,
-          source: this.id,
-          senderKey: 'fun-home-free',
-          origin: 'internal',
-          ts: new Date(now).toISOString(),
-          text,
-          meta: { date: today, slot: `${String(Math.floor(due / 60)).padStart(2, '0')}:${String(due % 60).padStart(2, '0')}` },
-        }, { deliver: true, trigger: 'flush' });
-      } catch (error) {
-        return { ok: false, skipped: 'failed', text: msg(error) };
-      }
-      this.#inviteLog = { date: today, slots: [...done, due].sort((a, b) => a - b) };
-      await this.#saveInviteLog(this.#inviteLog);
-      return { ok: true, slot: `${String(Math.floor(due / 60)).padStart(2, '0')}:${String(due % 60).padStart(2, '0')}`, text };
-    });
-  }
-
   async #invokeHome(method, payload) {
     if (method === 'state') return await this.#homeState();
     if (method === 'snapshotList') {
@@ -3757,11 +3659,7 @@ export class FunWorld {
     await this.#migrateLegacyStorySettings();
     this.#ensureConfigSection();
     this.#started = true;
-    // 方案 B：允许她自己的时候，按她自己的时段叫醒；时段留空就只留许可、不注册。
-    if (this.cfg?.funHomeAutoGo === true && parseAutoSlots(this.cfg?.funHomeAutoSlots).length) {
-      this.#inviteTimer = setInterval(() => { void this.runAutoInvite().catch(() => {}); }, 60 * 1000);
-      this.#inviteTimer.unref?.();
-    }
+    // 出门许可不注册自己的定时器：「她自己的时间」由「鱼的每一天」叫醒，不在这里重复一套。
     this.#host?.log?.info?.('从0开始的肥鱼大冒险已启动', {
       places: this.#places().length,
       userVenues: this.#userVenues.length,
@@ -3773,7 +3671,6 @@ export class FunWorld {
 
   async stop() {
     this.#started = false;
-    if (this.#inviteTimer) { clearInterval(this.#inviteTimer); this.#inviteTimer = null; }
     this.#storyImages.cancel();
     this.#dm.cancel();
     this.#autonomy.clear();

@@ -131,8 +131,8 @@ try {
   console.log('5) 包里的 describe.json 自洽');
   const onDisk = JSON.parse(await readFile(join(pkgDir, 'describe.json'), 'utf8'));
   ok(Array.isArray(onDisk.tools) && onDisk.tools.length === toolCount, `describe 里的工具数与代码一致（${onDisk.tools?.length} / ${toolCount}）`);
-  ok(Array.isArray(onDisk.events) && onDisk.events.length === 1 && onDisk.events[0].type === 'fun.home.free',
-    'describe 里只有「自己出门时段」那 1 个事件');
+  ok(Array.isArray(onDisk.events) && onDisk.events.length === 0,
+    'describe 里不再有叫醒事件（自己出门跟着「她自己的时间」）');
   ok(Array.isArray(onDisk.prompts) && onDisk.prompts.length === 1, 'describe 里有 1 份提示词');
   ok(onDisk.prompts[0].content.includes('feast_life_now'), '提示词内容是完整模板');
   ok(onDisk.prompts[0].content.includes('{{fun_places_block}}'), '模板里保留了占位符（由宿主替换）');

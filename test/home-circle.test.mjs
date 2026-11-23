@@ -108,70 +108,43 @@ test('导出/导入：只含引用不含字节；只允许空房间；缺图失�
   void sourceDir;
 });
 
-test('自己出门：开关+时段才叫醒；叫醒只说「看日程」，不替她挑地方', async (t) => {
+test('自己出门：只剩许可，不再自带时段或叫醒；时间跟着「她自己的时间」', async (t) => {
   assert.equal(DEFAULTS.funHomeAutoGo, false, '默认关');
-  assert.equal(DEFAULTS.funHomeAutoSlots, '10:30,15:30,19:30');
+  assert.equal('funHomeAutoSlots' in DEFAULTS, false, '不再有自己出门的时段');
   const group = configGroup('zh');
   const on = group.schema.properties['worlds.fun.funHomeAutoGo'];
-  const slots = group.schema.properties['worlds.fun.funHomeAutoSlots'];
   assert.equal(on.type, 'boolean');
-  assert.equal(slots.type, 'string');
-  assert.match(on.description, /时段/);
-  assert.match(slots.description, /HH:MM/);
+  assert.match(on.description, /她自己的时间/);
+  assert.equal(group.schema.properties['worlds.fun.funHomeAutoSlots'], undefined, '时段已从配置页移除');
 
-  let clock = Date.parse('2026-11-22T10:30:00+08:00');
   const pushes = [];
   const host = {
     log: { info() {}, warn() {} },
     pushEvent: (event, options) => { pushes.push({ event, options }); },
   };
 
-  // 关着：这条路径不叫醒。
-  const offDir = await mkdtemp(join(tmpdir(), 'fun-home-selfgo-off-'));
-  const off = new FunWorld({ cfg: { ...DEFAULTS, enabled: true }, dataDir: offDir, timezone: TZ, now: () => clock });
-  await off.start(host);
-  t.after(async () => { await off.stop(); await rm(offDir, { recursive: true, force: true }); });
-  assert.equal((await off.runAutoInvite()).skipped, 'off');
-  assert.equal(pushes.length, 0);
-
-  // 开着：到点推一条 internal 事件，同一天同一时段只推一次。
   const onDir = await mkdtemp(join(tmpdir(), 'fun-home-selfgo-on-'));
   const world = new FunWorld({
-    cfg: { ...DEFAULTS, enabled: true, funHomeAutoGo: true }, dataDir: onDir, timezone: TZ, now: () => clock,
+    cfg: { ...DEFAULTS, enabled: true, funHomeAutoGo: true }, dataDir: onDir, timezone: TZ, now: () => NOON,
   });
   await world.start(host);
   t.after(async () => { await world.stop(); await rm(onDir, { recursive: true, force: true }); });
-  assert.match(world.envPromptVars().fun_places_block, /主人允许你自己出门/);
 
-  const first = await world.runAutoInvite();
-  assert.equal(first.ok, true, first.text);
-  assert.equal(pushes.length, 1);
-  const [{ event, options }] = pushes;
-  assert.equal(event.type, 'fun.home.free');
-  assert.equal(event.origin, 'internal');
-  assert.equal(event.source, 'fun');
-  assert.equal(options.deliver, true);
-  assert.match(event.text, /feast_life_now/, '先看日程');
-  assert.match(event.text, /feast_life_play/, '回来记一笔');
-  assert.match(event.text, /不会自己把你送出门/);
-  await assert.rejects(readFile(join(onDir, 'fun', 'state.json')), { code: 'ENOENT' }, '叫醒不改行程');
+  const block = world.envPromptVars().fun_places_block;
+  assert.match(block, /主人允许你自己出门/);
+  assert.match(block, /鱼的每一天/, '许可指向「她自己的时间」');
+  assert.match(block, /feast_life_now/, '叫醒后先看日程');
+  assert.match(block, /feast_life_play/, '回来记一笔');
+  assert.match(block, /不会自己把你送出门/);
+  assert.doesNotMatch(block, /我会提醒你/, '不再声称自己叫醒');
+  assert.equal(typeof world.runAutoInvite, 'undefined', '本 World 不再注册自己的叫醒');
+  assert.equal(pushes.length, 0, '启动后不推任何事件');
 
-  clock = Date.parse('2026-11-22T10:31:00+08:00');
-  assert.equal((await world.runAutoInvite()).skipped, 'noslot', '同一时段不重复叫');
-  clock = Date.parse('2026-11-22T12:00:00+08:00');
-  assert.equal((await world.runAutoInvite()).skipped, 'noslot', '不是时段不叫');
-  clock = Date.parse('2026-11-22T15:31:00+08:00');
-  assert.equal((await world.runAutoInvite()).ok, true, '下一个时段照叫，一天不限一次');
-  clock = Date.parse('2026-11-23T10:30:00+08:00');
-  assert.equal((await world.runAutoInvite()).ok, true, '跨天重来');
-  assert.equal(pushes.length, 3);
-
-  // 已经在外面：不叫。
-  clock = Date.parse('2026-11-23T15:30:00+08:00');
-  const go = world.tools().find((tool) => tool.name === 'fun_go').handler;
-  await go({ place: '咖啡店' });
-  assert.equal((await world.runAutoInvite()).skipped, 'trip');
-  assert.equal(pushes.length, 3);
+  const offDir = await mkdtemp(join(tmpdir(), 'fun-home-selfgo-off-'));
+  const off = new FunWorld({ cfg: { ...DEFAULTS, enabled: true }, dataDir: offDir, timezone: TZ, now: () => NOON });
+  await off.start(host);
+  t.after(async () => { await off.stop(); await rm(offDir, { recursive: true, force: true }); });
+  assert.doesNotMatch(off.envPromptVars().fun_places_block, /主人允许你自己出门/, '关着就没有这段许可');
 });
 
 test('出门回执提示写进日程；面板不再有撤销自动出门', async (t) => {

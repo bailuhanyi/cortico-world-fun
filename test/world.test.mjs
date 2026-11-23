@@ -42,13 +42,8 @@ test('definition 的 create() 必须纯：不读盘、不建目录、不起定�
   assert.deepEqual(await readdir(dir), []);
 });
 
-test('describe 里只声明一个事件：她自己出门时段的叫醒', () => {
-  assert.equal(funDefinition.describe.events.length, 1);
-  const [event] = funDefinition.describe.events;
-  assert.equal(event.type, 'fun.home.free');
-  assert.equal(event.trigger, 'flush');
-  assert.match(event.description.zh, /feast_life_now/);
-  assert.match(event.description.en, /feast_life_now/);
+test('describe 不再声明事件：自己出门只是许可，叫醒归「鱼的每一天」', () => {
+  assert.equal(funDefinition.describe.events.length, 0, 'fun.home.free 已随方案 B 的时段一起移除');
   assert.equal(funDefinition.id, 'fun');
   assert.equal(funDefinition.label, '从0开始的肥鱼大冒险');
   for (const t of funDefinition.describe.tools) {
@@ -117,7 +112,7 @@ test('配置段缺键会被补齐（宿主 /api/config 不合并 defaults）', a
   await world.start({ log: { info() {}, warn() {} } });
   assert.equal(persisted.length, 1);
   assert.deepEqual(Object.keys(persisted[0]).sort(),
-    ['funAskReport', 'funAutoCalls', 'funAutoSteps', 'funHomeAutoGo', 'funHomeAutoSlots', 'funSessionTTLMin', 'funStoryAuthorInChat', 'funStoryAutoImages', 'funStoryDM', 'funStoryDmModel', 'funStoryDmUrl', 'funStoryFree', 'funStoryFreeTurns', 'funStoryImageSource', 'funStoryImages', 'funStoryNodeLimit', 'funStoryTextOn', 'funTasteFromFeast']);
+    ['funAskReport', 'funAutoCalls', 'funAutoSteps', 'funHomeAutoGo', 'funSessionTTLMin', 'funStoryAuthorInChat', 'funStoryAutoImages', 'funStoryDM', 'funStoryDmModel', 'funStoryDmUrl', 'funStoryFree', 'funStoryFreeTurns', 'funStoryImageSource', 'funStoryImages', 'funStoryNodeLimit', 'funStoryTextOn', 'funTasteFromFeast']);
   assert.equal(persisted[0].funAskReport, true);
   assert.equal(persisted[0].funSessionTTLMin, 90);
   assert.equal(persisted[0].funAutoSteps, 20);
@@ -138,7 +133,7 @@ test('缺键补齐：盘上已有的值一个都不覆盖', async () => {
   const world = new FunWorld({
     cfg: {
       enabled: true, funOn: false, funSessionTTLMin: 30,
-      funAskReport: false, funTasteFromFeast: false, funHomeAutoGo: false, funHomeAutoSlots: '10:30', funStoryImages: false, funStoryDM: true,
+      funAskReport: false, funTasteFromFeast: false, funHomeAutoGo: false, funStoryImages: false, funStoryDM: true,
       funStoryTextOn: true, funStoryFree: false, funStoryFreeTurns: 40, funAutoSteps: 20, funAutoCalls: 6,
       funStoryAutoImages: true, funStoryAuthorInChat: false,
       funStoryNodeLimit: 16, funStoryDmUrl: '', funStoryDmModel: '', funStoryImageSource: '',

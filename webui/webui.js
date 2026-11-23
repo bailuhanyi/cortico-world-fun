@@ -290,39 +290,6 @@ const CSS = `
 .fun-quickstat{flex:1 1 120px;border:1px solid var(--f-line);border-radius:var(--f-round-sm);padding:12px 14px;background:var(--f-paper-soft);min-width:0}
 .fun-quickstat b{display:block;font:20px/1.3 Georgia,serif}
 .fun-quickstat span{font-size:11px;color:var(--f-dim)}
-/* 地点册：浏览列表与编辑工作区 */
-.fpl-tile{transition:border-color .15s,background .15s}
-.fpl-tile:hover{border-color:var(--fpl-accent);background:var(--fpl-soft)}
-.fpl-row-list{display:grid;gap:0;border:1px solid var(--fpl-line);border-radius:var(--fpl-round);overflow:hidden;background:var(--fpl-card)}
-.fpl-listrow{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;align-items:center;padding:14px 16px;border-top:1px solid var(--fpl-line);min-width:0}
-.fpl-listrow:first-child{border-top:0}
-.fpl-listrow-main{min-width:0;display:grid;gap:4px}
-.fpl-listrow-main strong{font-size:14.5px;letter-spacing:.02em}
-.fpl-listrow-meta{display:flex;gap:10px;flex-wrap:wrap;font-size:11px;color:var(--fpl-muted)}
-.fpl-listrow .fpl-row{align-self:start;flex-wrap:wrap}
-@media(max-width:520px){.fpl-listrow{grid-template-columns:minmax(0,1fr);padding:13px 14px}.fpl-listrow .fpl-row{justify-content:flex-start}}
-.fpl-editor{display:grid;gap:20px;min-width:0}
-@media(min-width:900px){.fpl-editor{grid-template-columns:200px minmax(0,1fr);align-items:start}}
-.fpl-editnav{display:grid;gap:4px;align-content:start;min-width:0}
-.fpl-editnav .fpl-editnav-cover{margin-bottom:12px}
-.fpl-editnav button{text-align:start;width:100%;border:1px solid transparent;background:transparent;min-height:38px;padding:9px 12px;font-size:12.5px;border-radius:var(--fpl-round-sm)}
-.fpl-editnav button[aria-current=page]{background:var(--fpl-soft);border-color:color-mix(in srgb,var(--fpl-accent) 30%,var(--fpl-line));font-weight:650}
-.fpl-editnav .fpl-step{color:var(--fpl-muted);margin-right:10px;font-variant-numeric:tabular-nums}
-@media(max-width:899px){
-  .fpl-editor{display:block}
-  .fpl-editnav{display:flex;gap:6px;overflow:auto;margin-bottom:16px;padding-bottom:4px;scrollbar-width:none}
-  .fpl-editnav button{width:auto;flex:none;white-space:nowrap;border-color:var(--fpl-line)}
-  .fpl-editnav .fpl-editnav-cover,.fpl-editnav .fpl-editnav-meta{display:none}
-}
-.fpl-savebar{position:sticky;bottom:8px;z-index:3;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-top:18px;padding:12px 16px;border:1px solid var(--fpl-line);border-radius:var(--fpl-round);background:color-mix(in srgb,var(--fpl-card) 94%,transparent);backdrop-filter:blur(10px);box-shadow:0 8px 26px color-mix(in srgb,var(--fpl-ink) 10%,transparent)}
-.fpl-savebar-status{font-size:11.5px;color:var(--fpl-muted);display:flex;align-items:center;gap:7px;min-width:0}
-.fpl-savebar-status[data-dirty=true]{color:var(--fpl-accent);font-weight:600}
-.fpl-dirty-dot{width:6px;height:6px;border-radius:50%;background:currentColor;flex:none}
-.fpl-formgroup{border:1px solid var(--fpl-line);border-radius:var(--fpl-round);padding:16px;background:var(--fpl-card);min-width:0}
-.fpl-formgroup>legend{padding:0 6px;font-size:12px;letter-spacing:.1em;color:var(--fpl-muted)}
-.fpl-grouphead{display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin-bottom:12px}
-.fpl-grouphead h4{font-size:14px;margin:0}
-.fpl-grouphead small{font-size:11px;color:var(--fpl-muted)}
 /* 故事：底部提示与作品库卡片 */
 .sw-bottom-note{font-size:11px;color:var(--sw-muted);text-align:center;padding:22px 0 6px;border-top:1px solid var(--sw-line);margin-top:26px}
 .sw-story-card{overflow:hidden}
@@ -338,7 +305,6 @@ const CSS = `
   .fun-shelf-cabinet .fun-keepsake>summary{padding:14px 10px 11px}
   .fun-shelf-cabinet .fun-keepsake>summary .fun-icon{width:38px;height:38px}
   .fun-progress-grid{grid-template-columns:minmax(0,1fr)}
-  .fpl-formgroup{padding:14px}
 }
 @media(prefers-reduced-motion:reduce){
   .fun *,.fpl *,.sw *{transition:none!important;animation:none!important;scroll-behavior:auto!important}

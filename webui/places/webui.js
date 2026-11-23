@@ -17,21 +17,27 @@ const CATEGORY_GROUPS = [
   ['其他地点', ['__none__', 'home', 'around', 'frequent', 'travel', 'place']],
 ];
 const categoryValue = (place) => place.kind || '__none__';
-const QUICK_FILTERS = [
-  ['', '全部'],
-  ['story', '故事地点'],
-  ['customStory', '我的故事地点'],
-  ['regular', '常规地点'],
+/** 左栏「我的地点册」六项：计数从 places() 现算，口径与文件里的 quickMatch 一致。 */
+const RAIL_FILTERS = [
+  ['', '全部地点'],
   ['playable', '可玩场所'],
+  ['plain', '只是地点'],
+  ['story', '故事地点'],
   ['mine', '我的地点'],
   ['home', '住所'],
 ];
+/** 「整理与设置」三项：右栏复用已有的 settings / artworkView / migration 视图。 */
+const RAIL_SETTINGS = [
+  ['settings', '住所与默认画风'],
+  ['artwork', '本地插画'],
+  ['migration', '从小世界迁入'],
+];
+const BROWSE_VIEWS = ['browse', 'detail', 'edit', 'create', 'cover'];
 const quickMatch = (place, quick) => {
   switch (quick) {
     case 'story': return place.storyBound === true;
-    case 'customStory': return place.customStoryBound === true;
-    case 'regular': return place.playable === true && place.storyBound !== true;
     case 'playable': return place.playable === true;
+    case 'plain': return place.playable !== true;
     case 'mine': return place.userPlace === true;
     case 'home': return place.isHome === true;
     default: return true;
@@ -44,10 +50,20 @@ export function mountPlaces(ctx) {
   const { node, row, note, button, field, option, chip } = dom(document);
   const section = node('section', { class: 'fpl', 'aria-label': '地点册' });
   const feedback = node('div', { class: 'fpl-feedback', role: 'status' });
-  const navigation = node('nav', { class: 'fpl-row fpl-nav', 'aria-label': '地点导航' });
-  const main = node('div', { class: 'fpl-stack' });
-  section.append(node('style', {}, STYLES), node('header', { class: 'fpl-header' }, node('p', { class: 'fpl-kicker' }, '从0开始的肥鱼大冒险 · 把喜欢的地方，记在这里。'), node('h2', {}, '把喜欢的地方，记在这里。'),
-    note('管理地点、游玩内容、封面与关联。')), navigation, feedback, main);
+  const railFilters = node('div', { class: 'fpl-rail-list fpl-rail-filters', role: 'group', 'aria-label': '地点筛选' });
+  const railSettings = node('div', { class: 'fpl-rail-list' });
+  const rail = node('aside', { class: 'fpl-rail', 'aria-label': '我的地点册' },
+    node('section', { class: 'fpl-rail-group' }, node('p', { class: 'fpl-rail-title' }, '我的地点册'), railFilters),
+    node('section', { class: 'fpl-rail-group' }, node('p', { class: 'fpl-rail-title' }, '整理与设置'), railSettings));
+  const main = node('div', { class: 'fpl-pane' });
+  const shell = node('div', { class: 'fpl-shell' }, rail, main);
+  const addPlace = button('添加地点', () => { tell(); go('create'); }, { class: 'fpl-primary' });
+  const heading = node('div', { class: 'fpl-heading' }, node('h2', {}, '把喜欢的地方，记在这里。'), addPlace);
+  section.append(node('style', {}, STYLES),
+    node('header', { class: 'fpl-header' },
+      node('p', { class: 'fpl-kicker' }, '从0开始的肥鱼大冒险 · 把喜欢的地方，记在这里。'),
+      heading, note('管理地点、游玩内容、封面与关联。')),
+    feedback, shell);
   root.replaceChildren(section);
 
   let snapshot;
@@ -56,6 +72,10 @@ export function mountPlaces(ctx) {
   let disposed = false;
   let focusAfterRender = false;
   let browseFilter = { text: '', kind: '', quick: '' };
+  // 列表 / 卡片是显式切换；宿主给的面板存储（ctx.memo）能记住上次选择。
+  let browseMode = ctx.memo?.get('fpl-browse-view', 'list') === 'grid' ? 'grid' : 'list';
+  /** 列表封面缩略图：id → data URL（或 null，表示这处没有可用封面）。 */
+  const coverCache = new Map();
   let detailId;
   let detail;
   let editRevision;
@@ -84,7 +104,7 @@ export function mountPlaces(ctx) {
   }
   function accept(result) {
     const next = result.snapshot ?? result;
-    if (Array.isArray(next.places)) snapshot = next;
+    if (Array.isArray(next.places)) { snapshot = next; coverCache.clear(); }
   }
   async function refreshSnapshot() {
     const result = await call('list');
@@ -171,28 +191,69 @@ export function mountPlaces(ctx) {
     return node('button', { type: 'button', class: 'fpl-tile', onclick: () => open(place.id) },
       node('strong', {}, place.name), row(badges.map(chip)), place.desc ? note(place.desc) : note('还没有地点描写'));
   }
-  /** 列表里的一行摘要：名字、状态、分类、画风与关联数，右侧一个编辑入口。 */
+  /**
+   * 列表里的一行：封面缩略图 + 名字与徽章 + 描写 + 元信息 + 「编辑地点」。
+   * 封面不在 `list` 回执里，按需用 `cover` 读；这里只把行和缩略图容器交给调用方去补。
+   */
   function listRow(place) {
+    const badges = [];
+    if (isHome(place)) badges.push(['住所', '']);
+    if (place.storyBound) badges.push(['有故事', 'warm']);
+    badges.push(place.playable ? ['可玩场所', ''] : ['只是地点', '']);
     const meta = [
-      place.playable ? '可玩场所' : '只是地点',
       kindLabel(place),
-      list(place.areas).length ? `${list(place.areas).length} 处能逛的` : null,
-      place.style ? '有地点画风' : null,
+      `${place.hours?.open || '—'}–${place.hours?.close || '—'}`,
+      place.style ? '有地点画风' : (snapshot?.defaultStyle ? '使用默认画风' : '未设画风'),
       list(place.relations).length ? `${list(place.relations).length} 条关联` : null,
-      place.isHome ? '住所' : null,
-      place.storyBound ? '有故事' : null,
     ].filter(Boolean);
-    return node('article', { class: 'fpl-listrow', 'data-place-id': place.id },
+    const thumb = node('div', { class: 'fpl-thumb', 'aria-hidden': 'true' });
+    if (!place.cover) thumb.append(node('span', { class: 'fpl-thumb-empty' }, '暂无封面'));
+    const rowNode = node('article', { class: 'fpl-listrow', 'data-place-id': place.id },
+      thumb,
       node('div', { class: 'fpl-listrow-main' },
-        node('strong', {}, place.name),
-        node('div', { class: 'fpl-listrow-meta' }, meta.map((item) => node('span', {}, item))),
-        place.desc ? note(place.desc) : null),
-      node('div', { class: 'fpl-row' },
-        button('看看', () => open(place.id)),
-        button('编辑这处', () => { detail = place; detailId = place.id; go('edit'); }, { class: 'fpl-primary' })));
+        node('div', { class: 'fpl-listrow-head' },
+          button(place.name, () => open(place.id), { class: 'fpl-name' }),
+          ...badges.map(([text, tone]) => node('span', { class: `fpl-badge${tone ? ` ${tone}` : ''}` }, text))),
+        place.desc ? node('p', { class: 'fpl-listrow-desc' }, place.desc) : note('还没有地点描写'),
+        node('div', { class: 'fpl-listrow-meta' }, meta.map((item) => node('span', {}, item)))),
+      button('编辑地点', () => { detail = place; detailId = place.id; go('edit'); }, { class: 'fpl-edit' }));
+    return { place, thumb, rowNode };
+  }
+  /** 按需补封面：前 12 行直接读，其余用 IntersectionObserver 懒读；失败留占位，不回退整页。 */
+  function hydrateCovers(rows) {
+    const targets = rows.filter((entry) => entry.place.cover);
+    if (!targets.length) return;
+    const load = async ({ place, thumb }) => {
+      let url = coverCache.get(place.id);
+      if (url === undefined) {
+        try {
+          const result = await call('cover', { id: place.id });
+          url = hasSafeImage(result.image?.dataUrl) ? result.image.dataUrl : null;
+        } catch { url = null; }
+        coverCache.set(place.id, url);
+      }
+      if (!live() || !url) return;
+      const picture = node('img', { src: url, alt: `${place.name}的封面`, decoding: 'async', loading: 'lazy' });
+      picture.addEventListener('error', () => { coverCache.delete(place.id); picture.remove(); }, { once: true });
+      thumb.replaceChildren(picture);
+    };
+    for (const entry of targets.slice(0, 12)) void load(entry);
+    const lazy = targets.slice(12);
+    if (!lazy.length) return;
+    const Observer = document.defaultView?.IntersectionObserver;
+    if (typeof Observer !== 'function') { for (const entry of lazy) void load(entry); return; }
+    const observer = new Observer((entries) => {
+      for (const entry of entries) {
+        if (!entry.isIntersecting) continue;
+        observer.unobserve(entry.target);
+        const found = lazy.find((item) => item.thumb === entry.target);
+        if (found) void load(found);
+      }
+    });
+    for (const entry of lazy) observer.observe(entry.thumb);
   }
   function browse() {
-    const search = node('input', { type: 'search', value: browseFilter.text, placeholder: '名称、别名、标签或描写' });
+    const search = node('input', { type: 'search', value: browseFilter.text, placeholder: '搜索名称、别名或标签', 'aria-label': '搜索地点' });
     const present = [...new Set(places().map(categoryValue))];
     const labelFor = (key) => {
       const place = places().find((item) => categoryValue(item) === key);
@@ -210,33 +271,43 @@ export function mountPlaces(ctx) {
     if (rest.length) groups.push(node('optgroup', { label: '其他地点' }, rest.map((key) => option(key, labelFor(key)))));
     const category = node('select', { 'aria-label': '按分类筛选' }, option('', '所有分类'), groups);
     category.value = browseFilter.kind;
-    const quickButtons = new Map(QUICK_FILTERS.map(([value, label]) => [value,
-      button(label, () => { browseFilter.quick = value; display(); }, { class: 'fpl-chip-toggle' })]));
-    const paintQuick = () => {
-      for (const [value, control] of quickButtons) control.setAttribute('aria-pressed', String(browseFilter.quick === value));
-    };
-    // 平铺的格子留给窄屏；宽屏用摘要列表，一行一处更好扫。
-    const tileResults = node('div', { class: 'fpl-grid' });
+    // 列表与卡片是两套结果，显式切换；窄屏不再靠 CSS 偷偷换。
     const listResults = node('div', { class: 'fpl-row-list' });
-    const count = node('p', { class: 'fpl-muted', role: 'status' });
+    const tileResults = node('div', { class: 'fpl-grid' });
+    const count = node('p', { class: 'fpl-pane-count', role: 'status' });
+    const viewToggle = button('列表视图', () => {
+      browseMode = browseMode === 'list' ? 'grid' : 'list';
+      try { ctx.memo?.set('fpl-browse-view', browseMode); } catch { /* 记住选择失败不影响切换 */ }
+      display();
+    }, { class: 'fpl-viewtoggle', 'aria-pressed': 'false' });
+    const paintView = () => {
+      const grid = browseMode === 'grid';
+      viewToggle.textContent = grid ? '卡片视图' : '列表视图';
+      viewToggle.setAttribute('aria-pressed', String(grid));
+      listResults.hidden = grid;
+      tileResults.hidden = !grid;
+    };
     const display = () => {
       const query = browseFilter.text.trim().toLocaleLowerCase();
       const matches = places().filter((place) => quickMatch(place, browseFilter.quick)
         && (!browseFilter.kind || categoryValue(place) === browseFilter.kind)
         && (!query || [place.name, place.desc, ...list(place.aliases), ...list(place.tags)].some((text) => String(text ?? '').toLocaleLowerCase().includes(query))));
-      count.textContent = `${matches.length} 处地点`;
-      // 两套视图都填：CSS 按宽度决定显示哪一套，窄屏自动回落到卡片。
+      const filtered = browseFilter.quick || browseFilter.kind || browseFilter.text.trim();
+      count.textContent = filtered ? `${matches.length} 处地点（共 ${places().length} 处）` : `${matches.length} 处地点 · 按分类浏览`;
+      const rows = matches.map(listRow);
+      listResults.replaceChildren(...(matches.length ? rows.map((entry) => entry.rowNode) : [node('p', { class: 'fpl-empty' }, '没有符合条件的地点。')]));
       tileResults.replaceChildren(...(matches.length ? matches.map(thumbnail) : [node('p', { class: 'fpl-empty' }, '没有符合条件的地点。')]));
-      listResults.replaceChildren(...(matches.length ? matches.map(listRow) : [node('p', { class: 'fpl-empty' }, '没有符合条件的地点。')]));
-      paintQuick();
+      paintView();
+      hydrateCovers(rows);
     };
     search.addEventListener('input', () => { browseFilter.text = search.value; display(); });
     category.addEventListener('change', () => { browseFilter.kind = category.value; display(); });
     display();
-    return node('section', { class: 'fpl-stack' }, row(node('h3', { tabindex: -1 }, '浏览地点'),
-      button('添加地点', () => go('create'), { class: 'fpl-primary' })),
-    node('div', { class: 'fpl-filters', role: 'group', 'aria-label': '快捷筛选' }, [...quickButtons.values()]),
-    node('div', { class: 'fpl-grid' }, field('搜索地点', search), field('按分类筛选', category)), count, listResults, tileResults);
+    return node('section', { class: 'fpl-stack' },
+      node('div', { class: 'fpl-toolbar' }, node('label', { class: 'fpl-search' }, search), category),
+      node('div', { class: 'fpl-panehead' }, count, viewToggle),
+      listResults, tileResults,
+      node('p', { class: 'fpl-pane-hint' }, '有「能逛的」就是可玩场所，留空也能作为地点保留。'));
   }
   function confirm(label, message, action) {
     return button(label, () => { confirmAction = { label, message, action }; render(); main.querySelector('[data-confirm]')?.focus(); });
@@ -601,11 +672,26 @@ export function mountPlaces(ctx) {
           () => submit('resetAll', {}, '已恢复全部预设。', render)))));
   }
   const migration = createMigrationView({ document, places, snapshot: () => snapshot, run, call, tell, render, refreshSnapshot, live });
+  function railButton(label, count, active, onclick) {
+    return node('button', { type: 'button', class: `fpl-rail-item${active ? ' on' : ''}`, 'aria-current': active ? 'true' : null, onclick },
+      node('span', { class: 'fpl-rail-label' }, label), node('b', { class: 'fpl-rail-count' }, String(count)));
+  }
+  function renderRail() {
+    const browsing = BROWSE_VIEWS.includes(view);
+    const counts = new Map(RAIL_FILTERS.map(([key]) => [key, snapshot ? places().filter((place) => quickMatch(place, key)).length : '—']));
+    railFilters.replaceChildren(...RAIL_FILTERS.map(([key, label]) => railButton(label, counts.get(key),
+      browsing && browseFilter.quick === key, () => { tell(); browseFilter.quick = key; browseFilter.text = ''; browseFilter.kind = ''; go('browse'); })));
+    railSettings.replaceChildren(
+      ...RAIL_SETTINGS.map(([id, label]) => node('button', {
+        type: 'button', class: `fpl-rail-set${view === id ? ' on' : ''}`, 'aria-current': view === id ? 'true' : null,
+        onclick: () => { tell(); go(id); },
+      }, label)),
+      node('button', { type: 'button', class: 'fpl-rail-set fpl-rail-refresh', onclick: () => void refresh() }, '刷新'));
+  }
   function render() {
     if (!live()) return;
-    const active = ['detail', 'edit', 'create', 'cover', 'browse'].includes(view) ? 'browse' : view;
-    navigation.replaceChildren(...[['browse', '浏览地点'], ['settings', '住所与画风'], ['artwork', '本地插画'], ['migration', '从小世界迁入']].map(([id, label]) =>
-      button(label, () => { tell(); go(id); }, { 'aria-current': active === id ? 'page' : null })), button('刷新', refresh));
+    renderRail();
+    addPlace.hidden = !BROWSE_VIEWS.includes(view);
     let contents;
     if (!snapshot) contents = node('p', { class: 'fpl-empty' }, '正在读取地点库…');
     else if (view === 'settings') contents = settings();

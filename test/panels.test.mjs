@@ -1003,7 +1003,9 @@ async function openLocationEditor(root, name) {
   if (back) back.fire('click');
   const tile = await waitFor(() => locationTile(root, name), `画出「${name}」`);
   tile.fire('click');
-  const edit = await waitFor(() => root.findByText('编辑地点'), `「${name}」详情`);
+  // 列表行上也有「编辑地点」，先等详情页出现（返回浏览 只在详情里），别点成别的行。
+  await waitFor(() => root.findByText('返回浏览'), `「${name}」详情`);
+  const edit = await waitFor(() => root.findByText('编辑地点'), `「${name}」的编辑入口`);
   edit.fire('click');
   return waitFor(() => root.querySelector('form'), '地点编辑表单');
 }
@@ -1075,7 +1077,7 @@ test('地点册：改预设存成覆盖层，能单处恢复，设置里能全�
     patch: { venue: { souvenirs: ['第二版'] } } }])).ok, true);
   await waitFor(() => root.childNodes[0]?.getAttribute('aria-busy') === 'false', '地点册空闲');
   await refresh();
-  root.findByText('住所与画风').fire('click');
+  root.findByText('住所与默认画风').fire('click');
   const resetAll = await waitFor(() => root.findAll((node) => node.tagName === 'BUTTON'
     && node.textContent.startsWith('恢复全部预设'))[0], '恢复全部预设按钮');
   resetAll.fire('click');

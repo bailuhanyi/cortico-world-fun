@@ -39,14 +39,14 @@ async function mountLibrary(t, prepare, options = {}) {
     assert.fail('The locations UI did not settle.');
   };
   await settled();
-  const click = (label) => { const button = root.querySelectorAll('button').find((item) => item.textContent === label); assert.ok(button, label); button.click(); };
+  const click = (label) => { const button = root.querySelectorAll('button').find((item) => item.textContent.trim().startsWith(label)); assert.ok(button, label); button.click(); };
   const submit = async () => { root.querySelector('form').dispatchEvent(new Event('submit', { cancelable: true })); await settled(); };
   return { root, rpc, calls, mounted, settled, click, submit };
 }
 
 test('settings saves twice with the latest committed revision on the same page', async (t) => {
   const h = await mountLibrary(t);
-  h.click('住所与画风');
+  h.click('住所与默认画风');
   for (const style of ['First style', 'Second style']) {
     h.root.querySelector('textarea').value = style;
     await h.submit();
@@ -58,7 +58,7 @@ test('settings saves twice with the latest committed revision on the same page',
 
 test('refreshing settings replaces the form and updates its revision', async (t) => {
   const h = await mountLibrary(t);
-  h.click('住所与画风');
+  h.click('住所与默认画风');
   const firstForm = h.root.querySelector('form');
   await h.rpc('setDefaultStyle', { style: 'External edit', revision: 0 });
   await h.mounted.refresh();
@@ -90,25 +90,93 @@ test('refreshing during a place edit retains the draft revision and rejects a st
   assert.equal(name.value, 'Unsaved draft');
 });
 
-test('地点图鉴的分类显示中文并按大类分组，快捷筛选能分出故事地点与常规地点', async (t) => {
+test('左栏六项筛选与三项整理入口：计数按快照现算，切换后 aria-current 正确', async (t) => {
   const h = await mountLibrary(t);
-  const text = () => h.root.textContent;
-  assert.match(text(), /所有分类/);
-  assert.match(text(), /游乐场/);
-  assert.match(text(), /故事地点/);
-  assert.doesNotMatch(text(), /amusement|aquarium|arcade/);
-  assert.match(text(), /22 处地点/);
-  h.click('故事地点');
-  assert.match(text(), /4 处地点/);
-  assert.match(text(), /折潮港/);
-  assert.match(text(), /折角巷/);
-  h.click('常规地点');
-  assert.match(text(), /18 处地点/);
-  h.click('我的故事地点');
-  assert.match(text(), /0 处地点/);
-  assert.match(text(), /没有符合条件的地点/);
-  h.click('全部');
-  assert.match(text(), /22 处地点/);
+  const places = (await h.rpc('list')).places;
+  const expected = {
+    全部地点: places.length,
+    可玩场所: places.filter((place) => place.playable === true).length,
+    只是地点: places.filter((place) => place.playable !== true).length,
+    故事地点: places.filter((place) => place.storyBound === true).length,
+    我的地点: places.filter((place) => place.userPlace === true).length,
+    住所: places.filter((place) => place.isHome === true).length,
+  };
+  const railButton = (label) => {
+    const button = h.root.querySelectorAll('button').find((item) => item.textContent.trim().startsWith(label));
+    assert.ok(button, `左栏应有「${label}」`);
+    return button;
+  };
+  for (const [label, count] of Object.entries(expected)) {
+    assert.equal(Number(railButton(label).textContent.trim().slice(label.length)), count, `${label} 计数`);
+  }
+  for (const label of ['住所与默认画风', '本地插画', '从小世界迁入']) assert.ok(railButton(label), label);
+  assert.equal(Number(railButton('全部地点').getAttribute('aria-current') === 'true'), 1, '默认停在全部地点');
+
+  railButton('故事地点').click(); await h.settled();
+  assert.equal(railButton('故事地点').getAttribute('aria-current'), 'true');
+  assert.equal(railButton('全部地点').getAttribute('aria-current'), null);
+  assert.match(h.root.textContent, new RegExp(`${expected.故事地点} 处地点`));
+  assert.match(h.root.textContent, /折潮港/);
+  assert.match(h.root.textContent, /折角巷/);
+
+  railButton('只是地点').click(); await h.settled();
+  assert.match(h.root.textContent, /0 处地点/);
+  assert.match(h.root.textContent, /没有符合条件的地点/);
+
+  railButton('全部地点').click(); await h.settled();
+  assert.match(h.root.textContent, new RegExp(`${expected.全部地点} 处地点`));
+  assert.match(h.root.textContent, /所有分类/);
+  assert.match(h.root.textContent, /游乐场/);
+  assert.doesNotMatch(h.root.textContent, /amusement|aquarium|arcade/);
+});
+
+test('列表行有封面缩略图与「编辑地点」，名字进详情、编辑进编辑器', async (t) => {
+  const cover = `data:image/png;base64,${PNG.toString('base64')}`;
+  const h = await mountLibrary(t, async (rpc) => {
+    const created = await rpc('create', { input: { name: 'Cover place', desc: '有封面的一处。' }, revision: 0 });
+    assert.equal(created.ok, true);
+    const id = created.place?.id ?? created.id;
+    const revision = (await rpc('list')).revision;
+    assert.equal((await rpc('setCover', { id, dataUrl: cover, revision })).ok, true);
+  });
+  const picture = h.root.querySelectorAll('img').find((item) => item.getAttribute('alt')?.includes('Cover place'));
+  assert.ok(picture, '列表行应读取并显示封面缩略图');
+  const row = h.root.querySelectorAll('article').find((item) => item.textContent.includes('Cover place'));
+  assert.ok(row);
+  assert.ok(row.querySelectorAll('button').some((item) => item.textContent === '编辑地点'));
+
+  h.click('Cover place'); await h.settled();
+  assert.match(h.root.textContent, /编辑封面/);
+  h.click('返回浏览'); await h.settled();
+  h.click('编辑地点'); await h.settled();
+  assert.ok(h.root.querySelector('form'), '编辑地点应进入编辑器');
+});
+
+test('列表/卡片是显式切换，aria-pressed 与面板存储同步', async (t) => {
+  const memo = memoStore();
+  const h = await mountLibrary(t, null, { memo });
+  const toggle = () => h.root.querySelectorAll('button').find((item) => ['列表视图', '卡片视图'].includes(item.textContent.trim()));
+  assert.ok(toggle());
+  assert.equal(toggle().getAttribute('aria-pressed'), 'false');
+  toggle().click(); await h.settled();
+  assert.equal(toggle().textContent, '卡片视图');
+  assert.equal(toggle().getAttribute('aria-pressed'), 'true');
+  assert.equal(memo.map.get('fpl-browse-view'), 'grid');
+  assert.match(h.root.textContent, /江边|游乐场/);
+});
+
+test('窄屏结构：左栏仍是一组按钮，列表行带缩略图容器与编辑入口', async (t) => {
+  const h = await mountLibrary(t);
+  const [rail] = h.root.querySelectorAll('aside');
+  assert.ok(rail, '应有左栏');
+  assert.match(rail.className, /fpl-rail/);
+  assert.ok(rail.querySelectorAll('button').length >= 9, '六项筛选 + 三项设置 + 刷新');
+  const rows = h.root.querySelectorAll('article').filter((item) => /fpl-listrow/.test(item.className));
+  assert.ok(rows.length > 0);
+  for (const row of rows) {
+    assert.ok(row.querySelectorAll('button').some((item) => item.textContent === '编辑地点'));
+  }
+  assert.ok(h.root.querySelectorAll('button').some((item) => item.textContent === '添加地点'));
 });
 
 test('host-native locations module exports a mount function', () => {

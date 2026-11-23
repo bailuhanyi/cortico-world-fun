@@ -5358,7 +5358,7 @@ var STYLES2 = `
 .fpl h4 { font-size: 14px; }
 .fpl-header { border-bottom: 1px solid var(--fpl-line); padding-bottom: 12px; margin-bottom: 12px; }
 .fpl-kicker { margin: 0 0 6px; font-size: 11px; letter-spacing: .14em; color: var(--fpl-muted); }
-.fpl-header h2 { font-size: 25px; line-height: 1.3; letter-spacing: .04em; margin-bottom: 7px; }
+.fpl-header h2 { font-size: 30px; line-height: 1.35; letter-spacing: .05em; margin-bottom: 7px; }
 .fpl-nav { margin-bottom: 14px; }
 .fpl-row { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
 .fpl-stack { display: grid; gap: 12px; min-width: 0; }
@@ -5417,6 +5417,106 @@ var STYLES2 = `
   .fpl-card { padding: 10px; }
   .fpl-grid { grid-template-columns: 1fr; }
 }
+
+/* ── 地点册版式：左栏「我的地点册 / 整理与设置」+ 右侧封面列表 ── */
+.fpl-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin: 4px 0 7px; }
+.fpl-heading h2 { margin: 0; }
+.fpl-shell { display: grid; grid-template-columns: 224px minmax(0, 1fr); gap: 26px; align-items: start; min-width: 0; }
+.fpl-rail { min-width: 0; border-right: 1px solid var(--fpl-line); padding-right: 22px; }
+.fpl-rail-group + .fpl-rail-group { border-top: 1px solid var(--fpl-line); margin-top: 18px; padding-top: 16px; }
+.fpl-rail-title { margin: 0 0 8px; font-size: 10px; letter-spacing: .14em; font-weight: 600; color: var(--fpl-muted); }
+.fpl-rail-list { display: grid; gap: 2px; min-width: 0; }
+.fpl-rail-item { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; min-height: 34px; padding: 7px 12px; border: 1px solid transparent; border-radius: 7px; background: none; color: var(--fpl-ink); font-size: 12.5px; text-align: start; position: relative; }
+.fpl button.fpl-rail-item { border-color: transparent; background: none; }
+.fpl-rail-item:hover:not(:disabled) { background: var(--fpl-soft); }
+.fpl-rail-item.on { background: var(--fpl-soft); color: var(--fpl-accent); font-weight: 600; }
+.fpl-rail-item.on::before { content: ""; position: absolute; left: 0; top: 9px; bottom: 9px; width: 2px; border-radius: 2px; background: var(--fpl-accent); }
+.fpl-rail-count { font-size: 11.5px; font-weight: 500; color: var(--fpl-muted); font-variant-numeric: tabular-nums; }
+.fpl-rail-item.on .fpl-rail-count { color: var(--fpl-accent); }
+.fpl-rail-set { display: block; width: 100%; min-height: 34px; padding: 7px 12px; border: 1px solid transparent; border-radius: 7px; background: none; color: var(--fpl-muted); font-size: 12px; text-align: start; }
+.fpl button.fpl-rail-set { border-color: transparent; background: none; }
+.fpl-rail-set:hover:not(:disabled) { background: var(--fpl-soft); color: var(--fpl-accent); }
+.fpl-rail-set.on { background: var(--fpl-soft); color: var(--fpl-accent); font-weight: 600; }
+.fpl-rail-refresh { margin-top: 8px; border-top: 1px dashed var(--fpl-line); border-radius: 0; padding-top: 10px; }
+.fpl-pane { min-width: 0; }
+
+.fpl-toolbar { display: flex; gap: 10px; margin-bottom: 14px; }
+.fpl-search { display: flex; align-items: center; flex: 1; min-width: 0; }
+.fpl-search input { width: 100%; min-width: 0; padding: 10px 12px; border: 1px solid var(--fpl-line); border-radius: 9px; background: var(--fpl-card); }
+.fpl-toolbar select { flex: none; width: 132px; max-width: 100%; padding: 9px 10px; border: 1px solid var(--fpl-line); border-radius: 9px; background: var(--fpl-card); }
+.fpl-panehead { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+.fpl-pane-count { margin: 0; font-size: 11px; color: var(--fpl-muted); }
+.fpl-viewtoggle { min-height: 0; padding: 4px 8px; border: 1px solid transparent; border-radius: 7px; background: none; color: var(--fpl-muted); font-size: 11.5px; }
+.fpl button.fpl-viewtoggle { border-color: transparent; background: none; }
+.fpl-viewtoggle:hover:not(:disabled) { border-color: var(--fpl-line); color: var(--fpl-accent); }
+.fpl-viewtoggle[aria-pressed="true"] { border-color: color-mix(in srgb, var(--fpl-accent) 30%, var(--fpl-line)); background: var(--fpl-soft); color: var(--fpl-accent); }
+
+.fpl-row-list { display: grid; border: 1px solid var(--fpl-line); border-radius: var(--fpl-round); overflow: hidden; background: var(--fpl-card); }
+.fpl-listrow { display: grid; grid-template-columns: 112px minmax(0, 1fr) auto; gap: 16px; align-items: center; padding: 12px 16px; border-top: 1px solid var(--fpl-line); min-width: 0; }
+.fpl-listrow:first-child { border-top: 0; }
+.fpl-thumb { width: 112px; aspect-ratio: 5 / 3; border-radius: 8px; overflow: hidden; background: var(--fpl-soft); display: grid; place-items: center; }
+.fpl-thumb img { width: 100%; height: 100%; min-width: 0; min-height: 0; object-fit: cover; }
+.fpl-thumb-empty { font-size: 10px; color: var(--fpl-muted); }
+.fpl-listrow-main { min-width: 0; display: grid; gap: 4px; }
+.fpl-listrow-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.fpl-name { min-height: 0; padding: 0; border: 0; background: none; color: var(--fpl-ink); font-size: 14.5px; font-weight: 600; letter-spacing: .02em; text-align: start; border-radius: 4px; }
+.fpl button.fpl-name { border-color: transparent; background: none; padding: 0; }
+.fpl-name:hover:not(:disabled) { background: none; color: var(--fpl-accent); text-decoration: underline; }
+.fpl-badge { display: inline-flex; align-items: center; padding: 2px 7px; border: 1px solid var(--fpl-line); border-radius: 5px; font-size: 10px; line-height: 1.6; white-space: nowrap; color: var(--fpl-muted); }
+.fpl-badge.warm { border-color: color-mix(in srgb, #b4762f 30%, var(--fpl-line)); background: color-mix(in srgb, #b4762f 8%, var(--fpl-card)); color: color-mix(in srgb, #b4762f 70%, var(--fpl-ink)); }
+.fpl-listrow-desc { margin: 0; font-size: 12px; line-height: 1.7; color: var(--fpl-muted); overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.fpl-listrow-meta { display: flex; gap: 12px; flex-wrap: wrap; font-size: 11px; color: var(--fpl-muted); }
+.fpl-edit { align-self: center; white-space: nowrap; padding: 8px 14px; border: 1px solid var(--fpl-line); border-radius: 9px; background: var(--fpl-card); color: var(--fpl-ink); font-size: 12px; }
+.fpl-edit:hover:not(:disabled) { border-color: var(--fpl-accent); background: var(--fpl-soft); color: var(--fpl-accent); }
+.fpl-pane-hint { margin: 14px 0 0; font-size: 11px; color: var(--fpl-muted); }
+.fpl [hidden] { display: none !important; }
+.fpl-tile:hover { border-color: var(--fpl-accent); background: var(--fpl-soft); }
+
+/* 编辑器：这些规则原先只在共享主题层里，地点册单独挂载时吃不到，挪到这里。 */
+.fpl-editor { display: grid; gap: 20px; min-width: 0; }
+@media (min-width: 900px) { .fpl-editor { grid-template-columns: 200px minmax(0, 1fr); align-items: start; } }
+.fpl-editnav { display: grid; gap: 4px; align-content: start; min-width: 0; }
+.fpl-editnav .fpl-editnav-cover { margin-bottom: 12px; }
+.fpl-editnav button { text-align: start; width: 100%; border: 1px solid transparent; background: transparent; min-height: 38px; padding: 9px 12px; font-size: 12.5px; border-radius: var(--fpl-round); }
+.fpl-editnav button[aria-current=page] { background: var(--fpl-soft); border-color: color-mix(in srgb, var(--fpl-accent) 30%, var(--fpl-line)); font-weight: 650; }
+.fpl-editnav .fpl-step { color: var(--fpl-muted); margin-right: 10px; font-variant-numeric: tabular-nums; }
+.fpl-savebar { position: sticky; bottom: 8px; z-index: 3; display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 18px; padding: 12px 16px; border: 1px solid var(--fpl-line); border-radius: var(--fpl-round); background: color-mix(in srgb, var(--fpl-card) 94%, transparent); backdrop-filter: blur(10px); box-shadow: 0 8px 26px color-mix(in srgb, var(--fpl-ink) 10%, transparent); }
+.fpl-savebar-status { font-size: 11.5px; color: var(--fpl-muted); display: flex; align-items: center; gap: 7px; min-width: 0; }
+.fpl-savebar-status[data-dirty=true] { color: var(--fpl-accent); font-weight: 600; }
+.fpl-dirty-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex: none; }
+.fpl-formgroup { border: 1px solid var(--fpl-line); border-radius: var(--fpl-round); padding: 16px; background: var(--fpl-card); min-width: 0; }
+.fpl-grouphead { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; margin-bottom: 12px; }
+.fpl-grouphead h4 { font-size: 14px; margin: 0; }
+.fpl-grouphead small { font-size: 11px; color: var(--fpl-muted); }
+
+@media (max-width: 760px) {
+  .fpl-shell { display: block; }
+  .fpl-rail { border: 0; padding: 0; margin: 0 0 14px; }
+  .fpl-rail-group + .fpl-rail-group { border-top: 0; margin-top: 10px; padding-top: 0; }
+  .fpl-rail-title { margin: 0 0 6px 2px; }
+  .fpl-rail-list { display: flex; gap: 6px; overflow-x: auto; padding: 0 0 3px; scrollbar-width: none; }
+  .fpl-rail-list::-webkit-scrollbar { display: none; }
+  /* 右侧渐隐：提示第一排筛选还能往右滑（我的地点 / 住所常在屏幕外） */
+  .fpl-rail-filters { -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 26px), transparent); mask-image: linear-gradient(90deg, #000 calc(100% - 26px), transparent); }
+  .fpl-rail-item { flex: none; width: auto; min-height: 30px; gap: 6px; padding: 4px 11px; border: 1px solid var(--fpl-line); border-radius: 999px; background: var(--fpl-card); font-size: 12px; }
+  .fpl-rail-item.on { border-color: color-mix(in srgb, var(--fpl-accent) 40%, var(--fpl-line)); }
+  .fpl-rail-item.on::before { display: none; }
+  .fpl-rail-set { flex: none; width: auto; min-height: 30px; padding: 4px 11px; border: 1px solid var(--fpl-line); border-radius: 999px; font-size: 11.5px; }
+  .fpl-rail-refresh { margin: 0; border-top: 0; padding-top: 4px; }
+  .fpl-toolbar { flex-wrap: wrap; margin-bottom: 12px; }
+  .fpl-search { flex: 1 1 100%; }
+  .fpl-toolbar select { width: 100%; }
+  .fpl-editor { display: block; }
+  .fpl-editnav { display: flex; gap: 6px; overflow-x: auto; margin-bottom: 16px; padding-bottom: 4px; scrollbar-width: none; }
+  .fpl-editnav::-webkit-scrollbar { display: none; }
+  .fpl-editnav button { width: auto; flex: none; white-space: nowrap; border-color: var(--fpl-line); }
+  .fpl-editnav .fpl-editnav-cover, .fpl-editnav .fpl-editnav-meta { display: none; }
+  .fpl-formgroup { padding: 14px; }
+  .fpl-listrow { grid-template-columns: 84px minmax(0, 1fr); gap: 6px 12px; padding: 13px 14px; align-items: start; }
+  .fpl-thumb { width: 84px; grid-row: 1 / span 3; }
+  .fpl-edit { grid-column: 2; justify-self: start; padding: 6px 11px; font-size: 11.5px; }
+  .fpl-header h2 { font-size: 22px; }
+}
 `;
 
 // webui/places/webui.js
@@ -5433,25 +5533,28 @@ var CATEGORY_GROUPS = [
   ["其他地点", ["__none__", "home", "around", "frequent", "travel", "place"]]
 ];
 var categoryValue = (place) => place.kind || "__none__";
-var QUICK_FILTERS = [
-  ["", "全部"],
-  ["story", "故事地点"],
-  ["customStory", "我的故事地点"],
-  ["regular", "常规地点"],
+var RAIL_FILTERS = [
+  ["", "全部地点"],
   ["playable", "可玩场所"],
+  ["plain", "只是地点"],
+  ["story", "故事地点"],
   ["mine", "我的地点"],
   ["home", "住所"]
 ];
+var RAIL_SETTINGS = [
+  ["settings", "住所与默认画风"],
+  ["artwork", "本地插画"],
+  ["migration", "从小世界迁入"]
+];
+var BROWSE_VIEWS = ["browse", "detail", "edit", "create", "cover"];
 var quickMatch = (place, quick) => {
   switch (quick) {
     case "story":
       return place.storyBound === true;
-    case "customStory":
-      return place.customStoryBound === true;
-    case "regular":
-      return place.playable === true && place.storyBound !== true;
     case "playable":
       return place.playable === true;
+    case "plain":
+      return place.playable !== true;
     case "mine":
       return place.userPlace === true;
     case "home":
@@ -5466,15 +5569,33 @@ function mountPlaces(ctx) {
   const { node: node2, row, note: note2, button: button2, field, option, chip } = dom(document2);
   const section = node2("section", { class: "fpl", "aria-label": "地点册" });
   const feedback3 = node2("div", { class: "fpl-feedback", role: "status" });
-  const navigation = node2("nav", { class: "fpl-row fpl-nav", "aria-label": "地点导航" });
-  const main = node2("div", { class: "fpl-stack" });
-  section.append(node2("style", {}, STYLES2), node2(
-    "header",
-    { class: "fpl-header" },
-    node2("p", { class: "fpl-kicker" }, "从0开始的肥鱼大冒险 · 把喜欢的地方，记在这里。"),
-    node2("h2", {}, "把喜欢的地方，记在这里。"),
-    note2("管理地点、游玩内容、封面与关联。")
-  ), navigation, feedback3, main);
+  const railFilters = node2("div", { class: "fpl-rail-list fpl-rail-filters", role: "group", "aria-label": "地点筛选" });
+  const railSettings = node2("div", { class: "fpl-rail-list" });
+  const rail = node2(
+    "aside",
+    { class: "fpl-rail", "aria-label": "我的地点册" },
+    node2("section", { class: "fpl-rail-group" }, node2("p", { class: "fpl-rail-title" }, "我的地点册"), railFilters),
+    node2("section", { class: "fpl-rail-group" }, node2("p", { class: "fpl-rail-title" }, "整理与设置"), railSettings)
+  );
+  const main = node2("div", { class: "fpl-pane" });
+  const shell2 = node2("div", { class: "fpl-shell" }, rail, main);
+  const addPlace = button2("添加地点", () => {
+    tell();
+    go("create");
+  }, { class: "fpl-primary" });
+  const heading2 = node2("div", { class: "fpl-heading" }, node2("h2", {}, "把喜欢的地方，记在这里。"), addPlace);
+  section.append(
+    node2("style", {}, STYLES2),
+    node2(
+      "header",
+      { class: "fpl-header" },
+      node2("p", { class: "fpl-kicker" }, "从0开始的肥鱼大冒险 · 把喜欢的地方，记在这里。"),
+      heading2,
+      note2("管理地点、游玩内容、封面与关联。")
+    ),
+    feedback3,
+    shell2
+  );
   root.replaceChildren(section);
   let snapshot;
   let view = "browse";
@@ -5482,6 +5603,8 @@ function mountPlaces(ctx) {
   let disposed = false;
   let focusAfterRender = false;
   let browseFilter = { text: "", kind: "", quick: "" };
+  let browseMode = ctx.memo?.get("fpl-browse-view", "list") === "grid" ? "grid" : "list";
+  const coverCache = /* @__PURE__ */ new Map();
   let detailId;
   let detail;
   let editRevision;
@@ -5511,7 +5634,10 @@ function mountPlaces(ctx) {
   }
   function accept(result) {
     const next = result.snapshot ?? result;
-    if (Array.isArray(next.places)) snapshot = next;
+    if (Array.isArray(next.places)) {
+      snapshot = next;
+      coverCache.clear();
+    }
   }
   async function refreshSnapshot() {
     const result = await call("list");
@@ -5610,39 +5736,84 @@ function mountPlaces(ctx) {
     );
   }
   function listRow(place) {
+    const badges = [];
+    if (isHome(place)) badges.push(["住所", ""]);
+    if (place.storyBound) badges.push(["有故事", "warm"]);
+    badges.push(place.playable ? ["可玩场所", ""] : ["只是地点", ""]);
     const meta = [
-      place.playable ? "可玩场所" : "只是地点",
       kindLabel(place),
-      list2(place.areas).length ? `${list2(place.areas).length} 处能逛的` : null,
-      place.style ? "有地点画风" : null,
-      list2(place.relations).length ? `${list2(place.relations).length} 条关联` : null,
-      place.isHome ? "住所" : null,
-      place.storyBound ? "有故事" : null
+      `${place.hours?.open || "—"}–${place.hours?.close || "—"}`,
+      place.style ? "有地点画风" : snapshot?.defaultStyle ? "使用默认画风" : "未设画风",
+      list2(place.relations).length ? `${list2(place.relations).length} 条关联` : null
     ].filter(Boolean);
-    return node2(
+    const thumb = node2("div", { class: "fpl-thumb", "aria-hidden": "true" });
+    if (!place.cover) thumb.append(node2("span", { class: "fpl-thumb-empty" }, "暂无封面"));
+    const rowNode = node2(
       "article",
       { class: "fpl-listrow", "data-place-id": place.id },
+      thumb,
       node2(
         "div",
         { class: "fpl-listrow-main" },
-        node2("strong", {}, place.name),
-        node2("div", { class: "fpl-listrow-meta" }, meta.map((item) => node2("span", {}, item))),
-        place.desc ? note2(place.desc) : null
+        node2(
+          "div",
+          { class: "fpl-listrow-head" },
+          button2(place.name, () => open(place.id), { class: "fpl-name" }),
+          ...badges.map(([text2, tone]) => node2("span", { class: `fpl-badge${tone ? ` ${tone}` : ""}` }, text2))
+        ),
+        place.desc ? node2("p", { class: "fpl-listrow-desc" }, place.desc) : note2("还没有地点描写"),
+        node2("div", { class: "fpl-listrow-meta" }, meta.map((item) => node2("span", {}, item)))
       ),
-      node2(
-        "div",
-        { class: "fpl-row" },
-        button2("看看", () => open(place.id)),
-        button2("编辑这处", () => {
-          detail = place;
-          detailId = place.id;
-          go("edit");
-        }, { class: "fpl-primary" })
-      )
+      button2("编辑地点", () => {
+        detail = place;
+        detailId = place.id;
+        go("edit");
+      }, { class: "fpl-edit" })
     );
+    return { place, thumb, rowNode };
+  }
+  function hydrateCovers(rows) {
+    const targets = rows.filter((entry) => entry.place.cover);
+    if (!targets.length) return;
+    const load = async ({ place, thumb }) => {
+      let url = coverCache.get(place.id);
+      if (url === void 0) {
+        try {
+          const result = await call("cover", { id: place.id });
+          url = hasSafeImage(result.image?.dataUrl) ? result.image.dataUrl : null;
+        } catch {
+          url = null;
+        }
+        coverCache.set(place.id, url);
+      }
+      if (!live() || !url) return;
+      const picture = node2("img", { src: url, alt: `${place.name}的封面`, decoding: "async", loading: "lazy" });
+      picture.addEventListener("error", () => {
+        coverCache.delete(place.id);
+        picture.remove();
+      }, { once: true });
+      thumb.replaceChildren(picture);
+    };
+    for (const entry of targets.slice(0, 12)) void load(entry);
+    const lazy = targets.slice(12);
+    if (!lazy.length) return;
+    const Observer = document2.defaultView?.IntersectionObserver;
+    if (typeof Observer !== "function") {
+      for (const entry of lazy) void load(entry);
+      return;
+    }
+    const observer = new Observer((entries) => {
+      for (const entry of entries) {
+        if (!entry.isIntersecting) continue;
+        observer.unobserve(entry.target);
+        const found = lazy.find((item) => item.thumb === entry.target);
+        if (found) void load(found);
+      }
+    });
+    for (const entry of lazy) observer.observe(entry.thumb);
   }
   function browse() {
-    const search = node2("input", { type: "search", value: browseFilter.text, placeholder: "名称、别名、标签或描写" });
+    const search = node2("input", { type: "search", value: browseFilter.text, placeholder: "搜索名称、别名或标签", "aria-label": "搜索地点" });
     const present = [...new Set(places().map(categoryValue))];
     const labelFor = (key) => {
       const place = places().find((item) => categoryValue(item) === key);
@@ -5660,26 +5831,34 @@ function mountPlaces(ctx) {
     if (rest.length) groups.push(node2("optgroup", { label: "其他地点" }, rest.map((key) => option(key, labelFor(key)))));
     const category = node2("select", { "aria-label": "按分类筛选" }, option("", "所有分类"), groups);
     category.value = browseFilter.kind;
-    const quickButtons = new Map(QUICK_FILTERS.map(([value, label2]) => [
-      value,
-      button2(label2, () => {
-        browseFilter.quick = value;
-        display();
-      }, { class: "fpl-chip-toggle" })
-    ]));
-    const paintQuick = () => {
-      for (const [value, control] of quickButtons) control.setAttribute("aria-pressed", String(browseFilter.quick === value));
-    };
-    const tileResults = node2("div", { class: "fpl-grid" });
     const listResults = node2("div", { class: "fpl-row-list" });
-    const count = node2("p", { class: "fpl-muted", role: "status" });
+    const tileResults = node2("div", { class: "fpl-grid" });
+    const count = node2("p", { class: "fpl-pane-count", role: "status" });
+    const viewToggle = button2("列表视图", () => {
+      browseMode = browseMode === "list" ? "grid" : "list";
+      try {
+        ctx.memo?.set("fpl-browse-view", browseMode);
+      } catch {
+      }
+      display();
+    }, { class: "fpl-viewtoggle", "aria-pressed": "false" });
+    const paintView = () => {
+      const grid = browseMode === "grid";
+      viewToggle.textContent = grid ? "卡片视图" : "列表视图";
+      viewToggle.setAttribute("aria-pressed", String(grid));
+      listResults.hidden = grid;
+      tileResults.hidden = !grid;
+    };
     const display = () => {
       const query = browseFilter.text.trim().toLocaleLowerCase();
       const matches = places().filter((place) => quickMatch(place, browseFilter.quick) && (!browseFilter.kind || categoryValue(place) === browseFilter.kind) && (!query || [place.name, place.desc, ...list2(place.aliases), ...list2(place.tags)].some((text2) => String(text2 ?? "").toLocaleLowerCase().includes(query))));
-      count.textContent = `${matches.length} 处地点`;
+      const filtered = browseFilter.quick || browseFilter.kind || browseFilter.text.trim();
+      count.textContent = filtered ? `${matches.length} 处地点（共 ${places().length} 处）` : `${matches.length} 处地点 · 按分类浏览`;
+      const rows = matches.map(listRow);
+      listResults.replaceChildren(...matches.length ? rows.map((entry) => entry.rowNode) : [node2("p", { class: "fpl-empty" }, "没有符合条件的地点。")]);
       tileResults.replaceChildren(...matches.length ? matches.map(thumbnail) : [node2("p", { class: "fpl-empty" }, "没有符合条件的地点。")]);
-      listResults.replaceChildren(...matches.length ? matches.map(listRow) : [node2("p", { class: "fpl-empty" }, "没有符合条件的地点。")]);
-      paintQuick();
+      paintView();
+      hydrateCovers(rows);
     };
     search.addEventListener("input", () => {
       browseFilter.text = search.value;
@@ -5693,15 +5872,11 @@ function mountPlaces(ctx) {
     return node2(
       "section",
       { class: "fpl-stack" },
-      row(
-        node2("h3", { tabindex: -1 }, "浏览地点"),
-        button2("添加地点", () => go("create"), { class: "fpl-primary" })
-      ),
-      node2("div", { class: "fpl-filters", role: "group", "aria-label": "快捷筛选" }, [...quickButtons.values()]),
-      node2("div", { class: "fpl-grid" }, field("搜索地点", search), field("按分类筛选", category)),
-      count,
+      node2("div", { class: "fpl-toolbar" }, node2("label", { class: "fpl-search" }, search), category),
+      node2("div", { class: "fpl-panehead" }, count, viewToggle),
       listResults,
-      tileResults
+      tileResults,
+      node2("p", { class: "fpl-pane-hint" }, "有「能逛的」就是可玩场所，留空也能作为地点保留。")
     );
   }
   function confirm(label2, message, action) {
@@ -6257,13 +6432,46 @@ function mountPlaces(ctx) {
     );
   }
   const migration = createMigrationView({ document: document2, places, snapshot: () => snapshot, run, call, tell, render, refreshSnapshot, live });
+  function railButton(label2, count, active, onclick) {
+    return node2(
+      "button",
+      { type: "button", class: `fpl-rail-item${active ? " on" : ""}`, "aria-current": active ? "true" : null, onclick },
+      node2("span", { class: "fpl-rail-label" }, label2),
+      node2("b", { class: "fpl-rail-count" }, String(count))
+    );
+  }
+  function renderRail() {
+    const browsing = BROWSE_VIEWS.includes(view);
+    const counts = new Map(RAIL_FILTERS.map(([key]) => [key, snapshot ? places().filter((place) => quickMatch(place, key)).length : "—"]));
+    railFilters.replaceChildren(...RAIL_FILTERS.map(([key, label2]) => railButton(
+      label2,
+      counts.get(key),
+      browsing && browseFilter.quick === key,
+      () => {
+        tell();
+        browseFilter.quick = key;
+        browseFilter.text = "";
+        browseFilter.kind = "";
+        go("browse");
+      }
+    )));
+    railSettings.replaceChildren(
+      ...RAIL_SETTINGS.map(([id, label2]) => node2("button", {
+        type: "button",
+        class: `fpl-rail-set${view === id ? " on" : ""}`,
+        "aria-current": view === id ? "true" : null,
+        onclick: () => {
+          tell();
+          go(id);
+        }
+      }, label2)),
+      node2("button", { type: "button", class: "fpl-rail-set fpl-rail-refresh", onclick: () => void refresh() }, "刷新")
+    );
+  }
   function render() {
     if (!live()) return;
-    const active = ["detail", "edit", "create", "cover", "browse"].includes(view) ? "browse" : view;
-    navigation.replaceChildren(...[["browse", "浏览地点"], ["settings", "住所与画风"], ["artwork", "本地插画"], ["migration", "从小世界迁入"]].map(([id, label2]) => button2(label2, () => {
-      tell();
-      go(id);
-    }, { "aria-current": active === id ? "page" : null })), button2("刷新", refresh));
+    renderRail();
+    addPlace.hidden = !BROWSE_VIEWS.includes(view);
     let contents;
     if (!snapshot) contents = node2("p", { class: "fpl-empty" }, "正在读取地点库…");
     else if (view === "settings") contents = settings();
@@ -6575,39 +6783,6 @@ var CSS2 = `
 .fun-quickstat{flex:1 1 120px;border:1px solid var(--f-line);border-radius:var(--f-round-sm);padding:12px 14px;background:var(--f-paper-soft);min-width:0}
 .fun-quickstat b{display:block;font:20px/1.3 Georgia,serif}
 .fun-quickstat span{font-size:11px;color:var(--f-dim)}
-/* 地点册：浏览列表与编辑工作区 */
-.fpl-tile{transition:border-color .15s,background .15s}
-.fpl-tile:hover{border-color:var(--fpl-accent);background:var(--fpl-soft)}
-.fpl-row-list{display:grid;gap:0;border:1px solid var(--fpl-line);border-radius:var(--fpl-round);overflow:hidden;background:var(--fpl-card)}
-.fpl-listrow{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;align-items:center;padding:14px 16px;border-top:1px solid var(--fpl-line);min-width:0}
-.fpl-listrow:first-child{border-top:0}
-.fpl-listrow-main{min-width:0;display:grid;gap:4px}
-.fpl-listrow-main strong{font-size:14.5px;letter-spacing:.02em}
-.fpl-listrow-meta{display:flex;gap:10px;flex-wrap:wrap;font-size:11px;color:var(--fpl-muted)}
-.fpl-listrow .fpl-row{align-self:start;flex-wrap:wrap}
-@media(max-width:520px){.fpl-listrow{grid-template-columns:minmax(0,1fr);padding:13px 14px}.fpl-listrow .fpl-row{justify-content:flex-start}}
-.fpl-editor{display:grid;gap:20px;min-width:0}
-@media(min-width:900px){.fpl-editor{grid-template-columns:200px minmax(0,1fr);align-items:start}}
-.fpl-editnav{display:grid;gap:4px;align-content:start;min-width:0}
-.fpl-editnav .fpl-editnav-cover{margin-bottom:12px}
-.fpl-editnav button{text-align:start;width:100%;border:1px solid transparent;background:transparent;min-height:38px;padding:9px 12px;font-size:12.5px;border-radius:var(--fpl-round-sm)}
-.fpl-editnav button[aria-current=page]{background:var(--fpl-soft);border-color:color-mix(in srgb,var(--fpl-accent) 30%,var(--fpl-line));font-weight:650}
-.fpl-editnav .fpl-step{color:var(--fpl-muted);margin-right:10px;font-variant-numeric:tabular-nums}
-@media(max-width:899px){
-  .fpl-editor{display:block}
-  .fpl-editnav{display:flex;gap:6px;overflow:auto;margin-bottom:16px;padding-bottom:4px;scrollbar-width:none}
-  .fpl-editnav button{width:auto;flex:none;white-space:nowrap;border-color:var(--fpl-line)}
-  .fpl-editnav .fpl-editnav-cover,.fpl-editnav .fpl-editnav-meta{display:none}
-}
-.fpl-savebar{position:sticky;bottom:8px;z-index:3;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-top:18px;padding:12px 16px;border:1px solid var(--fpl-line);border-radius:var(--fpl-round);background:color-mix(in srgb,var(--fpl-card) 94%,transparent);backdrop-filter:blur(10px);box-shadow:0 8px 26px color-mix(in srgb,var(--fpl-ink) 10%,transparent)}
-.fpl-savebar-status{font-size:11.5px;color:var(--fpl-muted);display:flex;align-items:center;gap:7px;min-width:0}
-.fpl-savebar-status[data-dirty=true]{color:var(--fpl-accent);font-weight:600}
-.fpl-dirty-dot{width:6px;height:6px;border-radius:50%;background:currentColor;flex:none}
-.fpl-formgroup{border:1px solid var(--fpl-line);border-radius:var(--fpl-round);padding:16px;background:var(--fpl-card);min-width:0}
-.fpl-formgroup>legend{padding:0 6px;font-size:12px;letter-spacing:.1em;color:var(--fpl-muted)}
-.fpl-grouphead{display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin-bottom:12px}
-.fpl-grouphead h4{font-size:14px;margin:0}
-.fpl-grouphead small{font-size:11px;color:var(--fpl-muted)}
 /* 故事：底部提示与作品库卡片 */
 .sw-bottom-note{font-size:11px;color:var(--sw-muted);text-align:center;padding:22px 0 6px;border-top:1px solid var(--sw-line);margin-top:26px}
 .sw-story-card{overflow:hidden}
@@ -6623,7 +6798,6 @@ var CSS2 = `
   .fun-shelf-cabinet .fun-keepsake>summary{padding:14px 10px 11px}
   .fun-shelf-cabinet .fun-keepsake>summary .fun-icon{width:38px;height:38px}
   .fun-progress-grid{grid-template-columns:minmax(0,1fr)}
-  .fpl-formgroup{padding:14px}
 }
 @media(prefers-reduced-motion:reduce){
   .fun *,.fpl *,.sw *{transition:none!important;animation:none!important;scroll-behavior:auto!important}
