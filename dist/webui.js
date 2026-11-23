@@ -1843,7 +1843,7 @@ function createStoryController(ctx, onChange = () => {
     return mutate("choose", { choiceId: current.pending.id, optionId, substitute: true, confirm: true });
   }
   async function fork(memoryId, checkpointId) {
-    if (!alive() || !state.ready || trip() || state.busy || state.recovering || !memoryId || !checkpointId) return;
+    if (!alive() || !state.ready || trip() || state.busy || state.recovering || !memoryId || !checkpointId) return false;
     const forkToken = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 14)}`;
     state.error = "";
     state.notice = "";
@@ -1851,11 +1851,13 @@ function createStoryController(ctx, onChange = () => {
     emit();
     try {
       const snapshot = await call("fork", { memoryId, checkpointId, forkToken });
-      if (!alive()) return;
+      if (!alive()) return false;
       apply(snapshot);
       state.notice = "已从已验证检查点创建新 runId。源回忆与预算保留；此分支不写入正史探索、心愿或收藏。";
+      return Boolean(snapshot?.trip);
     } catch (error) {
       if (alive()) state.error = description(error);
+      return false;
     } finally {
       state.busy = "";
       emit();
@@ -3201,7 +3203,10 @@ function mountPanel(root, ctx) {
       const forkable = (memory.checkpoints ?? []).filter((checkpoint) => checkpoint.resumable === true);
       if (forkable.length && !state.snapshot.trip) actions.push(button("从最近可继续检查点开分支", () => {
         const checkpoint = forkable.at(-1);
-        if (checkpoint) void controller.fork(memory.id, checkpoint.id);
+        if (!checkpoint) return;
+        void controller.fork(memory.id, checkpoint.id).then((created) => {
+          if (created && !disposed) navigate("play");
+        });
       }, { small: true, key: `fork-${memory.id}` }));
       actions.push(button("移到回收站", () => void removeMemory(memory), { small: true, quiet: true, danger: true, key: `delete-${memory.id}` }));
       return node("article", { class: "sw-card sw-memory" }, node(

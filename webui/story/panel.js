@@ -716,7 +716,9 @@ export function mountPanel(root, ctx) {
       const forkable = (memory.checkpoints ?? []).filter((checkpoint) => checkpoint.resumable === true);
       if (forkable.length && !state.snapshot.trip) actions.push(button('从最近可继续检查点开分支', () => {
         const checkpoint = forkable.at(-1);
-        if (checkpoint) void controller.fork(memory.id, checkpoint.id);
+        if (!checkpoint) return;
+        // 分支建好就直接跳到「出游」接着走；没建出来（错误/被回放挡住）就留在原地看提示。
+        void controller.fork(memory.id, checkpoint.id).then((created) => { if (created && !disposed) navigate('play'); });
       }, { small: true, key: `fork-${memory.id}` }));
       actions.push(button('移到回收站', () => void removeMemory(memory), { small: true, quiet: true, danger: true, key: `delete-${memory.id}` }));
       return node('article', { class: 'sw-card sw-memory' }, node('div', { class: 'sw-card-pad' }, badge(memory.complete ? '故事完成' : '中途回家', !memory.complete),

@@ -493,6 +493,25 @@ test('public resumable checkpoint exposes a branch button without private graph 
   mounted.dispose();
 });
 
+test('从回忆开分支后直接跳到出游，不用再自己找', async () => {
+  const initial = snapshot(); initial.trip = null;
+  initial.memories = [{ id: 'memory-1', title: '旧故事', summary: '实际发生的片段', complete: true,
+    checkpoints: [{ id: 'checkpoint-1', resumable: true, revision: 'r1' }], timeline: [], choices: [] }];
+  const branch = snapshot().trip; branch.title = '旧故事 · 分支';
+  const h = harness(async (method, payload, current) => {
+    if (method !== 'fork') return undefined;
+    return { ...copy(current), trip: copy(branch) };
+  }, initial);
+  globalThis.document = h.env.document; globalThis.window = h.env.window;
+  const root = document.createElement('div'); const mounted = mountPanel(root, h.ctx); await flush();
+  root.querySelector('[data-focus="nav-memories"]').click();
+  root.querySelector('[data-focus="fork-memory-1"]').click(); await flush();
+  assert.ok(root.querySelector('[data-focus="play-reading"]'), '分支建好后落在出游页');
+  assert.match(root.textContent, /旧故事 · 分支/);
+  assert.match(root.textContent, /已从已验证检查点创建新 runId/, '分支说明仍在，不需要再点一次');
+  mounted.dispose();
+});
+
 async function settingsHarness(handler, options = {}) {
   const initial = snapshot();
   if (options.trip === null) initial.trip = null;

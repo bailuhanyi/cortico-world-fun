@@ -319,16 +319,20 @@ export function createStoryController(ctx, onChange = () => {}, environment = {}
   }
 
   async function fork(memoryId, checkpointId) {
-    if (!alive() || !state.ready || trip() || state.busy || state.recovering || !memoryId || !checkpointId) return;
+    if (!alive() || !state.ready || trip() || state.busy || state.recovering || !memoryId || !checkpointId) return false;
     const forkToken = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 14)}`;
     state.error = ''; state.notice = ''; state.busy = '正在从检查点创建隔离分支'; emit();
     try {
       const snapshot = await call('fork', { memoryId, checkpointId, forkToken });
-      if (!alive()) return;
+      if (!alive()) return false;
       apply(snapshot);
       state.notice = '已从已验证检查点创建新 runId。源回忆与预算保留；此分支不写入正史探索、心愿或收藏。';
-    } catch (error) { if (alive()) state.error = description(error); }
-    finally { state.busy = ''; emit(); }
+      // 调用方（面板）据此决定要不要直接跳到「出游」；没建出新行程就留在原地看错误。
+      return Boolean(snapshot?.trip);
+    } catch (error) {
+      if (alive()) state.error = description(error);
+      return false;
+    } finally { state.busy = ''; emit(); }
   }
 
   async function mutate(method, extra = {}) {
