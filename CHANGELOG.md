@@ -11,7 +11,7 @@
 - **编辑器样式归位**：`.fpl-editor` / `.fpl-editnav` / `.fpl-savebar` / `.fpl-formgroup` 原先只在共享主题层里，地点册单独挂载时吃不到（编辑器会退化成一条竖排按钮）；现在随面板样式一起注入。
 - **改：「自己出门」只剩许可**。移除 `worlds.fun.funHomeAutoSlots`、60 秒叫醒定时器、`fun/auto-go.json` 记录和 internal 事件 `fun.home.free`（`describe.json` 从 1 个事件变 0 个）。`funHomeAutoGo` 仍是「家：允许她自己出门」，但时间跟着「鱼的每一天」的「她自己的时间」：那边叫醒她时，她先看当天日程（`feast_life_now`），空着就出门、写着上班/通勤/睡觉就不出门。本 World 仍然不读对方的日程、不挑地方、不替她出门。
 - 测试：`webui/places/webui.test.mjs` 覆盖左栏六项计数与 `aria-current`、封面缩略图 + 编辑入口、列表/卡片切换与 `memo` 记忆、窄屏结构、本地插画导入/刷新/坏图不回退；`home-circle` / `world` 改成断言「只有许可、没有定时器与事件」；`smoke` / `verify-tarball` 同步事件数。
-- 版本号升到 0.7.4。
+- 版本号升到 0.7.4；已打包到 `story-world\artifacts\release-0.7.4`（tgz `B3BAD6D0…0B6B98` + 群友测试包 `CCF1F6EF…5846E7`），并装进本机 Coo（备份 `*.bak-20261123-142537`，`/api/extensions` 0.7.4 / loaded，asset 与 `dist/webui.js` 同哈希）。
 
 ## 0.7.3
 

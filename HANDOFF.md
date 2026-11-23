@@ -2,9 +2,11 @@
 
 更新日期：2026-11-23 下午（Asia/Shanghai）。本文是当前接手的入口；**地点册版式重做的交接另见 [`HANDOFF-2026-11-23-地点册版式-交接.md`](HANDOFF-2026-11-23-地点册版式-交接.md)**。
 
-> **发布状态（2026-11-23 14:2x）**：0.7.4 源码已完成（地点册两列版式 + 「自己出门」改为跟随「她自己的时间」），测试与 `npm run verify` 全绿，**未提交、未打包、未装机**；本机 Coo 仍待装 0.7.3 修复包。
-> - 0.7.3 仍是磁盘上最后一个已打包版本：`story-world\artifacts\release-0.7.3\cortico-world-fun-0.7.3.tgz`（SHA-256 `A5913F68…A45BDE`，含迁移判定修复）。装 Coo 前先问「Coo 退干净了吗」。
-> - 0.7.4 的任务书、示例图与完成记录见版式交接的 §1–§8；`reports/fun-places-redesign-20261123/` 有静态示例 P1–P4 与真实面板 R1–R8 截图。
+> **发布状态（2026-11-23 14:2x）**：0.7.4 源码完成、已本地提交（`69a49db`）、已打包并装进本机 Coo，`npm run verify` 与全量 `npm test` 全绿；**未 push、未发 npm**。
+> - 产物：`story-world\artifacts\release-0.7.4\`。`cortico-world-fun-0.7.4.tgz` SHA-256 `B3BAD6D043078BCA00C9F82FFC2E26655338CCE6F8C653AD5F3C43E98F0B6B98`（1,667,737 B）；群友包 `…-群友测试包.zip` SHA-256 `CCF1F6EF099DDD222FF71D724D0A448519118D8EDC0457E82931D85B055846E7`（1,694,769 B）；`dist/webui.js` SHA-256 `C1CF4FCB0F5E4E81C364AA0A87AFF4AF64BD81488551DC9BEADB2DCB8ADCE0B8`（450,451 B）。
+> - 装机核验：vendor `package.json` = 0.7.4；`/api/extensions` 里 `cortico-world-fun` 0.7.4 / `loaded`；`/assets/extensions/cortico-world-fun/0.7.4/webui.js` 200、450,451 B、SHA-256 与 `dist/webui.js` 一致；日志 `worlds.fun: 从0开始的肥鱼大冒险已启动`。装前备份 `vendor\cortico-world-fun.bak-20261123-142537`、`package.json.bak-20261123-142537`、`config.json.bak-20261123-142537`。
+> - fun 数据：装机前后 11 个文件 SHA-256 全一致（`state.json` 776,553 B、`venues.json` 1,482 B、`stories.json` 5,667 B、`home/room.json` 384 B 等）。
+> - 0.7.3 修复包仍在 `release-0.7.3\`（`A5913F68…A45BDE`），本机现在装的是 0.7.4，不再需要单独装 0.7.3。
 > - 0.7.3 状态块（settings 重组、37 脚本 / 520 例）仍在下文保留。
 
 > **发布状态（2026-11-23 14:00）**：0.7.3 设置重组完成、测试全绿（37 脚本 / 520 例）、`npm run verify` 全绿，源码已本地提交，**未 push、未发 npm**。
