@@ -1,6 +1,11 @@
-# 从0开始的肥鱼大冒险 0.7.3（设置重组已完成，重装待做）交接文档
+# 从0开始的肥鱼大冒险 0.7.5（故事工坊收口，已打包未装机）交接文档
 
 更新日期：2026-11-23 下午（Asia/Shanghai）。本文是当前接手的入口；**地点册版式重做的交接另见 [`HANDOFF-2026-11-23-地点册版式-交接.md`](HANDOFF-2026-11-23-地点册版式-交接.md)**。
+
+> **发布状态（2026-11-23 14:5x）**：0.7.5 故事工坊版式收口完成、已本地提交（`44993cd`）、已打包，`npm run verify` 与全量 `npm test` 全绿；**未 push、未发 npm、按用户要求未装 Coo**（本机 Coo 仍是 0.7.4）。
+> - 产物：`story-world\artifacts\release-0.7.5\`。`cortico-world-fun-0.7.5.tgz` SHA-256 `BCD13EC6DD7429C6BC260368FE5F13D48A551806D5FA0E17A4358E6BA75441FB`（1,669,920 B）；群友包 `…-群友测试包.zip` SHA-256 `BAC706B576B035C42BAA1F70FE6BBA3C636B5DD4887CAD77BB2B34BC3CC6CB31`（1,696,527 B）；`dist/webui.js` SHA-256 `0C879FC80BDFD9B6772C327F2421A3505EFD3BA7604DD436F67547774DE551D3`（包内与仓库一致）。
+> - 内容：故事工坊只留「＋ 编写故事」一个入口，展开后三个起点（选项式 / 自由场景包 / 从文件导入）；右侧「从一个小片段开始」删除；折叠改成小箭头；导入可选 `.json`（≤ 32 KB，粘贴保留）。
+> - 验收截图：`reports/fun-stories-redesign-20261123/`（示例 S1–S6 + 真实面板 R1–R5，1440 明/暗、412 窄屏、收起、从文件导入；全部无横向溢出）。装机前先问「Coo 退干净了吗」，再按 `install.ps1 -CooRoot E:\Coopanion` 执行并核对 `/api/extensions`、asset 哈希与 fun 数据快照。
 
 > **发布状态（2026-11-23 14:2x）**：0.7.4 源码完成、已本地提交（`69a49db`）、已打包并装进本机 Coo，`npm run verify` 与全量 `npm test` 全绿；**未 push、未发 npm**。
 > - 产物：`story-world\artifacts\release-0.7.4\`。`cortico-world-fun-0.7.4.tgz` SHA-256 `B3BAD6D043078BCA00C9F82FFC2E26655338CCE6F8C653AD5F3C43E98F0B6B98`（1,667,737 B）；群友包 `…-群友测试包.zip` SHA-256 `CCF1F6EF099DDD222FF71D724D0A448519118D8EDC0457E82931D85B055846E7`（1,694,769 B）；`dist/webui.js` SHA-256 `C1CF4FCB0F5E4E81C364AA0A87AFF4AF64BD81488551DC9BEADB2DCB8ADCE0B8`（450,451 B）。
