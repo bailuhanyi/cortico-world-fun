@@ -1,6 +1,13 @@
-# 从0开始的肥鱼大冒险 0.7.5（故事工坊收口，已打包未装机）交接文档
+# 从0开始的肥鱼大冒险 0.7.5（故事工坊收口，已装机）交接文档
 
 更新日期：2026-11-23 下午（Asia/Shanghai）。本文是当前接手的入口；**本轮的详细接手（0.7.5 故事工坊 + 0.7.4 地点册、装机步骤、坑）见 [`HANDOFF-2026-11-23-0.7.5-接手.md`](HANDOFF-2026-11-23-0.7.5-接手.md)**；地点册版式重做的过程记录见 [`HANDOFF-2026-11-23-地点册版式-交接.md`](HANDOFF-2026-11-23-地点册版式-交接.md)。
+
+> **发布状态（2026-11-23 15:5x，已装机，取代下面 14:5x 那条）**：0.7.5 **已装进本机 Coo**。装机时间 15:50:13，`npm run verify` 与全量 `npm test` 此前已全绿；源码已本地提交（`44993cd`）。
+> - 装机核验：vendor `package.json` = 0.7.5；`/api/extensions` 里 `cortico-world-fun` **0.7.5 / `state=loaded` / `enabled=true` / `webUi=served`**；`/assets/extensions/cortico-world-fun/0.7.5/webui.js` 200、**452,497 B**、SHA-256 `0C879FC80BDFD9B6772C327F2421A3505EFD3BA7604DD436F67547774DE551D3` 与 `dist/webui.js` 一致；日志 `[15:51:24] worlds.fun: 从0开始的肥鱼大冒险已启动`；`node_modules\cortico-world-fun` junction 与 `data\extensions\package.json` 的 `file:` 依赖均指向 vendor。
+> - fun 数据：装前 / 装后 / Coo 重启后**三次** 11 个文件 SHA-256 全一致。装前快照留在 `.tmp\fun-preinstall-0.7.5.txt`（`state.json` 779,358 B，比 0.7.4 记录时的 776,553 B 大，是 Coo 那半天自己写的，不是装机造成的）。
+> - 备份：`vendor\cortico-world-fun.bak-20261123-155013`、`data\extensions\package.json.bak-20261123-155013`、`data\home\companion\config.json.bak-20261123-155013`。
+> - 顺带清理：删掉 0.7.4 起已废弃的 `worlds.fun.funHomeAutoSlots`（`config.json` 17,661 B → 17,614 B，只少这一行；删前备份 `config.json.bak-20261123-155240`）。注意 `config.json` 由 Coo 自己序列化，若它退出时按内存重写，这个键可能被写回——无害，0.7.5 不读它。
+> - **仍未 push、未发 npm**；真机点选验收（地点册封面/编辑/插画/412 滚动、故事工坊三个起点/选文件/折叠）仍未做。
 
 > **发布状态（2026-11-23 14:5x）**：0.7.5 故事工坊版式收口完成、已本地提交（`44993cd`）、已打包，`npm run verify` 与全量 `npm test` 全绿；**未 push、未发 npm、按用户要求未装 Coo**（本机 Coo 仍是 0.7.4）。
 > - 产物：`story-world\artifacts\release-0.7.5\`。`cortico-world-fun-0.7.5.tgz` SHA-256 `BCD13EC6DD7429C6BC260368FE5F13D48A551806D5FA0E17A4358E6BA75441FB`（1,669,920 B）；群友包 `…-群友测试包.zip` SHA-256 `BAC706B576B035C42BAA1F70FE6BBA3C636B5DD4887CAD77BB2B34BC3CC6CB31`（1,696,527 B）；`dist/webui.js` SHA-256 `0C879FC80BDFD9B6772C327F2421A3505EFD3BA7604DD436F67547774DE551D3`（包内与仓库一致）。
