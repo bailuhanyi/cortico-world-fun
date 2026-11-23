@@ -1,8 +1,10 @@
-# 从0开始的肥鱼大冒险 0.7.2（已装机）交接文档
+# 从0开始的肥鱼大冒险 0.7.2（源码已推送，未打包）交接文档
 
-更新日期：2026-11-23 中午（Asia/Shanghai）。本文是当前接手的入口。
+更新日期：2026-11-23 下午（Asia/Shanghai）。本文是当前接手的入口。
 
-> **2026-11-23 中午更新（0.7.2，已打包装机）**：代码体检整改。六个 `fun_story_*` 只读查询加 10 分钟记忆化（写操作立即失效、`full:true` 重取）；`tools()` 按开关收窄，文字通道默认开（默认 23 件工具），作者工具挂在新开关 `funStoryAuthorInChat`（默认关）；`hmToMin` / `el()` / `feedback` 抽共享模块，六个只读查询拆到 `src/story-read.js`；用户手册/README/CHANGELOG 升到 0.7.2。测试 38 个脚本除 DPAPI 环境用例外全绿，`npm run verify` 全绿。
+> **发布状态（2026-11-23）**：0.7.2 已 push 到 `origin/main`（`582cab4`），但**没有 npm pack、没有群友包、没有装进本机 Coo**——按用户决定，这些动作等「设置重组」（`docs/提案-设置重组-20261123.md`）做完后随 **0.7.3** 一起发。本机 Coo 仍是 **0.7.1**，最后一个已装包在 `story-world\artifacts\release-0.7.1\`。下次升版本直接从 0.7.2 → 0.7.3，不要再单独发 0.7.2。
+>
+> **2026-11-23 中午更新（0.7.2，已 push）**：代码体检整改。六个 `fun_story_*` 只读查询加 10 分钟记忆化（写操作立即失效、`full:true` 重取）；`tools()` 按开关收窄，文字通道默认开（默认 23 件工具），作者工具挂在新开关 `funStoryAuthorInChat`（默认关）；`hmToMin` / `el()` / `feedback` 抽共享模块，六个只读查询拆到 `src/story-read.js`；用户手册/README/CHANGELOG 升到 0.7.2。测试 38 个脚本除 DPAPI 环境用例外全绿，`npm run verify` 全绿。
 >
 
 > **2026-11-22 深夜更新（0.7.1，已装机）**：修了画架选图必报「kind 必须是 file 或 directory」（`ctx.pickPath` 没带 `kind`）；「自己出门」回到**方案 B**——`funHomeAutoGo` 是许可、新增 `funHomeAutoSlots`（默认 10:30/15:30/19:30），World 到点推 `fun.home.free` 叫她先看日程再决定，不读 feast 的日程、不挑地方、不替她出门，`undoAutoGo` 与面板撤销按钮已移除；家里没上传角色图时改用随包内置的 **Q 版立绘**（`assets/home/chibi-*.webp`，已裁透明边，默认站位整体调小）。已打包到 `story-world\artifacts\release-0.7.1`（tgz + 群友测试包 zip），并装进本机 Coo（vendor 0.7.1，备份 `cortico-world-fun.bak-20261123-0010`）。
