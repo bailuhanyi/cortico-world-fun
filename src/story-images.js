@@ -205,14 +205,18 @@ function workflow(checkpoint, prompt) {
 
 /**
  * init/configure only use <dataDir>/fun/story-images, never World state/config.
+ * The image source itself is injected (`source: () => cfg.funStoryImageSource`) since
+ * 0.7.3; settings.json keeps only the custom ComfyUI workflow.
  * detectPlugin is an optional verified, synchronous boolean capability callback.
  * With no callback the installation status is explicitly unknown.
  * generate must be awaited outside the World's story-action serialization lock.
  */
 export class StoryImages {
   #dir;
-  #source = '';
+  #sourceFrom;
   #workflow = '';
+  /** 旧 settings.json 里的来源，只供启动时一次性迁移到配置。 */
+  #legacySource = '';
   #fetch;
   #detect;
   #timeout;
@@ -221,24 +225,34 @@ export class StoryImages {
   #active;
   #writes = Promise.resolve();
 
-  constructor({ dataDir, fetchImpl = globalThis.fetch, detectPlugin, timeoutMs = STORY_IMAGE_TIMEOUT_MS, pollIntervalMs = 250 } = {}) {
+  constructor({ dataDir, source, fetchImpl = globalThis.fetch, detectPlugin, timeoutMs = STORY_IMAGE_TIMEOUT_MS, pollIntervalMs = 250 } = {}) {
     if (typeof dataDir !== 'string' || !dataDir) throw new TypeError('StoryImages requires dataDir.');
     this.#dir = join(dataDir, 'fun', 'story-images');
+    this.#sourceFrom = typeof source === 'function' ? source : typeof source === 'string' ? () => source : () => '';
     this.#fetch = fetchImpl;
     this.#detect = detectPlugin;
     this.#timeout = Math.min(STORY_IMAGE_TIMEOUT_MS, Math.max(1, Number(timeoutMs) || STORY_IMAGE_TIMEOUT_MS));
     this.#poll = Math.max(1, Math.min(1000, Number(pollIntervalMs) || 250));
   }
 
+  /** 现读配置里的来源（面板不需要重新载入）。 */
+  #source() {
+    const value = this.#sourceFrom();
+    return typeof value === 'string' ? value : '';
+  }
+
+  /** 仅启动迁移用：旧文件里保存过的来源；迁移后不再读写文件里的 source。 */
+  legacySource() { return this.#legacySource; }
+
   async init() {
     try {
       const file = join(this.#dir, 'settings.json');
       const stat = await lstat(file);
-      // settings.json 里放得下来源 + 自定义工作流（工作流上限 32 KB）。
+      // settings.json 里只剩自定义工作流（上限 32 KB）。
       if (!stat.isFile() || stat.size > STORY_WORKFLOW_MAX_CHARS + 8192) return this.status();
       const parsed = JSON.parse(await readFile(file, 'utf8'));
-      const result = validateStoryImageSource(parsed?.source);
-      if (result.ok) this.#source = result.source;
+      const legacy = validateStoryImageSource(parsed?.source);
+      if (legacy.ok) this.#legacySource = legacy.source;
       const workflow = validateStoryWorkflow(parsed?.workflow);
       if (workflow.ok) this.#workflow = workflow.workflow;
     } catch { /* Missing or malformed independent settings fall back to delegation. */ }
@@ -253,27 +267,35 @@ export class StoryImages {
   }
 
   status(enabled = false) {
-    const kind = validateStoryImageSource(this.#source).kind;
+    const source = this.#source();
+    const checked = validateStoryImageSource(source);
+    const kind = checked.ok ? checked.kind : 'invalid';
     const pluginStatus = enabled === true && kind === 'plugin' ? this.#pluginStatus() : 'unknown';
     const custom = kind === 'comfyui' && Boolean(this.#workflow);
-    const message = !enabled ? OFF : kind === 'comfyui'
-      ? custom
-        ? '可选直连本机 ComfyUI，当前使用你自己贴的工作流（模型与节点由你负责）；总计最多 30 秒、图片最多 8 MiB，失败可继续文字故事。图片保存在本 World dataDir/fun/story-images。'
-        : '可选直连本机 ComfyUI（固定 512×512）；总计最多 30 秒、图片最多 8 MiB，失败可继续文字故事。图片保存在本 World dataDir/fun/story-images，通过图片 ID 读取。'
-      : kind === 'delegate' ? '由主对话或指定插件执行图片委派；fun 不调用该插件，图片由执行方保存。'
-        : pluginStatus === 'absent' ? '未安装鱼的生图包，无法使用 imggen_draw；请安装后由主对话执行，文字故事可继续。'
-          : pluginStatus === 'installed' ? '已确认安装鱼的生图包；fun 只返回 imggen_draw 参数，由主对话调用，图片由生图包保存。'
-            : `${UNKNOWN} fun 只给回执委派，图片由执行方保存；文字故事可继续。`;
-    return { enabled: enabled === true, state: !enabled ? 'off' : pluginStatus === 'absent' ? 'unavailable'
-      : kind === 'comfyui' ? 'direct' : 'delegated', message,
+    const message = !enabled ? OFF
+      : kind === 'invalid' ? '图片来源设置无效：只接受留空、本机 loopback ComfyUI 地址或一段插件说明文本。请到配置页修改；文字故事可继续。'
+        : kind === 'comfyui' ? (custom
+          ? '可选直连本机 ComfyUI，当前使用你自己贴的工作流（模型与节点由你负责）；总计最多 30 秒、图片最多 8 MiB，失败可继续文字故事。图片保存在本 World dataDir/fun/story-images。'
+          : '可选直连本机 ComfyUI（固定 512×512）；总计最多 30 秒、图片最多 8 MiB，失败可继续文字故事。图片保存在本 World dataDir/fun/story-images，通过图片 ID 读取。')
+          : kind === 'delegate' ? '由主对话或指定插件执行图片委派；fun 不调用该插件，图片由执行方保存。'
+            : pluginStatus === 'absent' ? '未安装鱼的生图包，无法使用 imggen_draw；请安装后由主对话执行，文字故事可继续。'
+              : pluginStatus === 'installed' ? '已确认安装鱼的生图包；fun 只返回 imggen_draw 参数，由主对话调用，图片由生图包保存。'
+                : `${UNKNOWN} fun 只给回执委派，图片由执行方保存；文字故事可继续。`;
+    const state = !enabled ? 'off'
+      : kind === 'invalid' || pluginStatus === 'absent' ? 'unavailable'
+        : kind === 'comfyui' ? 'direct' : 'delegated';
+    return { enabled: enabled === true, state, message,
       generationAvailable: enabled === true && (kind === 'comfyui' ? typeof this.#fetch === 'function'
-        : kind === 'delegate' || pluginStatus === 'installed'), source: this.#source, workflow: this.#workflow,
+        : kind === 'delegate' || pluginStatus === 'installed'), source, sourceKind: kind, workflow: this.#workflow,
       hasWorkflow: Boolean(this.#workflow), pluginStatus, busy: Boolean(this.#active) };
   }
 
   async configure({ source, workflow } = {}) {
-    const checked = validateStoryImageSource(source);
-    if (!checked.ok) return checked;
+    // 来源住在配置里：这里只校验，不落盘（面板/配置页改了立即生效）。
+    if (source !== undefined) {
+      const checked = validateStoryImageSource(source);
+      if (!checked.ok) return checked;
+    }
     // workflow 没传就保持原样；传空字符串表示清掉，回到内置工作流。
     const custom = workflow === undefined ? null : validateStoryWorkflow(workflow);
     if (custom && !custom.ok) return custom;
@@ -284,10 +306,9 @@ export class StoryImages {
       const temp = join(this.#dir, `settings-${randomUUID()}.tmp`);
       try {
         await mkdir(this.#dir, { recursive: true });
-        await writeFile(temp, `${JSON.stringify({ source: checked.source, workflow: nextWorkflow })}\n`, { flag: 'wx', mode: 0o600 });
+        await writeFile(temp, `${JSON.stringify({ workflow: nextWorkflow })}\n`, { flag: 'wx', mode: 0o600 });
         await rename(temp, join(this.#dir, 'settings.json'));
         this.cancel();
-        this.#source = checked.source;
         this.#workflow = nextWorkflow;
         return { ok: true, ...this.status() };
       } catch {
@@ -308,11 +329,12 @@ export class StoryImages {
   }
 
   async generate({ enabled = false, scene = '', outfits = '', prompt = '', signal } = {}) {
-    const chosen = validateStoryImageSource(this.#source);
+    const chosen = validateStoryImageSource(this.#source());
     const info = { scene: bounded(scene, 1000), outfits: bounded(outfits, 1000), prompt: bounded(prompt, 6000),
       source: chosen.kind === 'comfyui' ? 'local-comfyui' : chosen.source || '鱼的生图包' };
     const result = (status, message, extra = {}) => ({ status, message, ...info, ...extra });
     if (enabled !== true) { this.cancel(); return result('off', OFF); }
+    if (!chosen.ok) return result('unavailable', this.status(true).message);
     if (signal?.aborted) return result('error', '图片请求已取消或过期；迟到结果不会应用。');
     if (this.#active) return result('unavailable', '已有图片请求进行中；请先取消或等待，文字故事可继续。');
     if (chosen.kind !== 'comfyui') {

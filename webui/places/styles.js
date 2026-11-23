@@ -66,6 +66,13 @@ export const STYLES = `
 .fpl summary { cursor: pointer; color: var(--fpl-accent); }
 .fpl ul { padding-left: 1.3em; margin: 0; }
 .fpl .fpl-relation + .fpl-relation, .fpl .fpl-import-row + .fpl-import-row { border-top: 1px solid var(--fpl-line); padding-top: 12px; }
+.fpl-artwork-grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); }
+.fpl-artwork-card { display: grid; gap: 9px; align-content: start; }
+.fpl-artwork-preview { display: grid; place-items: center; overflow: hidden; border: 1px solid var(--fpl-line); border-radius: 8px; aspect-ratio: 16 / 9; background: var(--fpl-soft); }
+.fpl-artwork-preview > img { width: 100%; height: 100%; min-width: 0; min-height: 0; object-fit: cover; }
+.fpl-artwork-card code { font-size: 11px; color: var(--fpl-muted); }
+.fpl-notice { border: 1px solid var(--fpl-line); border-radius: 8px; padding: 8px 10px; background: var(--fpl-soft); }
+.fpl-error { color: var(--destructive, #ae4141); }
 @media (max-width: 420px) {
   .fpl { padding-inline: 0; }
   .fpl-card { padding: 10px; }

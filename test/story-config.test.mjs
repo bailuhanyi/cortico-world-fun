@@ -1,11 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { FunWorld } from '../src/world.js';
 import { StorySecrets } from '../src/story-secrets.js';
-import { configGroup, text } from '../src/config.js';
+import { DEFAULTS, configGroup, text } from '../src/config.js';
 import { SAMPLE_STORY, SAMPLE_VENUE } from './fixtures/story-presets.mjs';
 
 const VENUE = { ...SAMPLE_VENUE, id: 'user-config-venue' };
@@ -26,7 +26,7 @@ async function rig(t, options = {}) {
   const cfg = { funStoryDM: true, funStoryImages: true, ...options.cfg };
   const entries = [];
   const host = { cognition: options.cognition, log: { info: (...args) => entries.push(args), warn: (...args) => entries.push(args) } };
-  const world = new FunWorld({ dataDir: dir, cfg, now: () => Date.parse('2026-11-21T13:00:00+08:00') });
+  const world = new FunWorld({ dataDir: dir, cfg, now: () => Date.parse('2026-11-21T13:00:00+08:00'), ...(options.persist ? { persist: options.persist } : {}) });
   await world.start(host);
   const call = (method, payload = {}) => world.webUi().invoke('story', method, [payload]);
   const panel = (id, method, payload = {}) => world.webUi().invoke(id, method, [payload]);
@@ -60,10 +60,10 @@ test('new install ships the four approved built-in stories and settings reads do
   }
 });
 
-test('story node limit is editable, zero means unlimited, and the preference survives restart', async (t) => {
+test('story node limit reads configuration, zero means unlimited, and lowering it keeps existing stories', async (t) => {
   const r = await rig(t);
   const declaration = r.world.webUi().panels.find((panel) => panel.id === 'story');
-  assert.ok(declaration.methods.includes('saveStoryNodeLimit'));
+  assert.equal(declaration.methods.includes('saveStoryNodeLimit'), false, '节点上限改在配置页，面板不再有入口');
   const defaults = success(await r.call('storySettings'));
   assert.equal(defaults.nodeLimit, 16);
   assert.equal(await readFile(join(r.dir, 'fun', 'story-node-limit.json')).catch(() => null), null,
@@ -71,21 +71,67 @@ test('story node limit is editable, zero means unlimited, and the preference sur
 
   const long = longStory();
   assert.equal((await r.call('authorValidate', { json: JSON.stringify(long) })).ok, false);
-  success(await r.call('saveStoryNodeLimit', { nodeLimit: 20 }));
-  assert.equal(success(await r.call('storySettings')).nodeLimit, 20);
+  r.cfg.funStoryNodeLimit = 20;
+  assert.equal(success(await r.call('storySettings')).nodeLimit, 20, '配置热改立即生效');
   assert.equal(success(await r.call('authorValidate', { json: JSON.stringify(long) })).pack.nodes.length, 20);
-  assert.equal((await r.call('saveStoryNodeLimit', { nodeLimit: -1 })).ok, false);
-  assert.equal((await r.call('saveStoryNodeLimit', { nodeLimit: 1.5 })).ok, false);
+  r.cfg.funStoryNodeLimit = -1;
+  assert.equal(success(await r.call('storySettings')).nodeLimit, 0, '坏值回落到不限而不是抛错');
 
-  success(await r.call('saveStoryNodeLimit', { nodeLimit: 0 }));
+  r.cfg.funStoryNodeLimit = 0;
   success(await r.call('authorImport', { json: JSON.stringify(long) }));
   await r.world.stop();
   await r.world.start(r.host);
   assert.equal(success(await r.call('storySettings')).nodeLimit, 0);
   assert.ok(success(await r.call('authorList')).packs.some((pack) => pack.id === long.id));
-  success(await r.call('saveStoryNodeLimit', { nodeLimit: 16 }));
+  r.cfg.funStoryNodeLimit = 16;
   assert.ok(success(await r.call('authorList')).packs.some((pack) => pack.id === long.id),
     'lowering the authoring limit must not remove existing stories');
+});
+
+test('old story-node-limit.json migrates into config once and a configured value always wins', async (t) => {
+  const dir = await mkdtemp(join(tmpdir(), 'fun-node-limit-migrate-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  await mkdir(join(dir, 'fun'), { recursive: true });
+  await writeFile(join(dir, 'fun', 'story-node-limit.json'), JSON.stringify({ version: 1, nodeLimit: 22 }));
+  const patches = [];
+  const cfg = {};
+  const world = new FunWorld({ dataDir: dir, cfg, persist: (patch) => { patches.push(patch); Object.assign(cfg, patch); } });
+  await world.start({ log: { info() {}, warn() {} } });
+  assert.equal(cfg.funStoryNodeLimit, 22, '旧文件的 22 个节点不能丢');
+  assert.equal(patches.filter((patch) => 'funStoryNodeLimit' in patch).length, 1);
+  assert.equal(await readFile(join(dir, 'fun', 'story-node-limit.json')).catch(() => null), null, '迁移后旧文件清掉，不会每次启动重搬');
+  await world.stop();
+  await world.start({ log: { info() {}, warn() {} } });
+  assert.equal(patches.filter((patch) => 'funStoryNodeLimit' in patch).length, 1, '第二次启动不再写故事长度');
+  assert.equal(success(await world.webUi().invoke('story', 'storySettings', [{}])).nodeLimit, 22);
+  await world.stop();
+
+  // 宿主会把「默认值」合并进 cfg：旧文件仍要能搬，不能被「键已存在」挡住。
+  const merged = await mkdtemp(join(tmpdir(), 'fun-node-limit-merged-'));
+  t.after(() => rm(merged, { recursive: true, force: true }));
+  await mkdir(join(merged, 'fun'), { recursive: true });
+  await writeFile(join(merged, 'fun', 'story-node-limit.json'), JSON.stringify({ version: 1, nodeLimit: 22 }));
+  const mergedPatches = [];
+  const mergedCfg = { ...DEFAULTS };
+  const mergedWorld = new FunWorld({ dataDir: merged, cfg: mergedCfg, persist: (patch) => { mergedPatches.push(patch); Object.assign(mergedCfg, patch); } });
+  await mergedWorld.start({ log: { info() {}, warn() {} } });
+  assert.equal(mergedCfg.funStoryNodeLimit, 22, '合并默认值的 cfg 下也要迁移');
+  assert.equal(await readFile(join(merged, 'fun', 'story-node-limit.json')).catch(() => null), null);
+  await mergedWorld.stop();
+  await mergedWorld.start({ log: { info() {}, warn() {} } });
+  assert.equal(mergedPatches.filter((patch) => 'funStoryNodeLimit' in patch).length, 1, '只搬一次');
+  await mergedWorld.stop();
+
+  const configured = { funStoryNodeLimit: 5 };
+  const other = await mkdtemp(join(tmpdir(), 'fun-node-limit-config-'));
+  t.after(() => rm(other, { recursive: true, force: true }));
+  await mkdir(join(other, 'fun'), { recursive: true });
+  await writeFile(join(other, 'fun', 'story-node-limit.json'), JSON.stringify({ version: 1, nodeLimit: 22 }));
+  const second = new FunWorld({ dataDir: other, cfg: configured, persist: () => { throw new Error('configured value must not be overwritten'); } });
+  await second.start({ log: { info() {}, warn() {} } });
+  assert.equal(success(await second.webUi().invoke('story', 'storySettings', [{}])).nodeLimit, 5);
+  assert.equal(await readFile(join(other, 'fun', 'story-node-limit.json')).catch(() => null), null, '配置里已有非默认值时，旧文件清掉但不覆盖');
+  await second.stop();
 });
 
 test('author aliases preserve read/write permissions and preview/playtest isolation', async (t) => {
@@ -121,7 +167,7 @@ test('host cognition remains the default and failures keep manual story actions 
   success(await r.call('choose', { ...step(current), choiceId: current.trip.pending.id, optionId: 'follow' }));
 });
 
-test('real DPAPI settings survive restart, never echo, and clear invalidates pending direct requests', { skip: process.platform !== 'win32' }, async (t) => {
+test('real DPAPI key survives restart, never echoes, and clear invalidates pending direct requests', { skip: process.platform !== 'win32' }, async (t) => {
   const originalFetch = globalThis.fetch;
   let requestCount = 0;
   let pending;
@@ -138,14 +184,18 @@ test('real DPAPI settings survive restart, never echo, and clear invalidates pen
   };
   t.after(() => { globalThis.fetch = originalFetch; });
   const r = await rig(t);
-  const saved = success(await r.call('saveStorySettings', { apiUrl: address, apiKey: secret, model: 'test-model-033', imageSource: '' }));
+  // 地址与模型在配置里；密钥仍只走 DPAPI。
+  r.cfg.funStoryDmUrl = address;
+  r.cfg.funStoryDmModel = 'test-model-033';
+  const saved = success(await r.call('saveStorySettings', { apiKey: secret }));
   assert.equal(saved.dm.saved, true);
-  assert.equal(saved.dm.model, 'test-model-033');
   assert.equal(saved.dm.apiKeyMask, '••••••••');
   assert.equal(Object.hasOwn(saved.dm, 'apiUrl'), false);
+  assert.equal(r.cfg.funStoryDmUrl, address);
+  assert.equal(r.cfg.funStoryDmModel, 'test-model-033');
   const file = join(r.dir, 'fun', 'story-secrets.json');
   const persisted = await readFile(file, 'utf8');
-  assert.equal(persisted.includes(secret) || persisted.includes(address), false, 'ciphertext must not contain either plaintext value');
+  assert.equal(persisted.includes(secret), false, 'ciphertext must not contain the plaintext key');
   const reopened = new StorySecrets({ dataDir: r.dir });
   success(await reopened.load());
   assert.equal(reopened.status.available, true, 'new instance must decrypt the saved DPAPI ciphertext');
@@ -174,31 +224,93 @@ test('real DPAPI settings survive restart, never echo, and clear invalidates pen
   success(await r.call('choose', { ...step(current), choiceId: current.trip.pending.id, optionId: 'follow' }));
   const outputs = JSON.stringify([saved, cleared, proposed, current, r.entries, r.world.envPromptVars(), await r.call('authorExport', { id: STORY.id })]);
   const stateBytes = await readFile(r.world.stateFile(), 'utf8');
-  assert.equal(outputs.includes(secret) || outputs.includes(address) || stateBytes.includes(secret) || stateBytes.includes(address), false, 'no plaintext in public/state/export/log outputs');
+  const configText = JSON.stringify(r.cfg);
+  assert.equal(outputs.includes(secret) || stateBytes.includes(secret), false, 'no key in public/state/export/log outputs');
+  assert.equal(configText.includes(secret), false, 'no key in ordinary configuration');
+  // 工作流写失败时密钥仍算保存成功，返回 partial: dm。
   await writeFile(join(r.dir, 'fun', 'story-images'), 'injected storage obstacle');
-  const partial = await r.call('saveStorySettings', { apiUrl: address, apiKey: secret, imageSource: 'another plugin' });
+  const workflow = JSON.stringify({ '1': { class_type: 'CLIPTextEncode', inputs: { text: '{{prompt}}' } } });
+  const partial = await r.call('saveStorySettings', { apiKey: secret, workflow });
   assert.equal(partial.ok, false);
   assert.equal(partial.partial, 'dm');
   assert.equal(partial.dm.saved, true);
-  assert.equal(partial.imageSource, '');
-  assert.equal(JSON.stringify(partial).includes(secret) || JSON.stringify(partial).includes(address), false);
+  assert.equal(partial.imageWorkflow, '');
+  assert.equal(JSON.stringify(partial).includes(secret), false);
   success(await r.call('clearStoryKey'));
 });
 
-test('image source settings persist; default receipt is explicit about unknown installation', async (t) => {
+test('image source comes from configuration; the panel no longer writes it', async (t) => {
   const r = await rig(t);
   const receipt = success(await r.call('storyImage')).image;
   assert.equal(receipt.status, 'delegated');
   assert.equal(receipt.tool, 'imggen_draw');
   assert.match(receipt.message, /未验证.*安装/);
-  success(await r.call('saveStorySettings', { imageSource: '指定绘图插件' }));
+  r.cfg.funStoryImageSource = '指定绘图插件';
   assert.equal(success(await r.call('storyImage')).image.source, '指定绘图插件');
-  assert.equal((await r.call('saveStorySettings', { imageSource: 'http://name:password@127.0.0.1:8188' })).ok, false);
+  assert.equal(success(await r.call('storySettings')).imageSource, '指定绘图插件');
+  // 老入口必须明确报错，不能悄悄忽略。
+  const moved = await r.call('saveStorySettings', { imageSource: '指定绘图插件' });
+  assert.equal(moved.ok, false);
+  assert.match(moved.error, /配置/);
+  r.cfg.funStoryImageSource = 'http://name:password@127.0.0.1:8188';
+  const invalid = success(await r.call('storyImage')).image;
+  assert.equal(invalid.status, 'unavailable');
+  assert.match(invalid.message, /图片来源设置无效/);
+  r.cfg.funStoryImageSource = '指定绘图插件';
   await r.world.stop();
   await r.world.start(r.host);
   assert.equal(success(await r.call('storySettings')).imageSource, '指定绘图插件');
   r.cfg.funStoryImages = false;
   assert.equal(success(await r.call('storyImage')).image.status, 'off');
+});
+
+test('legacy story-images settings.json migrates its source into config and keeps the workflow only', async (t) => {
+  const dir = await mkdtemp(join(tmpdir(), 'fun-image-source-migrate-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  await mkdir(join(dir, 'fun', 'story-images'), { recursive: true });
+  await writeFile(join(dir, 'fun', 'story-images', 'settings.json'), JSON.stringify({ source: '旧的绘图插件', workflow: '' }));
+  const patches = [];
+  const cfg = {};
+  const world = new FunWorld({ dataDir: dir, cfg, persist: (patch) => { patches.push(patch); Object.assign(cfg, patch); } });
+  await world.start({ log: { info() {}, warn() {} } });
+  assert.equal(cfg.funStoryImageSource, '旧的绘图插件', '旧来源不能丢');
+  const stored = JSON.parse(await readFile(join(dir, 'fun', 'story-images', 'settings.json'), 'utf8'));
+  assert.deepEqual(Object.keys(stored), ['workflow'], 'settings.json 只留工作流');
+  assert.equal(patches.filter((patch) => 'funStoryImageSource' in patch).length, 1);
+  await world.stop();
+  await world.start({ log: { info() {}, warn() {} } });
+  assert.equal(patches.filter((patch) => 'funStoryImageSource' in patch).length, 1, '第二次启动不再写来源');
+  assert.equal(success(await world.webUi().invoke('story', 'storySettings', [{}])).imageSource, '旧的绘图插件');
+  await world.stop();
+});
+
+test('top-bar auto-image switch persists, validates, and rolls back a failed write', async (t) => {
+  const patches = [];
+  const r = await rig(t, { persist: (patch) => { patches.push(patch); } });
+  const before = success(await r.call('status'));
+  assert.equal(before.images.auto, true);
+  assert.equal(before.images.masterOn, true);
+  const off = success(await r.call('saveStoryAutoImages', { auto: false }));
+  assert.equal(off.autoImages, false);
+  assert.equal(r.cfg.funStoryAutoImages, false);
+  assert.equal(patches.filter((patch) => 'funStoryAutoImages' in patch).at(-1).funStoryAutoImages, false);
+  assert.equal(success(await r.call('status')).images.auto, false);
+  const bad = await r.call('saveStoryAutoImages', { auto: 'yes' });
+  assert.equal(bad.ok, false);
+  assert.match(bad.error, /只接受/);
+  success(await r.call('saveStoryAutoImages', { auto: true }));
+  assert.equal(success(await r.call('status')).images.auto, true);
+
+  const dir = await mkdtemp(join(tmpdir(), 'fun-auto-images-fail-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const cfg = { funStoryAutoImages: true };
+  const failing = new FunWorld({ dataDir: dir, cfg, persist: () => { throw new Error('disk full'); } });
+  await failing.start({ log: { info() {}, warn() {} } });
+  const failed = await failing.webUi().invoke('story', 'saveStoryAutoImages', [{ auto: false }]);
+  assert.equal(failed.ok, false);
+  assert.equal(failed.autoImages, true, '落盘失败时回滚到原值');
+  assert.equal(cfg.funStoryAutoImages, true);
+  await failing.stop();
 });
 
 test('pending ComfyUI generation never holds the story queue; story movement cancels late results', async (t) => {
@@ -208,7 +320,7 @@ test('pending ComfyUI generation never holds the story queue; story movement can
   globalThis.fetch = async () => { calls++; entered.resolve(); return response.promise; };
   t.after(() => { globalThis.fetch = originalFetch; });
   const r = await rig(t);
-  success(await r.call('saveStorySettings', { imageSource: 'http://127.0.0.1:8188' }));
+  r.cfg.funStoryImageSource = 'http://127.0.0.1:8188';
   const state = await r.start();
   const imagePromise = r.call('storyImage');
   await entered.promise;
@@ -218,7 +330,7 @@ test('pending ComfyUI generation never holds the story queue; story movement can
   assert.ok(image.ok === false || image.image.status === 'error');
   response.resolve(json({}));
   assert.equal(calls, 1);
-  const files = await readdir(join(r.dir, 'fun', 'story-images'));
+  const files = await readdir(join(r.dir, 'fun', 'story-images')).catch(() => []);
   assert.equal(files.some((name) => /\.(png|jpg|webp)$/.test(name)), false);
   r.cfg.funStoryImages = false;
   success(await r.call('storyImage'));

@@ -473,169 +473,154 @@ test('public resumable checkpoint exposes a branch button without private graph 
 });
 
 async function settingsHarness(handler, options = {}) {
-  const initial = snapshot(); initial.images = { enabled: true, generationAvailable: true, message: '图片开关已开' };
+  const initial = snapshot();
+  if (options.trip === null) initial.trip = null;
+  initial.images = { enabled: true, masterOn: true, auto: true, sourceKind: 'plugin', source: '',
+    generationAvailable: true, message: '图片开关已开', ...options.images };
+  const stored = { dmSaved: false };
   const h = harness(async (method, payload, current) => {
     const result = await handler?.(method, payload, current);
-    if (result !== undefined) return method === 'storySettings' ? { nodeLimit: 16, ...result } : result;
-    if (method === 'storySettings') return { ok: true, dm: { saved: false, supported: true }, imageSource: '', nodeLimit: 16 };
+    if (result !== undefined) return result;
+    if (method === 'storySettings') {
+      return { ok: true, dm: { saved: stored.dmSaved, supported: true }, imageSource: '', imageWorkflow: '', nodeLimit: 16, imagesEnabled: true };
+    }
+    if (method === 'saveStorySettings') {
+      if (typeof payload?.apiKey === 'string' && payload.apiKey) stored.dmSaved = true;
+      return { ok: true, dm: { saved: stored.dmSaved, supported: true }, imageWorkflow: payload?.workflow ?? '', imagesEnabled: true };
+    }
+    if (method === 'clearStoryKey') {
+      stored.dmSaved = false;
+      return { ok: true, dm: { saved: false, supported: true }, imageWorkflow: '', imagesEnabled: true };
+    }
+    if (method === 'saveStoryAutoImages') { current.images.auto = payload.auto; return { ok: true, autoImages: payload.auto }; }
   }, initial);
   h.ctx.language = options.language ?? 'zh';
   globalThis.document = h.env.document; globalThis.window = h.env.window;
   const root = document.createElement('div'); const mounted = mountPanel(root, h.ctx); await flush();
   root.querySelector('[data-focus="nav-settings"]').click(); await flush();
   const control = (name) => root.querySelector(`[data-focus="settings-${name}"]`);
-  const enter = (name, value) => { const input = control(name); input.value = value; input.dispatchEvent(new Event('input')); return input; };
-  return { ...h, root, mounted, control, enter };
+  const enter = (name, value) => { const input = control(name); assert.ok(input, name); input.value = value; input.dispatchEvent(new Event('input')); return input; };
+  return { ...h, root, mounted, control, enter, stored };
 }
 
-test('settings page puts the simple node-limit control first and saves zero as unlimited', async () => {
-  const h = await settingsHarness((method, payload) => {
-    if (method === 'saveStoryNodeLimit') return { ok: true, nodeLimit: payload.nodeLimit };
-  });
-  assert.ok(h.root.textContent.indexOf('故事节点上限') < h.root.textContent.indexOf('可选文本主持'));
-  const input = h.root.querySelector('[data-focus="story-node-limit"]');
-  assert.equal(input.value, '16');
-  input.value = '0'; input.dispatchEvent(new Event('input'));
-  h.root.querySelector('[data-focus="story-node-limit-save"]').click(); await flush();
-  const call = h.calls.find((item) => item.method === 'saveStoryNodeLimit');
-  assert.deepEqual(call.payload, { nodeLimit: 0 });
-  assert.match(h.root.textContent, /节点上限已保存/);
+test('settings page is only the advanced section: key, direct-only workflow, and where things live', async () => {
+  const h = await settingsHarness();
+  assert.match(h.root.textContent, /高级设置/);
+  assert.ok(h.control('apiKey'), '密钥输入还在');
+  assert.equal(h.root.querySelector('[data-focus="settings-apiUrl"]'), null, '接口地址不在面板');
+  assert.equal(h.root.querySelector('[data-focus="settings-model"]'), null, '模型名不在面板');
+  assert.equal(h.root.querySelector('[data-focus="settings-imageSource"]'), null, '图片来源不在面板');
+  assert.equal(h.root.querySelector('[data-focus="story-node-limit"]'), null, '故事长度不在面板');
+  assert.match(h.root.textContent, /配置 → 从0开始的肥鱼大冒险/);
+  assert.match(h.root.textContent, /地点册 → 本地插画/);
+  assert.doesNotMatch(h.root.textContent, /故事节点上限|生成／委派当前场景图片/);
+  assert.equal(h.root.querySelector('.sw-settings-manual').hidden, true, '委派来源不显示直连出图');
   h.mounted.dispose();
 });
 
-test('R1 private endpoint and key are passwords, mask on blur/save, and never enter browser storage', async () => {
+test('R1 API key is a password, masks on blur/save, and only the key is submitted', async () => {
   const stored = []; const previousStorage = globalThis.localStorage;
   globalThis.localStorage = { getItem: () => null, setItem: (...args) => stored.push(args) };
   try {
     const h = await settingsHarness((method, payload) => {
-      if (method === 'storySettings') return { ok: true, dm: { saved: false, supported: true }, imageSource: '', apiUrl: 'never-read-response', apiKey: 'never-read-key' };
-      if (method === 'saveStorySettings') return { ok: true, dm: { saved: true, supported: true }, imageSource: payload.imageSource };
+      if (method === 'saveStorySettings') {
+        assert.deepEqual(payload, { apiKey: 'offline-test-private-value' });
+        return { ok: true, dm: { saved: true, supported: true }, imageWorkflow: '', imagesEnabled: true };
+      }
     });
-    const url = h.enter('apiUrl', 'https://example.invalid/v1'); const key = h.enter('apiKey', 'offline-test-private-value');
-    assert.equal(url.getAttribute('type'), 'password'); assert.equal(key.getAttribute('type'), 'password');
-    assert.equal(h.root.querySelectorAll('.sw-settings-help').length, 2, '长说明收进两个可展开帮助区');
+    const key = h.enter('apiKey', 'offline-test-private-value');
+    assert.equal(key.getAttribute('type'), 'password');
+    assert.equal(h.root.querySelectorAll('.sw-settings-help').length, 1, '只剩一段可展开说明');
     assert.ok(h.root.querySelector('.sw-settings-actions'), '设置动作集中在底部操作条');
     assert.equal(h.root.querySelectorAll('.sw-settings-card-head').length, 1);
-    assert.equal(h.root.querySelector('[data-settings-image-state]').textContent, '已开启');
-    url.dispatchEvent(new Event('blur')); key.dispatchEvent(new Event('blur'));
-    assert.equal(url.value, '••••••••'); assert.equal(key.value, '••••••••');
+    key.dispatchEvent(new Event('blur'));
+    assert.equal(key.value, '••••••••');
     h.control('save').click(); await flush();
-    const call = h.calls.find((call) => call.method === 'saveStorySettings');
-    assert.deepEqual(call.payload, { apiUrl: 'https://example.invalid/v1', apiKey: 'offline-test-private-value', imageSource: '', model: '' });
+    const call = h.calls.find((item) => item.method === 'saveStorySettings');
+    assert.deepEqual(call.payload, { apiKey: 'offline-test-private-value' });
     assert.equal(key.value, '••••••••'); assert.match(h.root.textContent, /已保存/);
     key.dispatchEvent(new Event('focus')); assert.equal(key.value, '', '重获焦点不回显保存值');
-    assert.doesNotMatch(h.root.textContent, /offline-test-private-value|never-read-response|never-read-key/);
+    assert.doesNotMatch(h.root.textContent, /offline-test-private-value/);
     const saveCalls = h.calls.filter((call) => call.method === 'saveStorySettings').length;
     assert.equal(h.control('save').disabled, true, '保存后无修改时操作条安静禁用');
     h.control('save').click(); await flush();
-    assert.equal(h.calls.filter((call) => call.method === 'saveStorySettings').length, saveCalls, '无改动时不重发凭据');
+    assert.equal(h.calls.filter((call) => call.method === 'saveStorySettings').length, saveCalls, '无改动时不重发');
     assert.deepEqual(stored, []);
     h.mounted.dispose();
   } finally { globalThis.localStorage = previousStorage; }
 });
 
-test('R1 loading, failed saving, status refresh and view changes retain identical controls and masked drafts', async () => {
-  const read = deferred(); const write = deferred();
-  const h = await settingsHarness((method) => method === 'storySettings' ? read.promise : method === 'saveStorySettings' ? write.promise : undefined);
-  const key = h.enter('apiKey', 'retry-private-value'); h.enter('apiUrl', 'https://example.invalid/v1');
-  assert.equal(h.control('save').disabled, true);
-  read.resolve({ ok: true, dm: { saved: false, supported: true }, imageSource: 'another plugin' }); await flush();
-  assert.equal(h.control('apiKey'), key); assert.equal(key.value, 'retry-private-value');
-  h.control('save').click();
-  h.root.querySelector('[data-focus="nav-play"]').click();
-  assert.equal(h.root.querySelector('[data-focus="option-follow"]').disabled, false, '设置请求不阻塞文字选择');
-  await h.mounted.refresh();
-  h.root.querySelector('[data-focus="nav-settings"]').click();
-  assert.equal(h.control('apiKey'), key);
-  write.reject(new Error('transport must not echo retry-private-value')); await flush();
-  assert.equal(key.value, '••••••••');
-  assert.match(h.root.textContent, /设置请求失败.*保留当前输入/);
-  assert.doesNotMatch(h.root.textContent, /retry-private-value/);
-  assert.equal(h.control('save').disabled, false);
-  h.mounted.dispose();
-});
-
-test('R1 cancel only clears UI, clear key calls immediately, and source-only save retains saved credentials', async () => {
-  const removal = deferred();
-  const h = await settingsHarness((method, payload) => {
-    if (method === 'storySettings') return { ok: true, dm: { saved: true, supported: true }, imageSource: 'original plugin' };
+test('R1 loading failure keeps the masked draft and a retry; clear calls immediately', async () => {
+  const read = deferred(); const removal = deferred();
+  let firstRead = true;
+  const h = await settingsHarness((method) => {
+    if (method === 'storySettings' && firstRead) { firstRead = false; return read.promise; }
     if (method === 'clearStoryKey') return removal.promise;
-    if (method === 'saveStorySettings') return { ok: true, dm: { saved: true, supported: true }, imageSource: payload.imageSource };
   });
-  h.enter('apiUrl', 'https://example.invalid/v1'); h.enter('apiKey', 'cancel-only'); h.enter('imageSource', 'new plugin');
-  h.control('cancel').click(); await flush();
-  assert.equal(h.calls.filter((call) => ['saveStorySettings', 'clearStoryKey'].includes(call.method)).length, 0);
-  assert.equal(h.control('imageSource').value, 'original plugin');
-  h.enter('imageSource', 'chosen plugin'); h.control('save').click(); await flush();
-  assert.deepEqual(h.calls.find((call) => call.method === 'saveStorySettings').payload, { imageSource: 'chosen plugin' });
+  const key = h.enter('apiKey', 'retry-private-value');
+  assert.equal(h.control('save').disabled, true);
+  read.reject(new Error('transport must not echo retry-private-value')); await flush();
+  assert.match(h.root.textContent, /读取设置失败/);
+  assert.doesNotMatch(h.root.textContent, /retry-private-value/);
+  h.control('reload').click(); await flush();
+  assert.equal(h.control('apiKey'), key);
+  h.stored.dmSaved = true;
+  await h.mounted.refresh(); await flush();
+  h.control('reload').click(); await flush();
   h.control('clear').click();
   assert.equal(h.calls.filter((call) => call.method === 'clearStoryKey').length, 1, '清除按钮立即发请求');
-  removal.resolve({ ok: true, dm: { saved: false, supported: true }, imageSource: 'chosen plugin' }); await flush();
-  assert.equal(h.control('apiKey').value, ''); assert.equal(h.control('apiUrl').value, '');
+  removal.resolve({ ok: true, dm: { saved: false, supported: true }, imageWorkflow: '', imagesEnabled: true }); await flush();
+  assert.equal(h.control('apiKey').value, '');
   assert.match(h.root.textContent, /密钥已立即清除/);
   h.mounted.dispose();
 });
 
-test('R1 unsupported encryption and load failure preserve usable source settings and retry controls', async () => {
-  let fail = true;
-  const h = await settingsHarness((method, payload) => {
-    if (method === 'storySettings') return fail ? { ok: false, error: 'do-not-echo-private' } : { ok: true, dm: { saved: false, supported: false }, imageSource: '' };
-    if (method === 'saveStorySettings') return { ok: true, dm: { saved: false, supported: false }, imageSource: payload.imageSource };
+test('R1 unsupported encryption disables the key input but keeps the page usable', async () => {
+  const h = await settingsHarness((method) => {
+    if (method === 'storySettings') return { ok: true, dm: { saved: false, supported: false }, imageSource: '', imageWorkflow: '', nodeLimit: 16, imagesEnabled: true };
   });
-  const source = h.enter('imageSource', 'my plugin');
-  assert.match(h.root.textContent, /读取设置失败/); assert.doesNotMatch(h.root.textContent, /do-not-echo-private/);
-  fail = false; h.control('reload').click(); await flush();
-  assert.equal(h.control('imageSource'), source); assert.equal(source.value, 'my plugin');
-  assert.equal(h.control('apiKey').disabled, true); assert.equal(h.control('apiUrl').disabled, true);
+  assert.equal(h.control('apiKey').disabled, true);
   assert.match(h.root.textContent, /Windows.*DPAPI/);
-  h.control('save').click(); await flush();
-  assert.deepEqual(h.calls.find((call) => call.method === 'saveStorySettings').payload, { imageSource: 'my plugin' });
   h.mounted.dispose();
 });
 
-test('R2 rejects credential URLs and all query/fragment image URLs without sending a save', async () => {
-  const h = await settingsHarness();
-  for (const source of ['http://user:password@127.0.0.1:8188', 'http://127.0.0.1:8188?key=private', 'http://127.0.0.1:8188#key', 'plugin http://user:password@127.0.0.1', 'https://example.invalid/images']) {
-    h.enter('imageSource', source); h.control('save').click(); await flush();
-    assert.equal(h.calls.some((call) => call.method === 'saveStorySettings'), false);
-  }
-  assert.match(h.root.textContent, /URL.*凭据/);
-  h.mounted.dispose();
+test('direct source shows the manual image button and custom workflow; delegation hides them', async () => {
+  const delegated = await settingsHarness();
+  assert.equal(delegated.root.querySelector('.sw-settings-manual').hidden, true);
+  delegated.mounted.dispose();
+
+  const direct = await settingsHarness(null, { images: { sourceKind: 'comfyui', enabled: true } });
+  assert.equal(direct.root.querySelector('.sw-settings-manual').hidden, false);
+  direct.enter('workflow', '{"1":{"class_type":"CLIPTextEncode","inputs":{"text":"{{prompt}}"}}}');
+  direct.control('save').click(); await flush();
+  const call = direct.calls.find((item) => item.method === 'saveStorySettings');
+  assert.equal(Object.hasOwn(call.payload, 'apiKey'), false, '只改工作流时不再提交密钥');
+  assert.match(call.payload.workflow, /\{\{prompt\}\}/);
+  direct.mounted.dispose();
 });
 
-test('R2 delegation and failure keep all controls; image requests never block text play', async () => {
+test('R2 a manual image request never blocks text play and renders only a read-back data URL', async () => {
   const pending = deferred();
-  const h = await settingsHarness((method) => method === 'storyImage' ? pending.promise : undefined);
+  const h = await settingsHarness((method, payload) => {
+    if (method === 'storyImage') return pending.promise;
+    if (method === 'storyImageRead') { assert.deepEqual(payload, { id: 'image-local-1' }); return { ok: true, image: { dataUrl: 'data:image/png;base64,iVBORw===' } }; }
+  }, { images: { sourceKind: 'comfyui' } });
   h.root.querySelector('[data-focus="story-image"]').click();
   assert.equal(h.root.querySelector('[data-focus="story-image"]').disabled, true);
   h.root.querySelector('[data-focus="nav-play"]').click();
   assert.equal(h.root.querySelector('[data-focus="option-follow"]').disabled, false);
-  pending.resolve({ ok: true, image: { status: 'delegated', scene: '桥边', outfits: '围巾', prompt: 'local test', source: 'imggen' } }); await flush();
+  pending.resolve({ ok: true, image: { status: 'ready', imageId: 'image-local-1' } }); await flush(); await flush();
   h.root.querySelector('[data-focus="nav-settings"]').click();
-  const output = h.root.querySelector('.sw-delegation'); assert.ok(output);
-  assert.equal(JSON.parse(output.value).scene, '桥边'); assert.equal(JSON.parse(output.value).outfits, '围巾');
-  assert.equal(h.root.querySelector('[data-focus="story-image"]').disabled, false);
-  assert.match(h.root.textContent, /生图包.*主对话.*imggen_draw/s);
-  h.mounted.dispose();
-  const failed = await settingsHarness((method) => { if (method === 'storyImage') throw new Error('private transport'); });
-  failed.root.querySelector('[data-focus="story-image"]').click(); await flush();
-  assert.match(failed.root.textContent, /图片请求失败.*文字故事照常继续/);
-  assert.ok(failed.control('save')); assert.equal(failed.root.querySelector('[data-focus="story-image"]').disabled, false);
-  failed.mounted.dispose();
-});
-
-test('R2 ready image reads only its local image ID; invalid data falls back to text', async () => {
-  const h = await settingsHarness((method, payload) => {
-    if (method === 'storyImage') return { ok: true, image: { status: 'ready', imageId: 'image-local-1' } };
-    if (method === 'storyImageRead') { assert.deepEqual(payload, { id: 'image-local-1' }); return { ok: true, image: { dataUrl: 'data:image/png;base64,iVBORw==' } }; }
-  });
-  h.root.querySelector('[data-focus="story-image"]').click(); await flush(); await flush();
   const image = h.root.querySelector('.sw-generated-image'); assert.ok(image);
   image.dispatchEvent(new Event('error'));
   assert.equal(h.root.querySelector('.sw-generated-image'), null);
   assert.match(h.root.textContent, /图片请求失败/);
-  assert.ok(h.control('save'));
   h.mounted.dispose();
+
+  const failed = await settingsHarness((method) => { if (method === 'storyImage') throw new Error('private transport'); }, { images: { sourceKind: 'comfyui' } });
+  failed.root.querySelector('[data-focus="story-image"]').click(); await flush();
+  assert.match(failed.root.textContent, /图片请求失败.*文字故事照常继续/);
+  failed.mounted.dispose();
 });
 
 test('R2 a failed regeneration retains the last successfully displayed image', async () => {
@@ -643,7 +628,7 @@ test('R2 a failed regeneration retains the last successfully displayed image', a
   const h = await settingsHarness((method) => {
     if (method === 'storyImage') return fail ? { ok: false } : { ok: true, image: { status: 'ready', imageId: 'old-image' } };
     if (method === 'storyImageRead') return { ok: true, image: { dataUrl: 'data:image/png;base64,iVBORw==' } };
-  });
+  }, { images: { sourceKind: 'comfyui' } });
   h.root.querySelector('[data-focus="story-image"]').click(); await flush(); await flush();
   const previous = h.root.querySelector('.sw-generated-image'); assert.ok(previous);
   fail = true; h.root.querySelector('[data-focus="story-image"]').click(); await flush();
@@ -652,33 +637,66 @@ test('R2 a failed regeneration retains the last successfully displayed image', a
   h.mounted.dispose();
 });
 
-test('R1 successful save clears submitted secrets even when image source changes while pending', async () => {
-  const save = deferred();
-  const h = await settingsHarness((method) => method === 'saveStorySettings' ? save.promise : undefined);
-  h.enter('apiUrl', 'https://example.invalid/v1'); h.enter('apiKey', 'submitted-private');
-  h.control('save').click(); h.enter('imageSource', 'new unsaved source');
-  save.resolve({ ok: true, dm: { saved: true, supported: true }, imageSource: '' }); await flush();
-  assert.equal(h.control('imageSource').value, 'new unsaved source');
+test('a partial save reports the saved key and keeps the workflow draft', async () => {
+  let partial = true;
+  const h = await settingsHarness((method, payload) => {
+    if (method === 'storySettings') return { ok: true, dm: { saved: false, supported: true }, imageSource: '', imageWorkflow: '', nodeLimit: 16, imagesEnabled: true };
+    if (method === 'saveStorySettings') return partial
+      ? { ok: false, partial: 'dm', dm: { saved: true, supported: true }, imageWorkflow: '', error: 'private backend detail' }
+      : { ok: true, dm: { saved: true, supported: true }, imageWorkflow: payload.workflow, imagesEnabled: true };
+  }, { images: { sourceKind: 'comfyui' } });
+  h.enter('apiKey', 'submitted-secret');
+  h.enter('workflow', '{"1":{"class_type":"X","inputs":{"text":"{{prompt}}"}}}');
   h.control('save').click(); await flush();
-  assert.deepEqual(h.calls.filter((call) => call.method === 'saveStorySettings').at(-1).payload, { imageSource: 'new unsaved source' });
+  assert.match(h.root.textContent, /密钥已保存.*工作流没保存/);
+  assert.doesNotMatch(h.root.textContent, /submitted-secret|private backend detail/);
+  assert.equal(h.control('apiKey').value, '••••••••');
+  partial = false; h.control('save').click(); await flush();
+  assert.deepEqual(h.calls.filter((call) => call.method === 'saveStorySettings').at(-1).payload, { workflow: '{"1":{"class_type":"X","inputs":{"text":"{{prompt}}"}}}' });
   h.mounted.dispose();
 });
 
-test('a partial settings failure reports saved DM state, removes submitted secrets and retains image draft', async () => {
-  let partial = true;
-  const h = await settingsHarness((method, payload) => {
-    if (method === 'saveStorySettings') return partial
-      ? { ok: false, partial: 'dm', dm: { saved: true, supported: true }, imageSource: '', error: 'private backend detail' }
-      : { ok: true, dm: { saved: true, supported: true }, imageSource: payload.imageSource };
-  });
-  h.enter('apiUrl', 'https://example.invalid/v1'); h.enter('apiKey', 'submitted-secret');
-  h.enter('imageSource', 'pending image plugin'); h.control('save').click(); await flush();
-  assert.match(h.root.textContent, /主持设置已保存.*图片来源未保存/);
-  assert.doesNotMatch(h.root.textContent, /submitted-secret|private backend detail/);
-  assert.equal(h.control('imageSource').value, 'pending image plugin');
-  assert.equal(h.control('apiKey').value, '••••••••');
-  partial = false; h.control('save').click(); await flush();
-  assert.deepEqual(h.calls.filter((call) => call.method === 'saveStorySettings').at(-1).payload, { imageSource: 'pending image plugin' });
+test('top-bar auto-image switch sits in sw-top-actions and writes funStoryAutoImages', async () => {
+  const h = await settingsHarness();
+  const sw = h.root.querySelector('[data-focus="auto-images"]');
+  assert.ok(sw);
+  assert.ok(h.root.querySelector('.sw-top-actions').contains(sw), '开关在顶栏');
+  assert.equal(sw.getAttribute('role'), 'switch');
+  assert.equal(sw.getAttribute('aria-checked'), 'true');
+  assert.equal(sw.disabled, false);
+  sw.click(); await flush();
+  const call = h.calls.find((item) => item.method === 'saveStoryAutoImages');
+  assert.deepEqual(call.payload, { auto: false });
+  assert.equal(h.root.querySelector('[data-focus="auto-images"]').getAttribute('aria-checked'), 'false');
+  assert.match(h.root.textContent, /自动配图已关闭/);
+  h.mounted.dispose();
+});
+
+test('top-bar auto-image switch is disabled with an aria-live reason without a trip or with the master off', async () => {
+  const noTrip = await settingsHarness(null, { trip: null });
+  const offTrip = noTrip.root.querySelector('[data-focus="auto-images"]');
+  assert.equal(offTrip.disabled, true);
+  assert.match(noTrip.root.textContent, /有进行中的行程时才能自动准备配图/);
+  assert.ok(noTrip.root.querySelector('[aria-live="polite"]'), '禁用原因用 aria-live 说出来');
+  noTrip.mounted.dispose();
+
+  const masterOff = await settingsHarness(null, { images: { masterOn: false, enabled: false } });
+  const offMaster = masterOff.root.querySelector('[data-focus="auto-images"]');
+  assert.equal(offMaster.disabled, true);
+  assert.equal(offMaster.getAttribute('aria-checked'), 'false');
+  assert.match(masterOff.root.textContent, /总闸关着/);
+  masterOff.mounted.dispose();
+});
+
+test('a failed auto-image save rolls back and says so in aria-live', async () => {
+  const h = await settingsHarness((method) => method === 'saveStoryAutoImages'
+    ? { ok: false, autoImages: true, error: 'disk full' }
+    : undefined);
+  const sw = h.root.querySelector('[data-focus="auto-images"]');
+  assert.equal(sw.getAttribute('aria-checked'), 'true');
+  sw.click(); await flush();
+  assert.equal(h.root.querySelector('[data-focus="auto-images"]').getAttribute('aria-checked'), 'true', '失败回滚');
+  assert.match(h.root.textContent, /没保存成功.*恢复原来的设置/);
   h.mounted.dispose();
 });
 
@@ -752,14 +770,17 @@ test('R4 no-sample empty state enters the full author panel through same-world R
   mounted.dispose();
 });
 
-test('R1/R2/R4 English copy includes execution, failure, storage and blank-source explanations', async () => {
-  const h = await settingsHarness(null, { language: 'en' });
-  assert.match(h.root.textContent, /Optional text DM/); assert.match(h.root.textContent, /OpenAI-compatible POST \/chat\/completions/);
-  assert.match(h.root.textContent, /Blank:.*main conversation.*imggen_draw.*directory.*Local URL.*Failures.*plugin.*executing provider/s);
-  assert.match(h.root.textContent, /Text stories never wait for images/);
-  assert.match(h.root.textContent, /ComfyUI HTTP.*512×512.*Euler 20.*30-second.*8 MiB/);
+test('R1/R2 English copy covers the advanced page, auto-image switch and where things live', async () => {
+  const h = await settingsHarness(null, { language: 'en', images: { sourceKind: 'comfyui' } });
+  assert.match(h.root.textContent, /Advanced settings/);
+  assert.match(h.root.textContent, /Text DM key/);
+  assert.match(h.root.textContent, /OpenAI-compatible/);
+  assert.match(h.root.textContent, /Configuration → Adventures of Fat Fish from Scratch/);
+  assert.match(h.root.textContent, /Place Book → Local artwork/);
+  assert.match(h.root.textContent, /Direct image generation/);
   assert.match(h.root.textContent, /DPAPI CurrentUser/);
   assert.equal(h.control('apiKey').getAttribute('type'), 'password');
-  assert.equal(h.control('save').textContent, 'Save story settings');
+  assert.equal(h.control('save').textContent, 'Save settings');
+  assert.match(h.root.textContent, /Auto images/);
   h.mounted.dispose();
 });

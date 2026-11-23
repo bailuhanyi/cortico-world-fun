@@ -60,7 +60,7 @@ import {
   isFreePack, newFreeState, normalizeFreeState, requestFreeTurn,
 } from './story-free.js';
 import { StorySecrets } from './story-secrets.js';
-import { StoryNodeLimit } from './story-node-limit.js';
+import { DEFAULT_STORY_NODE_LIMIT, MAX_STORY_NODE_LIMIT, StoryNodeLimit } from './story-node-limit.js';
 import { StoryImages, validateStoryImageSource, validateStoryWorkflow } from './story-images.js';
 import { markVenueMigration, markPromotedVenueMigration, migratePromotedVenues, migrateSampleVenue } from './story-venue-migration.js';
 import {
@@ -461,9 +461,10 @@ export class FunWorld {
     this.#now = typeof opts.now === 'function' ? opts.now : () => Date.now();
     this.#random = typeof opts.random === 'function' ? opts.random : Math.random;
     this.#persist = typeof opts.persist === 'function' ? opts.persist : null;
-    this.#storySecrets = new StorySecrets({ dataDir: this.dataDir, onInvalidate: () => this.#dm.cancel() });
+    this.#storySecrets = new StorySecrets({ dataDir: this.dataDir, onInvalidate: () => this.#dm.cancel(),
+      url: () => this.cfg?.funStoryDmUrl, model: () => this.cfg?.funStoryDmModel });
     this.#storyNodeLimit = new StoryNodeLimit({ dataDir: this.dataDir });
-    this.#storyImages = new StoryImages({ dataDir: this.dataDir });
+    this.#storyImages = new StoryImages({ dataDir: this.dataDir, source: () => this.cfg?.funStoryImageSource });
     this.#locationLibrary = new PlaceLibrary({
       dataDir: this.dataDir,
       venues: () => this.#allPlaces(),
@@ -471,7 +472,7 @@ export class FunWorld {
       removeVenue: (id) => this.#removeVenue(id),
     });
     this.#home = new HomeRoom({ dataDir: this.dataDir, now: () => this.#now() });
-    this.#storyLibrary = new StoryLibrary({ file: this.storiesFile(), venues: () => this.#places(), visits: (id) => this.#state ? this.#history(id)?.visitCount ?? 0 : 0, nowMin: () => minutesIn(this.timezone, this.#now()), nodeLimit: () => this.#storyNodeLimit.value });
+    this.#storyLibrary = new StoryLibrary({ file: this.storiesFile(), venues: () => this.#places(), visits: (id) => this.#state ? this.#history(id)?.visitCount ?? 0 : 0, nowMin: () => minutesIn(this.timezone, this.#now()), nodeLimit: () => this.#storyNodeLimitValue() });
   }
 
   get cfg() { return { ...DEFAULTS, ...(this.#rawCfg ?? {}) }; }
@@ -1963,7 +1964,7 @@ export class FunWorld {
         { id: 'locations', title: '地点册', description: '编辑全部地点（场所 + 画风 + 关联 + 封面），管理住所，迁入小世界备份。', getMethods: ['list'], methods: ['get', 'cover', 'create', 'update', 'remove', 'reset', 'resetAll', 'setHome', 'setDefaultStyle', 'setCover', 'clearCover', 'previewImport', 'commitImport', 'restoreImport'] },
         { id: 'story', title: this.language === 'en' ? 'Outing' : '出游', description: this.language === 'en' ? 'Start from the fish home, play a text story, write one, and configure optional DM and images.' : '从鱼的家出发，游玩文字剧情、编写故事，并设置可选主持与图片。',
           getMethods: ['status', 'storySettings', 'storyImageRead', 'authorList', 'authorTemplate', 'authorValidate', 'authorPreview', 'authorPlaytest', 'authorExport'],
-          methods: [...STORY_ACTIONS, 'locationCover', 'saveStorySettings', 'saveStoryNodeLimit', 'clearStoryKey', 'storyImage', 'authorImport', 'authorEnable', 'authorDisable', 'authorRemove'] },
+          methods: [...STORY_ACTIONS, 'locationCover', 'saveStorySettings', 'saveStoryAutoImages', 'clearStoryKey', 'storyImage', 'authorImport', 'authorEnable', 'authorDisable', 'authorRemove'] },
         { id: 'book', title: p.book.title, description: p.book.description, getMethods: ['list'], methods: ['favorite', 'wish'] },
         { id: 'shelf', title: p.shelf.title, description: p.shelf.description, getMethods: ['list', 'trip'] },
         { id: 'stories', title: this.language === 'en' ? 'Story Workshop' : '故事工坊', description: this.language === 'en' ? 'Import, validate, preview and manage locally written story packs.' : '导入、校验、预览和管理本地原创剧情包。', getMethods: ['list', 'template', 'validate', 'preview', 'playtest', 'export'], methods: ['import', 'enable', 'disable', 'remove'] },
@@ -2062,7 +2063,8 @@ export class FunWorld {
       memories: this.#savedTrips().filter((saved) => saved.storyRun).map(describeMemory),
       trash: this.#trashView(),
       autoplay: outing?.storyRun?.autoplay === true,
-      images: this.#storyImages.status(this.cfg?.funStoryImages === true),
+      images: { ...this.#storyImages.status(this.cfg?.funStoryImages === true),
+        auto: this.cfg?.funStoryAutoImages === true, masterOn: this.cfg?.funStoryImages === true },
       dm: { ...this.#dm.view(trip, this.#storySecrets.status.available ? { request() {} } : this.#host?.cognition, this.cfg?.funStoryDM === true), api: this.#storySecrets.status },
       autonomy: this.#autonomy.view(trip, this.#host?.cognition, now, token, this.#autoLimits()),
     };
@@ -2625,40 +2627,136 @@ export class FunWorld {
   #storySettings() {
     return { ok: true, dm: this.#storySecrets.status, imageSource: this.#storyImages.status().source,
       imageWorkflow: this.#storyImages.status().workflow,
-      nodeLimit: this.#storyNodeLimit.value, dmEnabled: this.cfg?.funStoryDM === true, imagesEnabled: this.cfg?.funStoryImages === true,
+      nodeLimit: this.#storyNodeLimitValue(), dmEnabled: this.cfg?.funStoryDM === true, imagesEnabled: this.cfg?.funStoryImages === true,
       textOn: this.cfg?.funStoryTextOn === true, freeEnabled: this.cfg?.funStoryFree === true,
       freeTurns: clampInt(this.cfg?.funStoryFreeTurns, 5, 120, 40) };
   }
 
-  async #saveStoryNodeLimit(payload = {}) {
-    const saved = await this.#storyNodeLimit.save(payload.nodeLimit);
-    return saved.ok ? this.#storySettings() : { ...this.#storySettings(), ...saved };
+  /** 故事长度现读配置（0 = 不限）；配置坏值回到默认，不抛错。 */
+  #storyNodeLimitValue() {
+    const raw = this.cfg?.funStoryNodeLimit;
+    if (raw === undefined || raw === null || raw === '') return DEFAULT_STORY_NODE_LIMIT;
+    return clampInt(raw, 0, MAX_STORY_NODE_LIMIT, DEFAULT_STORY_NODE_LIMIT);
   }
 
-  async #saveStorySettings(payload) {
-    if (Object.hasOwn(payload, 'imageSource')) {
-      const checked = validateStoryImageSource(payload.imageSource);
-      if (!checked.ok) return { ...this.#storySettings(), ...checked };
+  /**
+   * 0.7.3 一次性迁移：把旧文件里的故事长度、主持地址/模型、图片来源搬进配置。
+   *
+   * 宿主的 `ctx.cfg` 已经是「默认值 + 盘上值」合并后的对象，所以不能靠
+   * `'key' in raw` 判断配置里有没有这项——那永远成立。这里改成：旧文件有值、
+   * 且配置里的值仍是默认值（或没有）才搬；搬成功一次就把旧文件清掉/重写，
+   * 所以第二次启动不会再写。必须在 `#ensureConfigSection()` 之前跑。
+   * 每一步独立 try/catch，失败只记日志，不阻止启动。
+   */
+  async #migrateLegacyStorySettings() {
+    if (!this.#persist) return;
+    const raw = this.#rawCfg ?? {};
+    const patch = {};
+    const unsetOr = (key, fallback) => !(key in raw) || raw[key] === fallback;
+    let clearNodeLimit = false;
+    try {
+      const saved = this.#storyNodeLimit;
+      clearNodeLimit = saved.found;
+      if (saved.found && unsetOr('funStoryNodeLimit', DEFAULT_STORY_NODE_LIMIT)) {
+        patch.funStoryNodeLimit = saved.value;
+      }
+    } catch (err) {
+      this.#host?.log?.warn?.('从0开始的肥鱼大冒险：故事长度迁移失败', { err: msg(err) });
     }
-    if (Object.hasOwn(payload, 'workflow')) {
+    let legacySecrets = { apiUrl: '', model: '' };
+    try {
+      legacySecrets = await this.#storySecrets.legacyEndpoint();
+    } catch (err) {
+      this.#host?.log?.warn?.('从0开始的肥鱼大冒险：主持设置迁移读取失败', { err: msg(err) });
+    }
+    const secretsMigrated = Boolean(legacySecrets.apiUrl || legacySecrets.model);
+    if (secretsMigrated) {
+      if (legacySecrets.apiUrl && unsetOr('funStoryDmUrl', DEFAULTS.funStoryDmUrl)) patch.funStoryDmUrl = legacySecrets.apiUrl;
+      if (legacySecrets.model && unsetOr('funStoryDmModel', DEFAULTS.funStoryDmModel)) patch.funStoryDmModel = legacySecrets.model;
+    }
+    let legacyImageSource = '';
+    try {
+      legacyImageSource = this.#storyImages.legacySource();
+    } catch (err) {
+      this.#host?.log?.warn?.('从0开始的肥鱼大冒险：图片来源迁移读取失败', { err: msg(err) });
+    }
+    if (legacyImageSource && unsetOr('funStoryImageSource', DEFAULTS.funStoryImageSource)) {
+      patch.funStoryImageSource = legacyImageSource;
+    }
+    let persisted = true;
+    if (Object.keys(patch).length) {
+      try {
+        this.#persist(patch);
+        Object.assign(raw, patch);
+        this.#host?.log?.info?.('从0开始的肥鱼大冒险：旧设置已搬进配置', { keys: Object.keys(patch) });
+      } catch (err) {
+        persisted = false;
+        this.#host?.log?.warn?.('从0开始的肥鱼大冒险：旧设置迁移没写进去', { err: msg(err) });
+      }
+    }
+    if (!persisted) return;
+    // 配置写成功了才清旧文件；写失败就原样留着，下次启动再试。
+    if (clearNodeLimit) await this.#storyNodeLimit.clear();
+    if (secretsMigrated) {
+      const result = await this.#storySecrets.rewriteKeyOnly().catch(() => ({ ok: false }));
+      if (!result?.ok) this.#host?.log?.warn?.('从0开始的肥鱼大冒险：主持密文清理失败，下次启动再试');
+    }
+    if (legacyImageSource) {
+      await this.#storyImages.configure({}).catch(() => null);
+    }
+  }
+
+  /**
+   * 出游 → 设置 → 高级：只保存 API Key 与自定义工作流。
+   *
+   * 地址、模型、图片来源都在配置页，不从这里进出；老客户端如果还传这些键，
+   * 明确报错而不是悄悄忽略。
+   */
+  async #saveStorySettings(payload = {}) {
+    const moved = ['apiUrl', 'model', 'imageSource'].filter((key) => Object.hasOwn(payload, key));
+    if (moved.length) {
+      return { ...this.#storySettings(), ok: false,
+        error: '接口地址、模型名与图片来源在「配置 → 从0开始的肥鱼大冒险」；这里只保存 API Key 与自定义工作流。' };
+    }
+    const hasKey = Object.hasOwn(payload, 'apiKey');
+    const hasWorkflow = Object.hasOwn(payload, 'workflow');
+    if (hasWorkflow) {
       const checked = validateStoryWorkflow(payload.workflow);
       if (!checked.ok) return { ...this.#storySettings(), ...checked };
     }
-    const secrets = await this.#storySecrets.save(payload);
-    if (!secrets.ok) return { ...this.#storySettings(), ...secrets };
-    const current = this.#storyImages.status();
-    const sourceChanged = Object.hasOwn(payload, 'imageSource') && payload.imageSource.trim() !== current.source;
-    const workflowChanged = Object.hasOwn(payload, 'workflow') && (payload.workflow ?? '').trim() !== current.workflow;
-    if (sourceChanged || workflowChanged) {
-      const image = await this.#storyImages.configure({
-        source: Object.hasOwn(payload, 'imageSource') ? payload.imageSource : current.source,
-        ...(Object.hasOwn(payload, 'workflow') ? { workflow: payload.workflow } : {}),
-      });
+    if (hasKey) {
+      const secrets = await this.#storySecrets.save({ apiKey: payload.apiKey });
+      if (!secrets.ok) return { ...this.#storySettings(), ...secrets };
+    }
+    if (hasWorkflow) {
+      const image = await this.#storyImages.configure({ workflow: payload.workflow });
       if (!image.ok) return { ...this.#storySettings(), ok: false,
-        ...(Object.hasOwn(payload, 'apiUrl') || Object.hasOwn(payload, 'apiKey') ? { partial: 'dm' } : {}),
-        error: '图片来源保存失败；主持设置的当前状态已返回，请核对后重试图片设置。' };
+        ...(hasKey ? { partial: 'dm' } : {}),
+        error: '自定义工作流保存失败；主持密钥的当前状态已返回，请核对后重试。' };
     }
     return this.#storySettings();
+  }
+
+  /** 顶栏「自动配图」开关：只改配置并落盘，不发任何图片请求。 */
+  async #saveStoryAutoImages(payload = {}) {
+    const auto = payload?.auto;
+    if (typeof auto !== 'boolean') {
+      return { ok: false, autoImages: this.cfg?.funStoryAutoImages === true, error: '自动配图开关只接受开或关。' };
+    }
+    if (!this.#rawCfg) this.#rawCfg = {};
+    const previous = this.#rawCfg.funStoryAutoImages;
+    this.#rawCfg.funStoryAutoImages = auto;
+    if (this.#persist) {
+      try {
+        this.#persist({ funStoryAutoImages: auto });
+      } catch {
+        // 落盘失败就回滚内存值，面板看到的状态和盘上一致。
+        if (previous === undefined) delete this.#rawCfg.funStoryAutoImages;
+        else this.#rawCfg.funStoryAutoImages = previous;
+        return { ok: false, autoImages: this.cfg?.funStoryAutoImages === true, error: '自动配图设置没保存成功；请重试。' };
+      }
+    }
+    return { ok: true, autoImages: auto };
   }
 
   /** 当前这一屏的画面参数：面板按钮与「自动准备」共用同一份，避免两处各算一套。 */
@@ -2740,8 +2838,8 @@ export class FunWorld {
       return ['import', 'enable', 'disable', 'remove'].includes(author) ? this.#serial(act) : act();
     }
     if (method === 'storySettings') return this.#storySettings();
-    if (method === 'saveStoryNodeLimit') return this.#serial(() => this.#saveStoryNodeLimit(payload));
     if (method === 'saveStorySettings') return this.#serial(() => this.#saveStorySettings(payload));
+    if (method === 'saveStoryAutoImages') return this.#saveStoryAutoImages(payload);
     if (method === 'clearStoryKey') {
       this.#dm.cancel();
       const result = await this.#storySecrets.clear();
@@ -3639,7 +3737,6 @@ export class FunWorld {
   async start(host) {
     if (this.#started) return;
     this.#host = host;
-    this.#ensureConfigSection();
     this.#state = await this.#load();
     // 用户自填地点 + 预设覆盖层：读失败就当没有，预设照常能逛。
     const venueMigration = await migrateSampleVenue(this.venuesFile());
@@ -3656,6 +3753,9 @@ export class FunWorld {
     await this.#storyLibrary.load();
     await this.#storySecrets.load();
     await this.#storyImages.init();
+    // 先搬旧文件里的值，再补默认值：顺序反了「配置里没有这个键」就永远不成立。
+    await this.#migrateLegacyStorySettings();
+    this.#ensureConfigSection();
     this.#started = true;
     // 方案 B：允许她自己的时候，按她自己的时段叫醒；时段留空就只留许可、不注册。
     if (this.cfg?.funHomeAutoGo === true && parseAutoSlots(this.cfg?.funHomeAutoSlots).length) {

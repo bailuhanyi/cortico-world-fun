@@ -4,9 +4,10 @@
  * 段名是 `config.json` 的 `worlds.fun`。WebUI 热改就地写这个对象，
  * World 每次用时现读，所以这里只有默认值与 schema，不持有副本。
  *
- * 目前四项用户可配的（初版定稿是 funOn / funSessionTTLMin / funAskReport 三项，
- * 后来加了吃喝开关 funTasteFromFeast）：
- *   funOn / funSessionTTLMin / funAskReport / funTasteFromFeast。
+ * 目前用户可配的：funOn / funSessionTTLMin / funAskReport / funTasteFromFeast，
+ * 加上 0.7.3 归位的故事长度、主持地址与模型、剧情图片来源。
+ * **API Key 与自定义工作流不在配置里**：前者只存本机 DPAPI 密文，后者是 32 KB
+ * JSON（宿主 string 只渲染单行输入），入口都在「出游 → 设置 → 高级」。
  *
  * 她什么时候出门：`funHomeAutoGo` 是「主人允许她自己出门」的许可，
  * `funHomeAutoSlots` 是叫醒她的时段（方案 B）。两个都有，且时段非空时，
@@ -80,6 +81,28 @@ export const DEFAULTS = Object.freeze({
   funAutoSteps: 20,
   /** 鱼自主游玩：每段最多几次「鱼自己决定」（每一次都是一次真实模型请求）。 */
   funAutoCalls: 6,
+  /**
+   * 故事长度：新建/导入故事最多几个节点。0 = 不限。
+   *
+   * 0.7.3 从 `fun/story-node-limit.json` 搬进配置（旧文件启动时一次性迁移），
+   * 面板不再有输入框。改小不会删掉或阻断已有故事。
+   */
+  funStoryNodeLimit: 16,
+  /**
+   * 文本主持的接口地址（OpenAI 兼容）。留空沿用宿主 cognition.request。
+   *
+   * 0.7.3 从 `fun/story-secrets.json` 的密文里搬出来（地址不是秘密）；
+   * **API Key 仍在 story-secrets.json（DPAPI）**，绝不进普通配置。
+   */
+  funStoryDmUrl: '',
+  /** 文本主持的模型名；留空由接口用自己的默认模型。同样搬自 story-secrets。 */
+  funStoryDmModel: '',
+  /**
+   * 剧情图片来源。留空 = 委派「鱼的生图包」；loopback URL = 直连 ComfyUI；
+   * 其他文本 = 交给指定插件。0.7.3 从 `fun/story-images/settings.json` 搬进配置，
+   * 那个文件只留自定义工作流。
+   */
+  funStoryImageSource: '',
 });
 
 const ZH = {
@@ -104,7 +127,15 @@ const ZH = {
     funHomeAutoSlots: '自己出门的时段',
     funHomeAutoSlotsDesc: '24 小时制 HH:MM，逗号分隔；每个时段最多叫一次。到点只提醒她「这会儿是你自己的时间」，剩下的由她看日程决定。留空 = 不叫，只保留上面的许可。',
     funStoryDM: '可选文本主持',
-    funStoryDMDesc: '默认关闭。去「出游」面板的设置区填写接口地址、API Key 和模型名（地址与 Key 是密码输入，不回显；模型名留空则由接口用自己的默认模型）。地址与 Key 都留空沿用宿主 cognition.request；都填写则由本插件直连 OpenAI 兼容 POST /chat/completions，密钥仅存在本机，不传给宿主或其他插件。Windows 使用 DPAPI 当前用户加密，其他平台禁用凭据保存；换机器或重装需重填。可立即清除。主持只提议合法选项，当前行动者明确提交才执行。每趟 6 次、每步 2 次（含重试、失败、取消），未知 token 不估算。',
+    funStoryDMDesc: '默认关闭。接口地址与模型名就在下面；API Key 不放进配置，请到「出游 → 设置 → 高级」填写，只存本机 DPAPI 密文。地址、模型都留空沿用宿主 cognition.request；填了地址和密钥则由本插件直连 OpenAI 兼容 POST /chat/completions，它们不传给宿主或其他插件。Windows 使用 DPAPI 当前用户加密，其他平台禁用凭据保存；换机器或重装需重填。可立即清除。主持只提议合法选项，当前行动者明确提交才执行。每趟 6 次、每步 2 次（含重试、失败、取消），未知 token 不估算。',
+    funStoryNodeLimit: '故事长度（节点上限）',
+    funStoryNodeLimitDesc: '新建或导入故事最多几个节点，0 = 不限。单篇 JSON 仍最多 32 KB；改小不会删除或阻断已有故事。',
+    funStoryDmUrl: '文本主持接口地址',
+    funStoryDmUrlDesc: '留空沿用宿主。填 OpenAI 兼容地址（http/https，不能带账号、查询或片段）。API Key 在「出游 → 设置 → 高级」填写，只存本机密文。',
+    funStoryDmModel: '文本主持模型名',
+    funStoryDmModelDesc: '留空由接口用自己的默认模型；最长 200 字，不能含控制字符。密钥不进配置。',
+    funStoryImageSource: '剧情图片来源',
+    funStoryImageSourceDesc: '留空 = 委派「鱼的生图包」；本机 loopback URL = 直连 ComfyUI；其他文本 = 交给指定插件。自定义工作流仍在「出游 → 设置 → 高级」。',
     funStoryTextOn: '文字通道也能玩故事',
     funStoryTextOnDesc: '默认开启：QQ 或控制台聊天里也能开始和推进故事（fun_story_start / fun_story_act），六个只读查询也全部可用。关掉后聊天里只留 fun_story_candidates / fun_story_detail 两个查询应付「有什么故事」，其余故事工具不出现，每轮省下它们的 schema；面板任何时候都能玩。\n\n注意：World 拿不到消息来源，所以这是「允许文字通道」的总开关，不能只对 QQ 生效。',
     funStoryAuthorInChat: '聊天里也能管故事',
@@ -120,8 +151,8 @@ const ZH = {
     storyDmApiUrl: '接口地址', storyDmApiKey: 'API Key', storyDmModel: '模型名（可留空）', storyDmApiSaved: '已保存 / 未设置', storyDmApiClear: '清除密钥',
     storyDmApiInvalid: '接口地址与密钥必须成对设置或成对清空；不支持的加密环境不会保存。',
     storyDmApiHint: '请到「出游」面板设置区填写。地址和密钥仅存本机 DPAPI 密文；模型名按你的服务商填，留空则不发送 model。都不会进入普通配置或故事导出，保存后只显示掩码。',
-    funStoryImages: '剧情图片生成',    funStoryImagesDesc: '独立开关，默认关闭。去「出游」面板设置区填写一个来源。留空：本插件给主对话 imggen_draw 的 scene/outfits/prompt，由主对话调用「鱼的生图包」，需要该插件；无法确认安装时明确标注，未装则跳过。填本机 loopback URL：本插件按 ComfyUI HTTP 协议直连，需运行 ComfyUI 并有可用 checkpoint；30 秒或超过 8 MiB/格式错误即失败，保留原插画。填其他插件名/说明：只生成委派回执，由主对话或该插件执行，需要你自行准备该能力。委派图片由执行插件管理，直连图片存本插件 dataDir/fun/story-images。关闭不发图片请求，只用预制或显式导入插画；文字故事始终不等图片。',
-    funStoryAutoImages: '不用点按钮：自动准备配图参数', funStoryAutoImagesDesc: '默认开启。每走到新的一处（或故事翻到新的一页），本插件自动把这一屏的 scene/outfits/prompt 准备好递给她，她下一轮说话时就能看到，想画就画、不想画不用管；45 分钟后自动过期，不会反复催。只对委派型来源生效——直连本机 ComfyUI 会花算力，仍然只由面板上的「生成／委派当前场景图片」触发。总开关「剧情图片生成」关着时这一项不起作用。',
+    funStoryImages: '剧情图片生成',    funStoryImagesDesc: '独立总闸，默认关闭。开关在出游页顶部；来源在本页「剧情图片来源」。留空：本插件给主对话 imggen_draw 的 scene/outfits/prompt，由主对话调用「鱼的生图包」，需要该插件；无法确认安装时明确标注，未装则跳过。填本机 loopback URL：本插件按 ComfyUI HTTP 协议直连，需运行 ComfyUI 并有可用 checkpoint；30 秒或超过 8 MiB/格式错误即失败，保留原插画。填其他插件名/说明：只生成委派回执，由主对话或该插件执行，需要你自行准备该能力。委派图片由执行插件管理，直连图片存本插件 dataDir/fun/story-images。关闭不发图片请求，只用预制或显式导入插画；文字故事始终不等图片。',
+    funStoryAutoImages: '自动准备配图参数', funStoryAutoImagesDesc: '默认开启。总闸开着、且有进行中的行程时，每走到新的一处（或故事翻到新的一页），本插件自动把这一屏的 scene/outfits/prompt 准备好递给她；45 分钟后自动过期，不会反复催。这个开关也在出游页顶部，无行程或总闸关时禁用。只对委派型来源生效——直连本机 ComfyUI 会花算力，仍然只由「出游 → 设置 → 高级」里的按钮触发。',
     storyImageSource: '图片来源（留空为鱼的生图包）',
     storyImageSourceHint: '留空由主对话调用 imggen_draw；本机 URL 由本插件直连 ComfyUI；其他文本交主对话委派。不会调用其他 World 的工具或读取其私有状态。',
     storyImageDelegated: '已生成委派说明，等待主对话或指定插件执行。', storyImageDirect: '显式本机 URL：由本插件直连 ComfyUI。',
@@ -157,7 +188,15 @@ const EN = {
     funHomeAutoSlots: 'Her own-time slots',
     funHomeAutoSlotsDesc: '24-hour HH:MM, comma separated; each slot wakes her at most once. The reminder only says the stretch is hers — what to do with it is decided against her schedule. Blank = no wake-ups, just the permission above.',
     funStoryDM: 'Optional text DM',
-    funStoryDMDesc: 'Off by default. In Fish Story World settings enter the API URL, Key and model name (URL and Key are password fields, never echoed; leave the model blank to use the endpoint’s own default). Leave URL and Key blank for host cognition.request, or set both for this plugin to call OpenAI-compatible POST /chat/completions directly. Credentials stay on this machine, never sent to the host or other plugins. Windows DPAPI CurrentUser encryption only; saving is disabled elsewhere. Re-enter after changing machines or reinstalling; clear immediately at any time. The current actor must explicitly submit a valid proposal. Limits: 6 calls per run, 2 attempts per step, including retries, failures and cancellations; unknown tokens remain unknown.',
+    funStoryDMDesc: 'Off by default. The endpoint and model name are right below; the API key is not stored in configuration — enter it in Outing → Settings → Advanced, where only local DPAPI ciphertext is kept. Leave endpoint and model blank to use the host cognition.request, or fill the endpoint and a key to call OpenAI-compatible POST /chat/completions directly from this plugin; neither is sent to the host or other plugins. Windows DPAPI CurrentUser encryption only; saving is disabled elsewhere. Re-enter after changing machines or reinstalling; clear immediately at any time. The current actor must explicitly submit a valid proposal. Limits: 6 calls per run, 2 attempts per step, including retries, failures and cancellations; unknown tokens remain unknown.',
+    funStoryNodeLimit: 'Story length (node limit)',
+    funStoryNodeLimitDesc: 'Maximum nodes when creating or importing a story; 0 = unlimited. Each story JSON is still capped at 32 KB, and lowering this never deletes or blocks existing stories.',
+    funStoryDmUrl: 'Text DM endpoint',
+    funStoryDmUrlDesc: 'Blank uses the host. Enter an OpenAI-compatible URL (http/https, no credentials, query or fragment). The API key is entered in Outing → Settings → Advanced and stored only as local ciphertext.',
+    funStoryDmModel: 'Text DM model name',
+    funStoryDmModelDesc: 'Blank lets the endpoint use its own default; at most 200 characters and no control characters. The key never enters configuration.',
+    funStoryImageSource: 'Story image source',
+    funStoryImageSourceDesc: 'Blank delegates to Fish Image Studio; a loopback URL connects directly to ComfyUI; other text goes to the named plugin. The custom workflow still lives in Outing → Settings → Advanced.',
     funStoryTextOn: 'Play stories from text',
     funStoryTextOnDesc: 'On by default: stories can be started and advanced from QQ or console chat (fun_story_start / fun_story_act), and all six read-only queries are available. Off: chat keeps only fun_story_candidates / fun_story_detail for "what stories are there", and the other story tools are not offered, saving their schema on every turn. The panel always works.\n\nA World cannot see which channel called it, so this is one switch for all text channels — it cannot be QQ-only.',
     funStoryAuthorInChat: 'Manage stories from chat',
@@ -174,9 +213,9 @@ const EN = {
     storyDmApiInvalid: 'Set or clear the URL and key together. Unsupported encryption environments cannot save credentials.',
     storyDmApiHint: 'Use Fish Story World settings. Only local DPAPI ciphertext is stored; the model name is plain and optional (blank sends no model). No credentials enter ordinary configuration or story exports, and saved fields show masks only.',
     funStoryImages: 'Story image generation',
-    funStoryImagesDesc: 'Separate opt-in, off by default. Enter one source in Fish Story World settings. Blank: this plugin returns imggen_draw scene/outfits/prompt for the main conversation to call Fish Image Studio; that plugin is required, installation uncertainty is explicit and absence skips images. Loopback URL: this plugin calls the local ComfyUI HTTP API; a running server and available checkpoint are required. A 30-second timeout, images over 8 MiB or invalid formats keep the original artwork. Other plugin name/instructions: a receipt delegates execution to that plugin or the main conversation, and you must provide that capability. Delegated images belong to the executing plugin; direct images go to this plugin dataDir/fun/story-images. Off means no image requests, only prebuilt or explicitly imported art. Text never waits for images.',
-    funStoryAutoImages: 'Prepare image parameters without a click',
-    funStoryAutoImagesDesc: 'On by default. Every time the outing reaches a new spot (or the story turns a page), this plugin prepares that scene’s scene/outfits/prompt for her automatically, so she sees it on her next turn and may draw if she feels like it; the offer expires after 45 minutes and is never nagged. Delegation sources only — a direct local ComfyUI call costs compute and still needs the panel button. Has no effect while the master “Story image generation” switch is off.',
+    funStoryImagesDesc: 'Separate master switch, off by default. The toggle sits at the top of the Outing panel; the source is "Story image source" on this page. Blank: this plugin returns imggen_draw scene/outfits/prompt for the main conversation to call Fish Image Studio; that plugin is required, installation uncertainty is explicit and absence skips images. Loopback URL: this plugin calls the local ComfyUI HTTP API; a running server and available checkpoint are required. A 30-second timeout, images over 8 MiB or invalid formats keep the original artwork. Other plugin name/instructions: a receipt delegates execution to that plugin or the main conversation, and you must provide that capability. Delegated images belong to the executing plugin; direct images go to this plugin dataDir/fun/story-images. Off means no image requests, only prebuilt or explicitly imported art. Text never waits for images.',
+    funStoryAutoImages: 'Prepare image parameters automatically',
+    funStoryAutoImagesDesc: 'On by default. While the master switch is on and a trip is in progress, every new spot (or story page) prepares that scene’s scene/outfits/prompt for her automatically; the offer expires after 45 minutes and is never nagged. The same switch sits at the top of the Outing panel and is disabled without a trip or with the master off. Delegation sources only — a direct local ComfyUI call costs compute and still needs the button in Outing → Settings → Advanced.',
     storyImageSource: 'Image source (blank: Fish Image Studio)',
     storyImageSourceHint: 'Blank delegates imggen_draw to the main conversation; a local URL connects this plugin to ComfyUI; other text delegates to the named plugin. No tools or private state of other Worlds are accessed.',
     storyImageDelegated: 'Drawing instructions are ready for the main conversation or selected plugin.', storyImageDirect: 'Explicit local URL: this plugin connects to ComfyUI.',
@@ -283,14 +322,27 @@ export function configGroup(language = 'zh') {
           description: t.funHomeAutoSlotsDesc,
           'x-hot': true,
         },
+        [`${K}.funStoryNodeLimit`]: {
+          type: 'integer', title: t.funStoryNodeLimit, description: t.funStoryNodeLimitDesc,
+          minimum: 0, maximum: Number.MAX_SAFE_INTEGER, 'x-suffix': ' 个节点', 'x-hot': true,
+        },
         [`${K}.funStoryDM`]: {
           type: 'boolean', title: t.funStoryDM, description: t.funStoryDMDesc, 'x-hot': true,
+        },
+        [`${K}.funStoryDmUrl`]: {
+          type: 'string', title: t.funStoryDmUrl, description: t.funStoryDmUrlDesc, 'x-hot': true,
+        },
+        [`${K}.funStoryDmModel`]: {
+          type: 'string', title: t.funStoryDmModel, description: t.funStoryDmModelDesc, 'x-hot': true,
         },
         [`${K}.funStoryImages`]: {
           type: 'boolean', title: t.funStoryImages, description: t.funStoryImagesDesc, 'x-hot': true,
         },
         [`${K}.funStoryAutoImages`]: {
           type: 'boolean', title: t.funStoryAutoImages, description: t.funStoryAutoImagesDesc, 'x-hot': true,
+        },
+        [`${K}.funStoryImageSource`]: {
+          type: 'string', title: t.funStoryImageSource, description: t.funStoryImageSourceDesc, 'x-hot': true,
         },
         [`${K}.funStoryTextOn`]: {
           type: 'boolean', title: t.funStoryTextOn, description: t.funStoryTextOnDesc, 'x-hot': true,

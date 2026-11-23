@@ -177,8 +177,12 @@ try {
   const runtimeNames = checkNames(tools, 'name', '运行时工具名称');
   ok(sameNames(marketNames, definitionNames), 'describe.json 与 WorldDefinition 工具名称一致',
     `describe.json=${JSON.stringify(marketNames)}，WorldDefinition=${JSON.stringify(definitionNames)}`);
-  ok(sameNames(definitionNames, runtimeNames), 'WorldDefinition 与运行时工具名称一致',
-    `WorldDefinition=${JSON.stringify(definitionNames)}，运行时=${JSON.stringify(runtimeNames)}`);
+  // `fun_story` 是 0.7.2 起的按开关工具：默认关机时不挂，声明里仍然列出。
+  // 比较运行时工具集时要按默认配置扣掉它，否则默认关闭会误报成「声明和运行时不一致」。
+  const defaultCfg = def.defaults();
+  const expectedRuntime = definitionNames.filter((name) => !(name === 'fun_story' && defaultCfg.funStoryAuthorInChat !== true));
+  ok(sameNames(expectedRuntime, runtimeNames), 'WorldDefinition 与运行时工具名称一致（按默认开关）',
+    `WorldDefinition=${JSON.stringify(expectedRuntime)}，运行时=${JSON.stringify(runtimeNames)}`);
 
   const tool = (name) => {
     const handler = tools.find((entry) => entry.name === name)?.handler;

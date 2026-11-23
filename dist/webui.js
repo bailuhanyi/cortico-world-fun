@@ -26,56 +26,39 @@ var ZH = {
   storyGroupProgress: (done, total) => `${done}/${total} 已填写`,
   storyGroupOptional: "可选设置",
   settingsTab: "设置",
-  settingsTitle: "本机设置",
-  settingsIntro: "这里只放跟这台机器有关的东西：故事长度、主持凭据、剧情图片和本地插画。世界开关、地点、日程与创作在别处，见最后一节。",
-  settingsPartLength: "故事长度",
-  settingsPartLengthHint: "新建或导入故事时允许多少个节点。",
-  settingsPartPrivate: "主持与图片来源",
-  settingsPartPrivateHint: "主持接口和图片来源一起保存；密钥只存这台机器。",
-  settingsPartImage: "剧情图片",
-  settingsPartImageHint: "按上面选的来源试一张；失败时保留原插画，文字照常往下走。",
-  settingsPartArtwork: "本地插画",
-  settingsPartArtworkHint: "存浏览器里、不上传；加载失败会回到示意场景。",
+  settingsTitle: "高级设置",
+  settingsIntro: "这里只放这一台机器的凭据与专家选项。自动配图开关在出游页顶部；故事长度、主持地址与模型、图片来源在配置页；本地插画在地点册。",
   settingsPartElsewhere: "其他设置在哪里",
-  settingsArtworkAbout: "关于本地插画",
-  settingsElsewhereTitle: "开关、地点与日程",
-  settingsElsewhereNote: "世界开关（剧情图片、文本主持、文字通道、自由模式）：「配置 → 从0开始的肥鱼大冒险」。地点、住所与画风：「地点册」。场所与故事分支：「故事工坊」。今日安排与生活记录：「鱼的每一天」。",
-  storyNodeLimitTitle: "故事节点上限",
-  storyNodeLimitSummary: "控制新建或导入故事时允许的最大节点数。填 0 表示不限制节点数；单篇 JSON 仍最多 32 KB。修改设置不会删除或阻断已有故事。",
-  storyNodeLimitField: "节点数（0 = 不限）",
-  storyNodeLimitSave: "保存节点上限",
-  storyNodeLimitLoading: "正在读取…",
-  storyNodeLimitSaving: "正在保存…",
-  storyNodeLimitSaved: "节点上限已保存。",
-  storyNodeLimitLoadFailed: "读取节点上限失败，请重试。",
-  storyNodeLimitSaveFailed: "保存失败；当前设置未确认，请重试。",
-  storyNodeLimitInvalid: "请输入 0 或更大的整数。",
-  storyNodeLimitDefault: "填入默认值 16",
-  storyDmTitle: "可选文本主持",
-  storyDmSummary: "填写接口、密钥与可选模型；密钥只存本机。",
-  storyDmHelpSummary: "查看接口与密钥说明",
-  storyImageSummary: "选择图片来源；关闭时不会发起图片请求。",
-  storyImageHelpSummary: "查看三种来源与失败处理",
+  settingsElsewhereTitle: "故事长度、主持与图片来源",
+  settingsWhereLength: "故事长度、主持接口地址与模型名、剧情图片来源：「配置 → 从0开始的肥鱼大冒险」。",
+  settingsWhereArtwork: "本地插画：「地点册 → 本地插画」；换浏览器或清缓存会没有，重新导入即可。",
+  settingsElsewhereNote: "文本主持、文字通道、自由模式这些开关也在同一个配置页；地点、住所与画风：「地点册」；场所与故事分支：「故事工坊」。",
+  settingsKeyTitle: "文本主持密钥",
+  settingsKeySummary: "只保存 API Key；接口地址与模型名在配置页。",
+  settingsKeyHint: "接口地址与模型名在「配置 → 从0开始的肥鱼大冒险」；这里只保存 API Key，只存本机 DPAPI 密文，不写进配置。",
+  settingsImageManualTitle: "直连出图",
+  settingsImageManualSummary: "只在图片来源是本机 ComfyUI 时出现。",
+  settingsImageManualHint: "手动生成当前场景的一张图。委派来源不需要这一块：自动准备配图就够了。",
+  storyImageManual: "生成当前场景图片",
+  settingsAutoImage: "自动配图",
+  settingsAutoImageHint: "出游中、且总闸开着，才会自动准备委派参数。",
+  settingsAutoImageMasterOff: "剧情图片总闸关着：先在配置里打开「剧情图片生成」。",
+  settingsAutoImageNoTrip: "有进行中的行程时才能自动准备配图。",
+  settingsAutoImageOn: "自动配图已打开：每到新的一处会准备参数。",
+  settingsAutoImageOff: "自动配图已关闭。",
+  settingsAutoImageFailed: "没保存成功，已恢复原来的设置。",
+  storyDmHelpSummary: "查看密钥保存说明",
+  storyImageHelpSummary: "查看直连与失败处理",
   storyImageOff: "已关闭",
   storyImageOn: "已开启",
-  storyImageSettingsHint: "开关在「世界 → 从0开始的肥鱼大冒险」配置页。",
-  storyDmApiUrl: "接口地址（留空沿用宿主模型）",
   storyDmApiKey: "API Key",
-  storyDmModel: "模型名（可留空）",
-  storyDmModelHint: "按你的服务商填写，例如 deepseek-chat / qwen-plus / gpt-4o-mini",
   storyDmApiSaved: "已保存",
   storyDmApiUnset: "未设置",
   storyDmApiPending: "已输入，尚未保存",
   storyDmApiClear: "清除密钥",
-  storyDmApiHint: "地址与密钥须一起填写；模型名按服务商填，留空则不发送 model，由接口用自己的默认模型。使用 OpenAI 兼容 POST /chat/completions；本插件自己直连，凭据只在本机用 Windows DPAPI CurrentUser 加密保存，不交给宿主或其他插件。换机器或重装需重填。两项留空保存可清除并回到宿主模型。主持超时或失败不影响手动游玩，仍受每趟 6 次、每步 2 次额度限制。",
-  storyDmApiInvalid: "请一起填写有效接口地址与 API Key；地址不得包含用户名、密码、查询凭据或片段。",
-  storyDmModelNeedsApi: "先填写接口地址和 API Key，才能设置自定义模型名。",
-  storyDmModelInvalid: "模型名最长 200 个字符，不得包含控制字符。",
-  storyDmApiUnsupported: "此机器不支持私密接口存储；当前仅 Windows 支持本机 DPAPI 加密。仍可使用宿主模型与图片来源设置。",
-  storyImageSource: "图片来源（可留空）",
+  storyDmApiHint: "使用 OpenAI 兼容 POST /chat/completions。密钥只在本机用 Windows DPAPI CurrentUser 加密保存，不交给宿主或其他插件，也不写进普通配置。接口地址与模型名在配置页；地址留空时不会发起直连请求。换机器或重装需重填，随时可以清除。主持超时或失败不影响手动游玩，仍受每趟 6 次、每步 2 次额度限制。",
+  storyDmApiUnsupported: "此机器不支持私密密钥存储；当前仅 Windows 支持本机 DPAPI 加密。仍可使用宿主模型，地址与模型照旧在配置页。",
   storyImageTitle: "剧情图片生成",
-  storyImageSourceHint: "留空：默认委派给「鱼的生图包」，由主对话调用 imggen_draw；需要安装并启用该包。当前没有经过验证的安装检测：主对话若没有 imggen_draw，须明确提示未安装；fun 只给出委派参数，不跨 World 调工具，图片由生图包保存在其目录。填写 loopback 根 URL（如 http://127.0.0.1:8188）：由本插件直连 ComfyUI HTTP，需要运行中的服务与传统 checkpoint；固定 512×512、Euler 20 步，30 秒超时、8 MiB 图片上限。失败显示原因并保留原图，已排队的上游任务可能继续；成功图片存本插件 dataDir/fun/story-images；ComfyUI 同时保留其服务端输出。填写其他插件名或说明：仅生成委派说明，由主对话或你指定的插件执行，需要自行确认能力；失败不自动重试，图片由实际执行方保存。URL 严禁包含任何凭据（用户名、密码、密钥、查询或片段）。开关关闭时仅用本地预制或显式导入图片；文字剧情任何时候都不等图片。",
-  storyImageInvalid: "图片 URL 只能是不含凭据、查询和片段的 loopback HTTP(S) 根地址；请勿填写密钥。",
   storyImageWorkflowTitle: "自定义工作流（可选）",
   storyImageWorkflowLabel: "工作流 JSON（留空用内置）",
   storyImageWorkflowPlaceholder: '{\n  "1": { "class_type": "CheckpointLoaderSimple", "inputs": { "ckpt_name": "your.safetensors" } },\n  "2": { "class_type": "CLIPTextEncode", "inputs": { "text": "{{prompt}}", "clip": ["1", 0] } }\n}',
@@ -85,8 +68,7 @@ var ZH = {
   storyImageWorkflowNoPrompt: "工作流里必须有一个 {{prompt}} 占位符，用来放这一段的正向提示词。",
   storyImageWorkflowOn: "自定义工作流",
   storyImageWorkflowOff: "内置工作流",
-  storyImageGenerate: "生成／委派当前场景图片",
-  storyImagePending: "正在生成／准备委派…",
+  storyImagePending: "正在生成当前场景图片…",
   storyImageDelegated: "已把委派参数递给她（45 分钟内有效）；画不画由她定，也可以按上面的 JSON 交给指定插件。",
   storyImageDirect: "图片已保存在本插件本地数据目录。",
   storyImageNoPlugin: "尚未确认安装「鱼的生图包」；请安装启用，或复制委派参数交给主对话。",
@@ -94,8 +76,7 @@ var ZH = {
   storyImageFailed: "图片请求失败；文字故事照常继续，请检查来源后重试。",
   storyImageParams: "可复制的委派参数",
   storyImageAlt: "当前剧情生成的本地图片",
-  localStorageHint: "本地存储只保留插画资源与编辑器折叠偏好，不保存密钥或故事草稿。行程、选择、回忆和自主游玩状态始终以服务端返回为准，不在浏览器另存进度。",
-  settingsSave: "保存故事设置",
+  settingsSave: "保存设置",
   settingsCancel: "取消输入",
   settingsReload: "读取设置",
   settingsLoading: "正在读取设置…",
@@ -108,7 +89,7 @@ var ZH = {
   settingsLoadFailure: "读取设置失败；当前输入已保留，可重试读取。",
   settingsClearFailure: "清除未获确认；请重试或读取设置核对。",
   settingsDraft: "有未保存的设置输入",
-  settingsPartialDm: "主持设置已保存或清除，但图片来源未保存。已清除提交的私密输入；请重试图片设置。",
+  settingsPartialDm: "密钥已保存，但自定义工作流没保存；请重试工作流，密钥不用重填。",
   storyCatalogTitle: "地点与故事",
   storyCatalogIntro: "选择自己写的故事出发，也可以先写下一个新的开头。",
   storyAuthorHint: "地点册管理住所、画风与封面；去哪儿管理可玩区域；这里的「编写故事」管理自己的故事包。",
@@ -146,56 +127,39 @@ var EN = {
   storyGroupProgress: (done, total) => `${done}/${total} filled`,
   storyGroupOptional: "Optional settings",
   settingsTab: "Settings",
-  settingsTitle: "Local settings",
-  settingsIntro: "Only what belongs to this machine: story length, DM credentials, story images and local artwork. World switches, places, schedule and authoring live elsewhere — see the last section.",
-  settingsPartLength: "Story length",
-  settingsPartLengthHint: "How many nodes a new or imported story may have.",
-  settingsPartPrivate: "DM and image source",
-  settingsPartPrivateHint: "DM endpoint and image source save together; the key never leaves this machine.",
-  settingsPartImage: "Story images",
-  settingsPartImageHint: "Try one with the source above; failures keep the old artwork and text keeps flowing.",
-  settingsPartArtwork: "Local artwork",
-  settingsPartArtworkHint: "Stored in this browser, never uploaded; a failed load falls back to the sketch.",
+  settingsTitle: "Advanced settings",
+  settingsIntro: "Only this machine’s credentials and expert options live here. The auto-image switch is at the top of the Outing panel; story length, DM endpoint/model and image source are in configuration; local artwork is in the Place Book.",
   settingsPartElsewhere: "Where the other settings live",
-  settingsArtworkAbout: "About local artwork",
-  settingsElsewhereTitle: "Switches, places and schedule",
-  settingsElsewhereNote: "World switches (story images, text DM, text channel, free mode): Configuration → Adventures of Fat Fish from Scratch. Places, home and style: Place Book. Venues and story branches: Story Workshop. Schedule and life log: Fish Every Day.",
-  storyNodeLimitTitle: "Story node limit",
-  storyNodeLimitSummary: "Set the maximum nodes allowed when creating or importing a story. Enter 0 for no node-count limit; each story JSON remains limited to 32 KB. Changing this setting does not delete or block existing stories.",
-  storyNodeLimitField: "Node count (0 = unlimited)",
-  storyNodeLimitSave: "Save node limit",
-  storyNodeLimitLoading: "Loading…",
-  storyNodeLimitSaving: "Saving…",
-  storyNodeLimitSaved: "Node limit saved.",
-  storyNodeLimitLoadFailed: "Could not read the node limit. Retry.",
-  storyNodeLimitSaveFailed: "Save was not confirmed; retry when ready.",
-  storyNodeLimitInvalid: "Enter 0 or a larger whole number.",
-  storyNodeLimitDefault: "Fill in default 16",
-  storyDmTitle: "Optional text DM",
-  storyDmSummary: "Set an endpoint, key and optional model; the key stays on this device.",
-  storyDmHelpSummary: "Show endpoint and key details",
-  storyImageSummary: "Choose an image source; off means no image requests.",
-  storyImageHelpSummary: "Show source and failure details",
+  settingsElsewhereTitle: "Story length, DM and image source",
+  settingsWhereLength: "Story length, DM endpoint and model, story image source: Configuration → Adventures of Fat Fish from Scratch.",
+  settingsWhereArtwork: "Local artwork: Place Book → Local artwork. It lives in this browser, so clearing site data removes it — import again.",
+  settingsElsewhereNote: "DM, text channel and free-mode switches are on the same configuration page; places, home and style: Place Book; venues and story branches: Story Workshop.",
+  settingsKeyTitle: "Text DM key",
+  settingsKeySummary: "Only the API key is stored here; endpoint and model are in configuration.",
+  settingsKeyHint: "The endpoint and model name are in Configuration → Adventures of Fat Fish from Scratch. This field stores only the API key, encrypted with local DPAPI; it never enters configuration.",
+  settingsImageManualTitle: "Direct image generation",
+  settingsImageManualSummary: "Only shown when the image source is local ComfyUI.",
+  settingsImageManualHint: "Generate one image for the current scene by hand. Delegation sources do not need this — automatic preparation is enough.",
+  storyImageManual: "Generate current scene image",
+  settingsAutoImage: "Auto images",
+  settingsAutoImageHint: "Parameters are prepared automatically only during a trip and with the master switch on.",
+  settingsAutoImageMasterOff: "The story-image master switch is off: turn on “Story image generation” in configuration first.",
+  settingsAutoImageNoTrip: "Automatic preparation needs a trip in progress.",
+  settingsAutoImageOn: "Auto images on: parameters are prepared at each new spot.",
+  settingsAutoImageOff: "Auto images off.",
+  settingsAutoImageFailed: "Could not save; the previous setting was restored.",
+  storyDmHelpSummary: "Show key storage details",
+  storyImageHelpSummary: "Show direct-generation and failure details",
   storyImageOff: "Off",
   storyImageOn: "On",
-  storyImageSettingsHint: "The switch lives in World → Adventures of Fat Fish from Scratch configuration.",
-  storyDmApiUrl: "API endpoint (blank uses the host model)",
   storyDmApiKey: "API key",
-  storyDmModel: "Model name (optional)",
-  storyDmModelHint: "Use your provider’s name, e.g. deepseek-chat / qwen-plus / gpt-4o-mini",
   storyDmApiSaved: "Saved",
   storyDmApiUnset: "Not set",
   storyDmApiPending: "Entered, not saved",
   storyDmApiClear: "Clear key",
-  storyDmApiHint: "Enter the endpoint and key together; the model name is yours to fill, and leaving it blank sends no model field so the endpoint uses its own default. Uses OpenAI-compatible POST /chat/completions. This plugin connects directly and encrypts credentials on this machine using Windows DPAPI CurrentUser; credentials are not sent to the host or other plugins. Enter them again after reinstalling or moving machines. Save both fields empty to clear them and return to the host model. DM timeouts and failures leave manual play available, with the same limit of 6 calls per trip and 2 per step.",
-  storyDmApiInvalid: "Enter a valid endpoint and API key together. The URL must not contain a username, password, query credentials or fragment.",
-  storyDmModelNeedsApi: "Set an API endpoint and key before choosing a custom model name.",
-  storyDmModelInvalid: "Model names must be at most 200 characters and contain no control characters.",
-  storyDmApiUnsupported: "Private endpoint storage is unavailable on this machine. Local DPAPI encryption currently requires Windows. The host model and image source settings remain available.",
-  storyImageSource: "Image source (optional)",
+  storyDmApiHint: "Uses OpenAI-compatible POST /chat/completions. The key is encrypted on this machine with Windows DPAPI CurrentUser, never sent to the host or other plugins, and never written into ordinary configuration. Endpoint and model name live in configuration; a blank endpoint means no direct request. Re-enter after moving machines or reinstalling, and clear it at any time. DM timeouts and failures leave manual play available, with the same limit of 6 calls per trip and 2 per step.",
+  storyDmApiUnsupported: "Private key storage is unavailable on this machine; local DPAPI encryption currently requires Windows. The host model still works, and the endpoint and model stay in configuration.",
   storyImageTitle: "Story image generation",
-  storyImageSourceHint: "Blank: delegates to Fish Image Pack by default; the main conversation calls imggen_draw. Install and enable that pack. There is no verified installation discovery: if the main conversation has no imggen_draw, it must explicitly report the missing plugin. Fun only supplies delegation parameters and never calls across Worlds; the image pack saves images in its own directory. Local URL (a loopback root such as http://127.0.0.1:8188): this plugin connects directly to ComfyUI HTTP, requiring a running service and a traditional checkpoint. Uses fixed 512×512, Euler 20 steps, a 30-second timeout and an 8 MiB image limit. Failures explain the reason and retain the previous image; already queued upstream jobs may continue. Successful images are saved under this plugin dataDir/fun/story-images; ComfyUI also retains its server output. Another plugin name or instructions: produces delegation instructions only; the main conversation or your chosen plugin executes them, and you must confirm its capabilities. Failures are not retried automatically; the executing provider saves the images. URLs must never contain credentials (username, password, key, query or fragment). When disabled, only packaged local art or explicit imports are used. Text stories never wait for images.",
-  storyImageInvalid: "Image URLs must be loopback HTTP(S) root addresses without credentials, a query or fragment. Do not enter keys.",
   storyImageWorkflowTitle: "Custom workflow (optional)",
   storyImageWorkflowLabel: "Workflow JSON (blank uses the built-in one)",
   storyImageWorkflowPlaceholder: '{\n  "1": { "class_type": "CheckpointLoaderSimple", "inputs": { "ckpt_name": "your.safetensors" } },\n  "2": { "class_type": "CLIPTextEncode", "inputs": { "text": "{{prompt}}", "clip": ["1", 0] } }\n}',
@@ -205,8 +169,7 @@ var EN = {
   storyImageWorkflowNoPrompt: "The workflow must contain a {{prompt}} placeholder for the positive prompt.",
   storyImageWorkflowOn: "Custom workflow",
   storyImageWorkflowOff: "Built-in workflow",
-  storyImageGenerate: "Generate / delegate current scene image",
-  storyImagePending: "Generating / preparing delegation…",
+  storyImagePending: "Generating the current scene image…",
   storyImageDelegated: "Drawing parameters are handed to her (valid for 45 minutes); whether to draw is up to her, or run the JSON above with a chosen plugin.",
   storyImageDirect: "The image was saved in this plugin’s local data directory.",
   storyImageNoPlugin: "Fish Image Pack installation is unverified. Install and enable it, or copy the delegation parameters to the main conversation.",
@@ -214,8 +177,7 @@ var EN = {
   storyImageFailed: "Image request failed. The text story can continue; check the source and retry.",
   storyImageParams: "Copyable delegation parameters",
   storyImageAlt: "Locally generated image for the current story",
-  localStorageHint: "Local storage holds artwork and editor expansion preferences only, never keys or story drafts. Trips, choices, memories and autonomous play always use server state; browser storage never duplicates progress.",
-  settingsSave: "Save story settings",
+  settingsSave: "Save settings",
   settingsCancel: "Cancel input",
   settingsReload: "Read settings",
   settingsLoading: "Reading settings…",
@@ -228,7 +190,7 @@ var EN = {
   settingsLoadFailure: "Could not read settings. Your input is preserved; retry reading.",
   settingsClearFailure: "Key removal was not confirmed. Retry or read settings to check.",
   settingsDraft: "Unsaved settings input",
-  settingsPartialDm: "DM settings were saved or cleared, but the image source was not saved. Submitted private input was removed. Retry the image settings.",
+  settingsPartialDm: "The key was saved, but the custom workflow was not. Retry the workflow; the key need not be re-entered.",
   storyCatalogTitle: "Places and stories",
   storyCatalogIntro: "Set out in a story you wrote, or write a new beginning first.",
   storyAuthorHint: "The location book manages homes, art styles and covers; Places manages playable areas. “Write a story” here manages your own story packs.",
@@ -2290,10 +2252,11 @@ function mountPanel(root, ctx) {
   let controller;
   let authorRoot;
   let authorPanel;
-  let privateSettings;
-  let nodeLimitSettings;
+  let advancedSettings;
   let imageBusy = false;
   let imageResult;
+  let autoImageBusy = false;
+  let autoImageNotice = "";
   const imageOutput = node("div", { class: "sw-image-result", role: "status" });
   async function ownCall(method, payload) {
     if (typeof ctx.storyCall === "function") return ctx.storyCall(method, payload, { signal: ctx.signal, timeoutMs: method === "storyImage" ? 65e3 : 2e4 });
@@ -2319,7 +2282,6 @@ function mountPanel(root, ctx) {
   let playScroll = { key: "", top: 0, atBottom: true };
   let localNotice = "";
   let localError = "";
-  let importing = "";
   const openDetails = /* @__PURE__ */ new Set();
   const shell2 = node("section", { class: "sw", "aria-label": "故事工坊" });
   const style = node("style", { text: STYLES });
@@ -2663,6 +2625,55 @@ function mountPanel(root, ctx) {
       "data-focus": "trip-mode",
       onclick: () => controller.setMode(!checked)
     });
+  }
+  function autoImageSwitch(snapshot) {
+    const images = snapshot?.images ?? {};
+    const masterOn = images.masterOn === true;
+    const hasTrip = Boolean(snapshot?.trip);
+    const allowed = masterOn && hasTrip;
+    const checked = allowed && images.auto === true;
+    const reason = !masterOn ? t.settingsAutoImageMasterOff : !hasTrip ? t.settingsAutoImageNoTrip : t.settingsAutoImageHint;
+    const noteText = allowed ? autoImageNotice : reason;
+    return node(
+      "div",
+      { class: "sw-top-switch-wrap" },
+      node("span", { class: "sw-top-switch-label" }, t.settingsAutoImage),
+      node("button", {
+        type: "button",
+        class: "sw-switch sw-top-switch",
+        role: "switch",
+        "aria-checked": String(checked),
+        "aria-label": t.settingsAutoImage,
+        title: reason,
+        "data-focus": "auto-images",
+        disabled: autoImageBusy || !allowed,
+        onclick: () => void toggleAutoImages(!images.auto)
+      }),
+      node("span", { class: "sw-top-switch-note", role: "status", "aria-live": "polite" }, noteText)
+    );
+  }
+  async function toggleAutoImages(next) {
+    const state = controller?.state;
+    const images = state?.snapshot?.images;
+    if (autoImageBusy || !images || images.masterOn !== true || !state?.snapshot?.trip) return;
+    const previous = images.auto === true;
+    autoImageBusy = true;
+    autoImageNotice = "";
+    images.auto = next;
+    render();
+    try {
+      const result = await ownCall("saveStoryAutoImages", { auto: next });
+      if (disposed || ctx.signal?.aborted) return;
+      if (!result?.ok) throw new Error(result?.error || "");
+      autoImageNotice = result.autoImages ? t.settingsAutoImageOn : t.settingsAutoImageOff;
+      await controller.refresh();
+    } catch {
+      images.auto = previous;
+      autoImageNotice = t.settingsAutoImageFailed;
+    } finally {
+      autoImageBusy = false;
+      if (!disposed) render();
+    }
   }
   function historyDrawer(state, current) {
     const body = node("div", { class: "sw-drawer-body" });
@@ -3194,116 +3205,18 @@ function mountPanel(root, ctx) {
     fragment.append(trashSection(trash));
     return fragment;
   }
-  function buildNodeLimitSettings() {
-    const model = { value: 16, loaded: false, busy: false };
-    const input = node("input", {
-      type: "number",
-      min: "0",
-      max: String(Number.MAX_SAFE_INTEGER),
-      step: "1",
-      inputmode: "numeric",
-      "data-focus": "story-node-limit",
-      "aria-label": t.storyNodeLimitField
-    });
-    input.value = "16";
-    const status = node("p", { class: "sw-note", role: "status", "aria-live": "polite" });
-    const error = node("p", { class: "sw-settings-error", role: "alert" });
-    const save = button(t.storyNodeLimitSave, async () => {
-      if (model.busy) return;
-      if (!input.value.trim() || !Number.isSafeInteger(Number(input.value)) || Number(input.value) < 0) {
-        error.textContent = t.storyNodeLimitInvalid;
-        return;
-      }
-      model.busy = true;
-      error.textContent = "";
-      status.textContent = t.storyNodeLimitSaving;
-      paint();
-      try {
-        const result = await ownCall("saveStoryNodeLimit", { nodeLimit: Number(input.value) });
-        if (disposed || ctx.signal?.aborted) return;
-        if (!result?.ok || !Number.isSafeInteger(result.nodeLimit)) throw new Error();
-        model.value = result.nodeLimit;
-        input.value = String(model.value);
-        status.textContent = t.storyNodeLimitSaved;
-      } catch {
-        if (!disposed) {
-          error.textContent = t.storyNodeLimitSaveFailed;
-          status.textContent = "";
-        }
-      } finally {
-        model.busy = false;
-        if (!disposed) paint();
-      }
-    }, { primary: true, key: "story-node-limit-save" });
-    const restore = button(t.storyNodeLimitDefault, () => {
-      input.value = "16";
-      error.textContent = "";
-      status.textContent = "";
-      paint();
-    }, { quiet: true, key: "story-node-limit-default" });
-    input.addEventListener("input", () => {
-      error.textContent = "";
-      status.textContent = "";
-      paint();
-    });
-    function paint() {
-      input.disabled = model.busy || !model.loaded;
-      save.disabled = model.busy || !model.loaded || input.value === String(model.value);
-      restore.disabled = model.busy || !model.loaded || input.value === "16";
-    }
-    async function load() {
-      if (model.busy || model.loaded) return;
-      model.busy = true;
-      status.textContent = t.storyNodeLimitLoading;
-      paint();
-      try {
-        const result = await ownCall("storySettings");
-        if (disposed || ctx.signal?.aborted) return;
-        if (!result?.ok || !Number.isSafeInteger(result.nodeLimit) || result.nodeLimit < 0) throw new Error();
-        model.value = result.nodeLimit;
-        input.value = String(model.value);
-        model.loaded = true;
-        status.textContent = "";
-      } catch {
-        if (!disposed) {
-          error.textContent = t.storyNodeLimitLoadFailed;
-          status.textContent = "";
-        }
-      } finally {
-        model.busy = false;
-        if (!disposed) paint();
-      }
-    }
-    const container = node(
-      "section",
-      { class: "sw-card sw-card-pad sw-node-limit-settings" },
-      node("div", { class: "sw-settings-card-title" }, icon("settings"), node("div", {}, node("h3", {}, t.storyNodeLimitTitle), node("p", { class: "sw-card-summary" }, t.storyNodeLimitSummary))),
-      node("label", { class: "sw-setting-field" }, t.storyNodeLimitField, input),
-      actionRow(save, restore),
-      status,
-      error
-    );
-    paint();
-    return { node: container, load };
-  }
-  function buildPrivateSettings() {
+  function buildAdvancedSettings() {
     const mask = "••••••••";
     const model = {
       saved: false,
       supported: true,
       loaded: false,
       busy: "",
-      imageSource: "",
-      imageTouched: false,
-      imagesEnabled: false,
       revision: 0,
       workflow: "",
       workflowTouched: false,
-      modelName: "",
-      savedModel: "",
-      modelTouched: false,
-      modelRevision: 0,
-      apiUrl: { value: "", touched: false, revision: 0 },
+      imagesEnabled: false,
+      direct: false,
       apiKey: { value: "", touched: false, revision: 0 }
     };
     const status = node("p", { class: "sw-note", role: "status", "aria-live": "polite" });
@@ -3311,58 +3224,28 @@ function mountPanel(root, ctx) {
     const support = note("");
     const saved = node("span", { class: "sw-badge", "data-settings-saved": "" });
     const imageBadge = node("span", { class: "sw-badge sw-settings-state", "data-settings-image-state": "" });
-    const fields = {};
-    const privateField = (key2, title) => {
-      const input = node("input", {
-        type: "password",
-        autocomplete: "new-password",
-        spellcheck: "false",
-        "data-focus": `settings-${key2}`,
-        "aria-label": title,
-        "data-private-setting": key2
-      });
-      const repaint = () => {
-        input.value = model[key2].value || model.saved ? mask : "";
-      };
-      input.addEventListener("input", () => {
-        model[key2].value = input.value;
-        model[key2].touched = true;
-        ++model[key2].revision;
-        ++model.revision;
-        paint();
-      });
-      input.addEventListener("focus", () => {
-        if (input.value === mask) input.value = "";
-      });
-      input.addEventListener("blur", repaint);
-      fields[key2] = { input, repaint };
-      return node("label", { class: "sw-setting-field" }, title, input);
-    };
-    const url = privateField("apiUrl", t.storyDmApiUrl);
-    const key = privateField("apiKey", t.storyDmApiKey);
-    const modelInput = node("input", {
-      type: "text",
-      maxlength: "200",
-      autocomplete: "off",
+    const keyInput = node("input", {
+      type: "password",
+      autocomplete: "new-password",
       spellcheck: "false",
-      "data-focus": "settings-model",
-      "aria-label": t.storyDmModel,
-      placeholder: t.storyDmModelHint
+      "data-focus": "settings-apiKey",
+      "aria-label": t.storyDmApiKey,
+      "data-private-setting": "apiKey"
     });
-    modelInput.addEventListener("input", () => {
-      model.modelName = modelInput.value;
-      model.modelTouched = true;
-      ++model.modelRevision;
+    const repaintKey = () => {
+      keyInput.value = model.apiKey.value || model.saved ? mask : "";
+    };
+    keyInput.addEventListener("input", () => {
+      model.apiKey.value = keyInput.value;
+      model.apiKey.touched = true;
+      ++model.apiKey.revision;
       ++model.revision;
       paint();
     });
-    const source = node("input", { type: "text", maxlength: "300", "data-focus": "settings-imageSource", "aria-label": t.storyImageSource, autocomplete: "off" });
-    source.addEventListener("input", () => {
-      model.imageSource = source.value;
-      model.imageTouched = true;
-      ++model.revision;
-      paint();
+    keyInput.addEventListener("focus", () => {
+      if (keyInput.value === mask) keyInput.value = "";
     });
+    keyInput.addEventListener("blur", repaintKey);
     const workflow = node("textarea", {
       rows: "6",
       spellcheck: "false",
@@ -3385,39 +3268,11 @@ function mountPanel(root, ctx) {
       node("label", { class: "sw-setting-field" }, t.storyImageWorkflowLabel, workflow),
       note(t.storyImageWorkflowHint)
     );
+    const manualButton = button(t.storyImageManual, () => void requestImage(), { key: "story-image" });
     const save = button(t.settingsSave, async () => {
       if (model.busy) return;
-      const args = { imageSource: model.imageSource.trim() };
-      const credentialsTouched = model.apiUrl.touched || model.apiKey.touched;
-      if (model.modelTouched && (model.modelName.length > 200 || /[\u0000-\u001f\u007f]/u.test(model.modelName))) {
-        error.textContent = t.storyDmModelInvalid;
-        return;
-      }
-      if (model.modelTouched && !model.saved && !credentialsTouched) {
-        error.textContent = t.storyDmModelNeedsApi;
-        return;
-      }
-      if (model.supported && (credentialsTouched || model.modelTouched)) {
-        args.model = model.modelName.trim();
-      }
-      if (model.supported && credentialsTouched) {
-        args.apiUrl = model.apiUrl.value.trim();
-        args.apiKey = model.apiKey.value.trim();
-        try {
-          if (Boolean(args.apiUrl) !== Boolean(args.apiKey)) throw new Error();
-          if (args.apiUrl) {
-            const parsed = new URL(args.apiUrl);
-            if (!["http:", "https:"].includes(parsed.protocol) || parsed.username || parsed.password || parsed.search || parsed.hash) throw new Error();
-          }
-        } catch {
-          error.textContent = t.storyDmApiInvalid;
-          return;
-        }
-      }
-      if (!validImageSource(args.imageSource)) {
-        error.textContent = t.storyImageInvalid;
-        return;
-      }
+      const args = {};
+      if (model.apiKey.touched) args.apiKey = model.apiKey.value.trim();
       if (model.workflowTouched) {
         args.workflow = model.workflow.trim();
         if (args.workflow) {
@@ -3438,69 +3293,47 @@ function mountPanel(root, ctx) {
         }
       }
       const revision = model.revision;
-      const modelRevision = model.modelRevision;
-      const privateRevisions = { apiUrl: model.apiUrl.revision, apiKey: model.apiKey.revision };
+      const keyRevision = model.apiKey.revision;
       model.busy = "save";
       status.textContent = t.settingsSaving;
       error.textContent = "";
       paint();
-      for (const field of Object.values(fields)) field.repaint();
+      repaintKey();
       try {
         const result = await ownCall("saveStorySettings", args);
         if (disposed || ctx.signal?.aborted) return;
         if (!result?.ok) {
           if (result) applySafeView(result);
-          if (result?.partial !== "dm") {
-            error.textContent = result?.error || t.settingsFailure;
-            return;
+          if (result?.partial === "dm") {
+            clearPrivate();
+            model.apiKey.touched = false;
           }
-          if (model.modelRevision === modelRevision) {
-            model.modelTouched = false;
-            if (Object.hasOwn(args, "model")) model.savedModel = model.modelName = modelInput.value = args.model;
-          }
-          for (const name of ["apiUrl", "apiKey"]) if (model[name].revision === privateRevisions[name]) {
-            model[name].value = "";
-            model[name].touched = false;
-            fields[name].repaint();
-          }
-          error.textContent = t.settingsPartialDm;
+          error.textContent = result?.partial === "dm" ? t.settingsPartialDm : result?.error || t.settingsFailure;
           return;
         }
-        if (model.modelRevision === modelRevision) {
-          model.modelTouched = false;
-          if (Object.hasOwn(args, "model")) model.savedModel = model.modelName = modelInput.value = args.model;
-        }
         applySafeView(result);
-        for (const name of ["apiUrl", "apiKey"]) if (model[name].revision === privateRevisions[name]) {
-          model[name].value = "";
-          model[name].touched = false;
-          fields[name].repaint();
-        }
-        if (revision === model.revision || model.imageSource.trim() === args.imageSource) {
-          model.imageTouched = false;
-          source.value = model.imageSource = savedImageSource;
+        if (model.apiKey.revision === keyRevision) {
+          model.apiKey.value = "";
+          model.apiKey.touched = false;
         }
         if (Object.hasOwn(args, "workflow") && model.workflow.trim() === args.workflow) {
           model.workflowTouched = false;
           workflow.value = model.workflow = savedWorkflow;
         }
         status.textContent = t.settingsSaved;
+        if (revision === model.revision) error.textContent = "";
       } catch {
         if (!disposed) error.textContent = t.settingsFailure;
       } finally {
         if (!disposed) {
           model.busy = "";
           paint();
-          for (const field of Object.values(fields)) field.repaint();
+          repaintKey();
         }
       }
     }, { primary: true, key: "settings-save" });
     const cancel = button(t.settingsCancel, () => {
       clearPrivate();
-      model.modelName = model.savedModel;
-      modelInput.value = model.savedModel;
-      model.imageTouched = false;
-      source.value = model.imageSource = savedImageSource;
       model.workflowTouched = false;
       workflow.value = model.workflow = savedWorkflow;
       ++model.revision;
@@ -3530,59 +3363,49 @@ function mountPanel(root, ctx) {
         if (!disposed) {
           model.busy = "";
           paint();
-          for (const field of Object.values(fields)) field.repaint();
+          repaintKey();
         }
       }
     }, { danger: true, key: "settings-clear" });
     const reload = button(t.settingsReload, () => void load(), { quiet: true, key: "settings-reload" });
-    let savedImageSource = "";
     let savedWorkflow = "";
     function applySafeView(result) {
       if (typeof result.dm?.saved === "boolean") model.saved = result.dm.saved;
       if (typeof result.dm?.supported === "boolean") model.supported = result.dm.supported;
-      if (typeof result.imageSource === "string") {
-        savedImageSource = result.imageSource;
-        if (!model.imageTouched) source.value = model.imageSource = savedImageSource;
-      }
       if (typeof result.imageWorkflow === "string") {
         savedWorkflow = result.imageWorkflow;
         if (!model.workflowTouched) workflow.value = model.workflow = savedWorkflow;
       }
-      if (typeof result.dm?.model === "string") {
-        model.savedModel = result.dm.model;
-        if (!model.modelTouched) modelInput.value = model.modelName = model.savedModel;
-      }
-      if (typeof result.imagesEnabled === "boolean") setImageEnabled(result.imagesEnabled);
+      if (typeof result.imagesEnabled === "boolean") setImageState({ enabled: result.imagesEnabled });
     }
     function clearPrivate() {
-      for (const name of ["apiUrl", "apiKey"]) {
-        model[name].value = "";
-        model[name].touched = false;
-        fields[name].repaint();
-      }
-      model.modelName = "";
-      model.modelTouched = false;
-      modelInput.value = "";
+      model.apiKey.value = "";
+      model.apiKey.touched = false;
+      repaintKey();
     }
     function paint() {
-      const dirty = model.apiUrl.touched || model.apiKey.touched || model.imageTouched || model.modelTouched || model.workflowTouched;
+      const dirty = model.apiKey.touched || model.workflowTouched;
       saved.textContent = dirty ? t.storyDmApiPending : model.saved ? t.storyDmApiSaved : t.storyDmApiUnset;
       support.textContent = model.supported ? "" : t.storyDmApiUnsupported;
       save.disabled = Boolean(model.busy) || !model.loaded || !dirty;
       clear.disabled = Boolean(model.busy) || !model.loaded || !model.saved;
       cancel.disabled = Boolean(model.busy) || !dirty;
       reload.disabled = Boolean(model.busy);
-      fields.apiUrl.input.disabled = !model.supported;
-      fields.apiKey.input.disabled = !model.supported;
+      keyInput.disabled = !model.supported;
       const hasWorkflow = Boolean(model.workflow.trim());
       workflowBadge.textContent = hasWorkflow ? t.storyImageWorkflowOn : t.storyImageWorkflowOff;
       workflowBadge.className = hasWorkflow ? "sw-badge sw-settings-state sw-settings-state-on" : "sw-badge sw-settings-state";
-      container.setAttribute("aria-busy", String(Boolean(model.busy)));
-    }
-    function setImageEnabled(enabled) {
-      model.imagesEnabled = enabled === true;
       imageBadge.textContent = model.imagesEnabled ? t.storyImageOn : t.storyImageOff;
       imageBadge.className = model.imagesEnabled ? "sw-badge sw-settings-state sw-settings-state-on" : "sw-badge sw-settings-state";
+      manualButton.disabled = Boolean(model.busy) || imageBusy || !model.imagesEnabled;
+      manualButton.textContent = imageBusy ? t.storyImagePending : t.storyImageManual;
+      manualCard.hidden = !model.direct;
+      container.setAttribute("aria-busy", String(Boolean(model.busy)));
+    }
+    function setImageState({ enabled, direct } = {}) {
+      if (typeof enabled === "boolean") model.imagesEnabled = enabled;
+      if (typeof direct === "boolean") model.direct = direct;
+      paint();
     }
     async function load() {
       if (model.busy) return;
@@ -3597,7 +3420,7 @@ function mountPanel(root, ctx) {
         applySafeView(result);
         model.loaded = true;
         status.textContent = "";
-        for (const field of Object.values(fields)) if (!model[field.input.getAttribute("data-private-setting")].touched) field.repaint();
+        repaintKey();
       } catch {
         if (!disposed) error.textContent = t.settingsLoadFailure;
       } finally {
@@ -3608,47 +3431,33 @@ function mountPanel(root, ctx) {
       }
     }
     const saveBar = node("div", { class: "sw-settings-actions" }, actionRow(save, cancel, clear, reload));
-    const dmCard = node(
+    const keyCard = node(
       "section",
       { class: "sw-card sw-card-pad sw-private-settings-card" },
       node(
         "div",
         { class: "sw-settings-card-head" },
-        node("div", { class: "sw-settings-card-title" }, icon("settings"), node("div", {}, node("h3", {}, t.storyDmTitle), node("p", { class: "sw-card-summary" }, t.storyDmSummary))),
+        node("div", { class: "sw-settings-card-title" }, icon("settings"), node("div", {}, node("h3", {}, t.settingsKeyTitle), node("p", { class: "sw-card-summary" }, t.settingsKeySummary))),
         saved
       ),
-      node("div", { class: "sw-private-grid" }, url, key),
-      node("label", { class: "sw-setting-field" }, t.storyDmModel, modelInput),
+      node("label", { class: "sw-setting-field" }, t.storyDmApiKey, keyInput),
+      note(t.settingsKeyHint),
       support,
-      node("details", { class: "sw-settings-help" }, node("summary", {}, t.storyDmHelpSummary), note(t.storyDmApiHint)),
-      saveBar,
-      status,
-      error
+      node("details", { class: "sw-settings-help" }, node("summary", {}, t.storyDmHelpSummary), note(t.storyDmApiHint))
     );
-    const imageCard = node(
+    const manualCard = node(
       "section",
-      { class: "sw-card sw-card-pad sw-settings-image-card" },
-      node("div", { class: "sw-settings-subhead" }, node("div", {}, node("h3", {}, t.storyImageTitle), node("p", { class: "sw-card-summary" }, t.storyImageSummary)), imageBadge),
-      node("label", { class: "sw-setting-field" }, t.storyImageSource, source),
-      node("details", { class: "sw-settings-help" }, node("summary", {}, t.storyImageHelpSummary), note(t.storyImageSourceHint)),
-      workflowBox,
-      note(t.storyImageSettingsHint)
+      { class: "sw-card sw-card-pad sw-settings-manual" },
+      node("div", { class: "sw-settings-subhead" }, node("div", {}, node("h3", {}, t.settingsImageManualTitle), node("p", { class: "sw-card-summary" }, t.settingsImageManualSummary)), imageBadge),
+      node("p", { class: "sw-card-note" }, t.settingsImageManualHint),
+      node("div", { class: "sw-settings-actions" }, actionRow(manualButton)),
+      imageOutput,
+      workflowBox
     );
-    const container = node("div", { class: "sw-settings-stack sw-private-settings" }, dmCard, imageCard);
+    manualCard.hidden = true;
+    const container = node("div", { class: "sw-settings-stack sw-private-settings" }, keyCard, manualCard, saveBar, status, error);
     paint();
-    return { node: container, load, clear: clearPrivate, setImageEnabled };
-  }
-  function validImageSource(value) {
-    const urls = value.match(/[a-z][a-z\d+.-]*:\/\/\S+/ig) ?? [];
-    return urls.every((address) => {
-      try {
-        const url = new URL(address);
-        const local = url.hostname === "localhost" || url.hostname === "[::1]" || /^127\./.test(url.hostname);
-        return ["http:", "https:"].includes(url.protocol) && local && url.pathname === "/" && !url.username && !url.password && !url.search && !url.hash;
-      } catch {
-        return false;
-      }
-    });
+    return { node: container, load, clear: clearPrivate, setImageState };
   }
   async function requestImage() {
     if (imageBusy) return;
@@ -3691,100 +3500,32 @@ function mountPanel(root, ctx) {
       if (!disposed) render();
     }
   }
-  function settingsPart(title, intro, ...children) {
-    return node(
-      "section",
-      { class: "sw-settings-part" },
-      node("div", { class: "sw-settings-part-head" }, node("h3", {}, title), intro ? node("p", {}, intro) : null),
-      ...children
-    );
-  }
   function settings(state) {
-    if (!nodeLimitSettings) nodeLimitSettings = buildNodeLimitSettings();
-    void nodeLimitSettings.load();
-    if (!privateSettings) {
-      privateSettings = buildPrivateSettings();
-      void privateSettings.load();
+    if (!advancedSettings) {
+      advancedSettings = buildAdvancedSettings();
+      void advancedSettings.load();
     }
-    privateSettings.setImageEnabled(state?.snapshot?.images?.enabled === true);
-    const slots = RESOURCE_SLOTS.filter((slot) => slot.id !== "creek-letter-ending").map((slot) => {
-      const file = node("input", { type: "file", accept: "image/png,image/jpeg,image/webp", hidden: true, "aria-label": `导入${slot.title}插画` });
-      file.addEventListener("change", async () => {
-        const picked = file.files?.[0];
-        if (!picked || importing) return;
-        importing = slot.id;
-        localError = "";
-        localNotice = "";
-        render();
-        try {
-          await artwork.import(slot.id, picked);
-          if (!disposed) localNotice = "插画已应用。浏览器允许时会保留在本面板的本地存储中。";
-        } catch (error) {
-          if (!disposed) localError = error.message ?? "图片导入失败。";
-        } finally {
-          importing = "";
-          if (!disposed) render();
-        }
-      });
-      return node(
-        "section",
-        { class: "sw-card sw-resource" },
-        scene(slot.id, slot.title, "", { tag: artwork.get(slot.id) ? "已设置插画" : "默认示意场景" }),
-        node(
-          "div",
-          { class: "sw-card-pad" },
-          node("code", {}, slot.id),
-          node("p", {}, slot.description),
-          file,
-          actionRow(
-            button(importing === slot.id ? "正在读取…" : "选择本地图", () => file.click(), { icon: "image", small: true, disabled: Boolean(importing), key: `import-${slot.id}` }),
-            artwork.get(slot.id) ? button("恢复示意", () => artwork.clear(slot.id), { quiet: true, small: true, key: `clear-${slot.id}` }) : null
-          )
-        )
-      );
-    });
+    const images = state?.snapshot?.images ?? {};
+    advancedSettings.setImageState({ enabled: images.enabled === true, direct: images.sourceKind === "comfyui" });
     return node(
       "div",
       { class: "sw-stack" },
       node("div", { class: "sw-lead" }, node("h2", {}, t.settingsTitle), node("p", {}, t.settingsIntro)),
-      settingsPart(t.settingsPartLength, t.settingsPartLengthHint, nodeLimitSettings.node),
-      settingsPart(t.settingsPartPrivate, t.settingsPartPrivateHint, privateSettings.node),
-      settingsPart(
-        t.settingsPartImage,
-        t.settingsPartImageHint,
-        node(
-          "section",
-          { class: "sw-card sw-card-pad" },
-          node("div", { class: "sw-side-title" }, icon("image"), t.storyImageTitle),
-          node("p", { class: "sw-card-note" }, state?.snapshot?.images?.message ?? t.storyImageUnavailable),
-          actionRow(button(
-            imageBusy ? t.storyImagePending : t.storyImageGenerate,
-            () => void requestImage(),
-            { disabled: imageBusy || !state?.snapshot?.images?.enabled && !state?.snapshot?.images?.generationAvailable, key: "story-image" }
-          )),
-          imageOutput
-        )
-      ),
-      settingsPart(
-        t.settingsPartArtwork,
-        t.settingsPartArtworkHint,
-        node("div", { class: "sw-settings-grid" }, slots),
-        node(
-          "section",
-          { class: "sw-card sw-card-pad" },
-          node("div", { class: "sw-side-title" }, icon("info"), t.settingsArtworkAbout),
-          node("p", { class: "sw-card-note" }, "仅接受 PNG、JPEG、WebP，每张不超过 2 MB、1600 万像素。文件类型与内容会经过检查，不接受 SVG。图片不会上传；请只导入你有权使用的素材。"),
-          note(t.localStorageHint),
-          note("清理浏览器数据可能移除插画。图片加载失败时会回到文字与示意场景，操作入口照常保留。")
-        )
-      ),
-      settingsPart(
-        t.settingsPartElsewhere,
-        null,
+      advancedSettings.node,
+      node(
+        "section",
+        { class: "sw-settings-part" },
+        node("div", { class: "sw-settings-part-head" }, node("h3", {}, t.settingsPartElsewhere)),
         node(
           "section",
           { class: "sw-card sw-card-pad" },
           node("div", { class: "sw-side-title" }, icon("settings"), t.settingsElsewhereTitle),
+          node(
+            "ul",
+            { class: "sw-where-list" },
+            node("li", {}, t.settingsWhereLength),
+            node("li", {}, t.settingsWhereArtwork)
+          ),
           node("p", { class: "sw-card-note" }, t.settingsElsewhereNote)
         )
       )
@@ -3816,6 +3557,7 @@ function mountPanel(root, ctx) {
         "div",
         { class: "sw-top-actions" },
         node("span", { class: "sw-status" }, node("span", { class: "sw-dot" }), snapshot?.trip ? "旅途进行中" : "欢迎回家"),
+        autoImageSwitch(snapshot),
         button(
           immersive ? "沉浸中" : "沉浸",
           () => {
@@ -3872,7 +3614,7 @@ function mountPanel(root, ctx) {
   render();
   function dispose() {
     if (disposed) return;
-    privateSettings?.clear();
+    advancedSettings?.clear();
     controller.dispose();
     disposed = true;
     ctx.signal?.removeEventListener("abort", dispose);
@@ -5663,6 +5405,13 @@ var STYLES2 = `
 .fpl summary { cursor: pointer; color: var(--fpl-accent); }
 .fpl ul { padding-left: 1.3em; margin: 0; }
 .fpl .fpl-relation + .fpl-relation, .fpl .fpl-import-row + .fpl-import-row { border-top: 1px solid var(--fpl-line); padding-top: 12px; }
+.fpl-artwork-grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); }
+.fpl-artwork-card { display: grid; gap: 9px; align-content: start; }
+.fpl-artwork-preview { display: grid; place-items: center; overflow: hidden; border: 1px solid var(--fpl-line); border-radius: 8px; aspect-ratio: 16 / 9; background: var(--fpl-soft); }
+.fpl-artwork-preview > img { width: 100%; height: 100%; min-width: 0; min-height: 0; object-fit: cover; }
+.fpl-artwork-card code { font-size: 11px; color: var(--fpl-muted); }
+.fpl-notice { border: 1px solid var(--fpl-line); border-radius: 8px; padding: 8px 10px; background: var(--fpl-soft); }
+.fpl-error { color: var(--destructive, #ae4141); }
 @media (max-width: 420px) {
   .fpl { padding-inline: 0; }
   .fpl-card { padding: 10px; }
@@ -5739,6 +5488,13 @@ function mountPlaces(ctx) {
   let image;
   let imageError;
   let confirmAction;
+  let artworkBusy = "";
+  let artworkNotice = "";
+  let artworkError = "";
+  const artworkFailed = /* @__PURE__ */ new Set();
+  const artwork = createArtworkStore(ctx, () => {
+    if (live() && view === "artwork") render();
+  });
   const live = () => !disposed && !ctx.signal?.aborted;
   const places = () => list2(snapshot?.places);
   const find = (id) => places().find((place) => place.id === id);
@@ -6384,6 +6140,83 @@ function mountPlaces(ctx) {
     paint();
     return wrapper;
   }
+  async function importArtwork(slot, input) {
+    const picked = input.files?.[0];
+    if (!picked || artworkBusy) return;
+    artworkBusy = slot.id;
+    artworkError = "";
+    artworkNotice = "";
+    render();
+    try {
+      const result = await artwork.import(slot.id, picked);
+      if (!live()) return;
+      artworkFailed.delete(slot.id);
+      artworkNotice = result?.persistent ? "插画已应用，并保存在这台浏览器里。" : "插画已应用；这个浏览器不允许长期保存，刷新后会没有。";
+    } catch (error) {
+      if (!live()) return;
+      artworkError = error?.message || "图片导入失败。";
+    } finally {
+      artworkBusy = "";
+      if (live()) render();
+    }
+  }
+  function artworkView() {
+    const slots = RESOURCE_SLOTS.filter((slot) => slot.id !== "creek-letter-ending");
+    const cards = slots.map((slot) => {
+      const saved = artwork.get(slot.id);
+      const failed = artworkFailed.has(slot.id);
+      const hasArt = Boolean(saved || failed);
+      const file = node2("input", { type: "file", accept: "image/png,image/jpeg,image/webp", hidden: true, "aria-label": `导入${slot.title}插画` });
+      file.addEventListener("change", () => void importArtwork(slot, file));
+      const preview = node2("div", { class: "fpl-artwork-preview" });
+      if (saved) {
+        const picture = node2("img", { src: saved, alt: `${slot.title}的本地插画`, decoding: "async" });
+        picture.addEventListener("error", () => {
+          artwork.markFailed(slot.id);
+          artworkFailed.add(slot.id);
+          artworkError = "这张图没能显示，已回到示意场景。";
+          if (live()) render();
+        }, { once: true });
+        preview.append(picture);
+      } else {
+        preview.append(node2("p", { class: "fpl-muted" }, failed ? "图片未能加载 · 默认示意场景" : "默认示意场景"));
+      }
+      return node2(
+        "section",
+        { class: "fpl-card fpl-artwork-card" },
+        node2("div", {}, node2("h4", {}, slot.title), node2("p", { class: "fpl-muted" }, slot.description)),
+        preview,
+        node2("code", {}, `story-artwork-v1:${slot.id}`),
+        row(
+          button2(artworkBusy === slot.id ? "正在读取…" : saved ? "换一张本地图" : "选择本地图", () => file.click(), { disabled: Boolean(artworkBusy) }),
+          hasArt ? button2("恢复示意", () => {
+            artwork.clear(slot.id);
+            artworkFailed.delete(slot.id);
+            artworkError = "";
+            artworkNotice = "已恢复示意场景。";
+            render();
+          }) : null
+        ),
+        file
+      );
+    });
+    return node2(
+      "section",
+      { class: "fpl-stack" },
+      node2("h3", { tabindex: -1 }, "本地插画"),
+      note2("只存在这台浏览器里，不上传；换浏览器或清缓存会没有。导入后回到这里、或重新进一次出游面板就能看到。"),
+      artworkNotice ? node2("p", { class: "fpl-notice", role: "status" }, artworkNotice) : null,
+      artworkError ? node2("p", { class: "fpl-error", role: "alert" }, artworkError) : null,
+      node2("div", { class: "fpl-artwork-grid" }, cards),
+      node2(
+        "section",
+        { class: "fpl-card fpl-stack" },
+        node2("h4", {}, "关于本地插画"),
+        node2("p", {}, "仅接受 PNG、JPEG、WebP，每张不超过 2 MB、1600 万像素；会检查文件类型与内容，不接受 SVG。图片不会上传，请只导入你有权使用的素材。"),
+        note2("清理浏览器数据可能移除插画；图片加载失败时会回到文字与示意场景，操作入口照常保留。")
+      )
+    );
+  }
   function settings() {
     editRevision = snapshot.revision;
     const style = node2("textarea", { rows: 3 }, snapshot.defaultStyle || "");
@@ -6427,13 +6260,14 @@ function mountPlaces(ctx) {
   function render() {
     if (!live()) return;
     const active = ["detail", "edit", "create", "cover", "browse"].includes(view) ? "browse" : view;
-    navigation.replaceChildren(...[["browse", "浏览地点"], ["settings", "住所与画风"], ["migration", "从小世界迁入"]].map(([id, label2]) => button2(label2, () => {
+    navigation.replaceChildren(...[["browse", "浏览地点"], ["settings", "住所与画风"], ["artwork", "本地插画"], ["migration", "从小世界迁入"]].map(([id, label2]) => button2(label2, () => {
       tell();
       go(id);
     }, { "aria-current": active === id ? "page" : null })), button2("刷新", refresh));
     let contents;
     if (!snapshot) contents = node2("p", { class: "fpl-empty" }, "正在读取地点库…");
     else if (view === "settings") contents = settings();
+    else if (view === "artwork") contents = artworkView();
     else if (view === "migration") contents = migration.render();
     else if (view === "create") contents = editor();
     else if (view === "edit" && detail) contents = editor(detail);

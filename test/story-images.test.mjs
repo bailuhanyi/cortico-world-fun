@@ -15,12 +15,18 @@ const deferred = () => {
 };
 const tick = () => new Promise((resolve) => setImmediate(resolve));
 
+/**
+ * 0.7.3：图片来源住在配置里，StoryImages 只注入一个读取器。
+ * 测试用一个可变对象模拟 `worlds.fun.funStoryImageSource`。
+ */
 async function setup(t, options = {}) {
   const dataDir = await mkdtemp(join(tmpdir(), 'fun-r2-images-'));
   t.after(() => rm(dataDir, { recursive: true, force: true }));
-  const images = new StoryImages({ dataDir, ...options });
+  const { source: initialSource = '', ...rest } = options;
+  const config = { source: initialSource };
+  const images = new StoryImages({ dataDir, ...rest, source: () => config.source });
   await images.init();
-  return { images, dataDir, directory: join(dataDir, 'fun', 'story-images') };
+  return { images, dataDir, config, directory: join(dataDir, 'fun', 'story-images') };
 }
 
 function mockComfy(overrides = {}) {
@@ -48,7 +54,9 @@ function mockComfy(overrides = {}) {
 async function direct(t, options = {}, overrides = {}) {
   const mock = mockComfy(overrides);
   const context = await setup(t, { fetchImpl: mock.fetchImpl, pollIntervalMs: 1, ...options });
-  assert.equal((await context.images.configure({ source: 'http://127.0.0.1:8188' })).ok, true);
+  context.config.source = 'http://127.0.0.1:8188';
+  // 生产里 settings.json 由工作流保存创建；测试也先落一个，目录断言才稳定。
+  assert.equal((await context.images.configure({})).ok, true);
   return { ...context, ...mock };
 }
 
@@ -63,10 +71,10 @@ function assertSafeFailure(result) {
 test('off never invokes fetch or plugin detection, including when a local endpoint is configured', async (t) => {
   let requests = 0;
   let detections = 0;
-  const { images } = await setup(t, { fetchImpl: () => { requests++; throw new Error('forbidden'); }, detectPlugin: () => { detections++; return true; } });
+  const { images, config } = await setup(t, { fetchImpl: () => { requests++; throw new Error('forbidden'); }, detectPlugin: () => { detections++; return true; } });
   assert.equal(images.status(false).state, 'off');
   assert.equal((await images.generate({ ...draft, enabled: false })).status, 'off');
-  await images.configure({ source: 'http://127.0.0.1:8188' });
+  config.source = 'http://127.0.0.1:8188';
   assert.equal((await images.generate({ ...draft, enabled: false })).status, 'off');
   assert.equal(requests, 0);
   assert.equal(detections, 0);
@@ -112,18 +120,20 @@ test('failed or nonboolean capability detection remains unknown', async (t) => {
 });
 
 test('plain text names and instructions delegate to the main conversation with zero HTTP', async (t) => {
-  const { images, dataDir, directory } = await setup(t, { fetchImpl: () => assert.fail('cannot fetch') });
+  const { images, config, dataDir, directory } = await setup(t, { fetchImpl: () => assert.fail('cannot fetch') });
   const source = '其他绘图插件，请画成水彩';
-  assert.equal((await images.configure({ source })).ok, true);
+  config.source = source;
   const result = await images.generate(draft);
   assert.equal(result.status, 'delegated');
   assert.equal(result.source, source);
   assert.match(result.message, /未验证其安装或接口/);
-  assert.equal(JSON.parse(await readFile(join(directory, 'settings.json'), 'utf8')).source, source);
-  const reloaded = new StoryImages({ dataDir, fetchImpl: () => assert.fail('cannot fetch') });
+  // 来源在配置里：settings.json 即使已经存在，也只该有工作流。
+  const saved = JSON.parse(await readFile(join(directory, 'settings.json'), 'utf8').catch(() => '{}'));
+  assert.equal(Object.hasOwn(saved, 'source'), false);
+  const reloaded = new StoryImages({ dataDir, source: () => config.source, fetchImpl: () => assert.fail('cannot fetch') });
   await reloaded.init();
   assert.equal(reloaded.status(true).source, source);
-  await reloaded.configure({ source: '' });
+  config.source = '';
   assert.equal(reloaded.status(true).source, '');
   assert.equal((await reloaded.generate(draft)).tool, 'imggen_draw');
 });
@@ -341,16 +351,18 @@ test('an already aborted signal performs zero network requests', async (t) => {
   assert.equal(calls.length, 0);
 });
 
-test('malformed independent settings fall back safely and settings writes serialize', async (t) => {
-  const { images, dataDir, directory } = await direct(t);
-  const saved = await Promise.all([images.configure({ source: '插件一' }), images.configure({ source: '插件二' })]);
+test('malformed independent settings fall back safely, writes serialize, and settings.json keeps only the workflow', async (t) => {
+  const { images, dataDir, directory, config } = await direct(t);
+  const saved = await Promise.all([images.configure({ workflow: WORKFLOW }), images.configure({ workflow: '' })]);
   assert.equal(saved.every(({ ok }) => ok), true);
-  assert.equal(images.status(true).source, '插件二');
-  assert.equal(JSON.parse(await readFile(join(directory, 'settings.json'), 'utf8')).source, '插件二');
+  const stored = JSON.parse(await readFile(join(directory, 'settings.json'), 'utf8'));
+  assert.deepEqual(Object.keys(stored), ['workflow']);
+  assert.equal(stored.workflow, '');
   await writeFile(join(directory, 'settings.json'), '{malformed');
-  const fresh = new StoryImages({ dataDir });
+  const fresh = new StoryImages({ dataDir, source: () => config.source });
   await fresh.init();
-  assert.equal(fresh.status(true).source, '');
+  assert.equal(fresh.status(true).hasWorkflow, false);
+  assert.equal(fresh.status(true).source, 'http://127.0.0.1:8188', '来源来自配置，不读旧文件');
 });
 
 const WORKFLOW = JSON.stringify({
@@ -397,7 +409,7 @@ test('自定义工作流直连：不再问 checkpoint，工作流原样提交，
   const { images, calls } = await direct(t, {}, {
     history: () => json({ 'test-job-123': { outputs: { '77': { images: [{ filename: 'x.png', subfolder: '', type: 'output' }] } } } }),
   });
-  assert.equal((await images.configure({ source: 'http://127.0.0.1:8188', workflow: WORKFLOW })).ok, true);
+  assert.equal((await images.configure({ workflow: WORKFLOW })).ok, true);
   assert.equal(images.status(true).hasWorkflow, true);
   assert.match(images.status(true).message, /你自己贴的工作流/);
   const result = await images.generate(draft);
@@ -410,19 +422,21 @@ test('自定义工作流直连：不再问 checkpoint，工作流原样提交，
   assert.ok((await images.read(result.imageId)).ok);
 });
 
-test('自定义工作流：保存后可重启读回，清空即回到内置，坏工作流不覆盖已保存的来源', async (t) => {
-  const { images, dataDir, directory } = await setup(t, { fetchImpl: () => assert.fail('cannot fetch') });
-  assert.equal((await images.configure({ source: 'http://127.0.0.1:8188', workflow: '{' })).ok, false);
-  assert.equal(images.status().source, '', '坏工作流不应写入来源');
-  assert.equal((await images.configure({ source: 'http://127.0.0.1:8188', workflow: WORKFLOW })).ok, true);
+test('自定义工作流：保存后可重启读回，清空即回到内置，坏工作流不覆盖已保存的工作流', async (t) => {
+  const { images, dataDir, directory, config } = await setup(t, { fetchImpl: () => assert.fail('cannot fetch') });
+  config.source = 'http://127.0.0.1:8188';
+  assert.equal((await images.configure({ workflow: '{' })).ok, false);
+  assert.equal(images.status().hasWorkflow, false, '坏工作流不应写入');
+  assert.equal(images.status().source, 'http://127.0.0.1:8188', '来源不受工作流影响');
+  assert.equal((await images.configure({ workflow: WORKFLOW })).ok, true);
   assert.match(JSON.parse(await readFile(join(directory, 'settings.json'), 'utf8')).workflow, /\{\{prompt\}\}/);
-  const reloaded = new StoryImages({ dataDir });
+  const reloaded = new StoryImages({ dataDir, source: () => config.source });
   await reloaded.init();
   assert.equal(reloaded.status(true).hasWorkflow, true);
   assert.equal(reloaded.status(true).workflow, WORKFLOW);
-  assert.equal((await reloaded.configure({ source: 'http://127.0.0.1:8188', workflow: '' })).ok, true);
+  assert.equal((await reloaded.configure({ workflow: '' })).ok, true);
   assert.equal(reloaded.status(true).hasWorkflow, false);
-  const plain = new StoryImages({ dataDir });
+  const plain = new StoryImages({ dataDir, source: () => config.source });
   await plain.init();
   assert.equal(plain.status(true).hasWorkflow, false);
   assert.equal(JSON.parse(await readFile(join(directory, 'settings.json'), 'utf8')).workflow, '');

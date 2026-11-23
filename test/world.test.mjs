@@ -117,13 +117,17 @@ test('配置段缺键会被补齐（宿主 /api/config 不合并 defaults）', a
   await world.start({ log: { info() {}, warn() {} } });
   assert.equal(persisted.length, 1);
   assert.deepEqual(Object.keys(persisted[0]).sort(),
-    ['funAskReport', 'funAutoCalls', 'funAutoSteps', 'funHomeAutoGo', 'funHomeAutoSlots', 'funSessionTTLMin', 'funStoryAuthorInChat', 'funStoryAutoImages', 'funStoryDM', 'funStoryFree', 'funStoryFreeTurns', 'funStoryImages', 'funStoryTextOn', 'funTasteFromFeast']);
+    ['funAskReport', 'funAutoCalls', 'funAutoSteps', 'funHomeAutoGo', 'funHomeAutoSlots', 'funSessionTTLMin', 'funStoryAuthorInChat', 'funStoryAutoImages', 'funStoryDM', 'funStoryDmModel', 'funStoryDmUrl', 'funStoryFree', 'funStoryFreeTurns', 'funStoryImageSource', 'funStoryImages', 'funStoryNodeLimit', 'funStoryTextOn', 'funTasteFromFeast']);
   assert.equal(persisted[0].funAskReport, true);
   assert.equal(persisted[0].funSessionTTLMin, 90);
   assert.equal(persisted[0].funAutoSteps, 20);
   assert.equal(persisted[0].funAutoCalls, 6);
   assert.equal(persisted[0].funStoryImages, false);
   assert.equal(persisted[0].funStoryDM, false);
+  assert.equal(persisted[0].funStoryNodeLimit, 16);
+  assert.equal(persisted[0].funStoryDmUrl, '');
+  assert.equal(persisted[0].funStoryDmModel, '');
+  assert.equal(persisted[0].funStoryImageSource, '');
   assert.equal(persisted[0].funTasteFromFeast, true);
   assert.equal(persisted[0].funHomeAutoGo, false, '自动出门默认关');
 });
@@ -137,13 +141,14 @@ test('缺键补齐：盘上已有的值一个都不覆盖', async () => {
       funAskReport: false, funTasteFromFeast: false, funHomeAutoGo: false, funHomeAutoSlots: '10:30', funStoryImages: false, funStoryDM: true,
       funStoryTextOn: true, funStoryFree: false, funStoryFreeTurns: 40, funAutoSteps: 20, funAutoCalls: 6,
       funStoryAutoImages: true, funStoryAuthorInChat: false,
+      funStoryNodeLimit: 16, funStoryDmUrl: '', funStoryDmModel: '', funStoryImageSource: '',
     },
     dataDir: dir,
     timezone: TZ,
     persist: (patch) => { persisted.push(patch); },
   });
   await world.start({ log: { info() {}, warn() {} } });
-  assert.deepEqual(persisted, [], '十五项都在，不该补任何东西');
+  assert.deepEqual(persisted, [], '十九项都在，不该补任何东西');
 });
 
 test('fun_places：按开放时段排，正文带开没开和人多少', async () => {

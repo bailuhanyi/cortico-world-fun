@@ -2,6 +2,20 @@
 
 市场按 `##` 标题里的版本号切段，显示在「历史版本」里。
 
+## 0.7.3
+
+设置重组：把「出游 → 设置」拆成**配置页 / 地点册 / 出游页顶部开关**，出游「设置」只剩高级项。面板 id 与页签名不变（`story` 仍叫「出游」）。
+
+- **配置页新增 4 项**（全热改，改完不用重开 Coo）：`funStoryNodeLimit`（故事长度，默认 16，0 = 不限）、`funStoryDmUrl`（主持接口地址，空 = 沿用宿主）、`funStoryDmModel`（主持模型名，空 = 接口默认）、`funStoryImageSource`（剧情图片来源，空 = 委派「鱼的生图包」/ 本机 loopback URL = 直连 ComfyUI / 其他文本 = 指定插件）。配置页从 15 项变 19 项。
+- **一次性迁移，旧值不丢、不重复写**：旧 `fun/story-node-limit.json` 的节点数、`fun/story-secrets.json` 密文里的地址与模型、`fun/story-images/settings.json` 的来源，在启动时搬进配置并 `persist`；搬完把密文重写成「只含 API Key」，`settings.json` 只留 `workflow`。第二次启动不再写。迁移失败只记日志，不阻止启动。
+- **密钥仍不进普通配置**：API Key 继续留在「出游 → 设置 → 高级 → 文本主持密钥」，只存本机 Windows DPAPI 密文；配置页的地址/模型描述里写明「密钥在出游设置 → 高级」。直连请求改成现读配置里的地址与模型。
+- **顶栏「自动配图」开关**：`sw-top-actions` 新增 `role="switch"`（沉浸按钮左边），绑定 `funStoryAutoImages`；新 RPC `saveStoryAutoImages` 落盘、失败回滚。无进行中的行程或 `funStoryImages` 总闸关着时禁用，并用 `aria-live` 小字说明原因。直连 ComfyUI 的手动「生成当前场景图片」降级到「设置 → 高级」，只在直连来源时出现。
+- **本地插画搬进地点册**：导航新增「本地插画」，复用 `webui/story/resources.js` 的槽位、校验与存储键（`story-artwork-v1:<slot>`），已导入的图不丢；导入后刷新仍在，坏图回落示意且保留「恢复示意」出口，`creek-letter-ending` 不显示。出游设置里的插画区删除。
+- **出游「设置」收尾**：改名「高级设置」，只剩密钥、直连手动出图（含折叠的自定义工作流）和「其他设置在哪里」；删掉节点上限、图片来源、接口地址、模型名输入与旧「五节」文案。中英文案同步。
+- **文档**：用户手册 §15 / §15.1 / §15.2 与 README 配置表按新位置改写（手册/README 里不再有「在出游设置改图片来源」的说法）。
+- 测试：`story-config` 增迁移/幂等/开关落盘/回滚用例，`story-images` 改成注入 source 读取器，`story-secrets` 增「只含密钥」与迁移用例，`places` 增本地插画导入/刷新/坏图/格式用例，`story webui` 重写设置页与顶栏开关用例。全链除沙箱里的 DPAPI 环境用例外全绿；`npm run verify` 全绿。
+- 版本号升到 0.7.3；`npm pack` 后再做群友包与装机（见 HANDOFF）。
+
 ## 0.7.2
 
 体检报告 `reports/fun-world-代码体检-20261123.md` 的 P0–P3 落实，另按群友反馈把文字通道默认打开。**无数据迁移**：`state.json` / `venues.json` / `stories.json` / `home/room.json` 的字段与语义都没变。

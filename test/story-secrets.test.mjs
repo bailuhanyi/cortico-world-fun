@@ -112,6 +112,46 @@ test('model name belongs to the user: set sends it, blank omits it, later edits 
   assert.equal(Object.hasOwn(JSON.parse(calls.at(-1).body), 'model'), false, 'blank model sends no model field');
 });
 
+test('0.7.3 key-only ciphertext: endpoint and model come from config, legacy record migrates once', async () => {
+  const dataDir = await fixture();
+  const crypto = encryption();
+  const config = { url: '', model: '' };
+  const calls = [];
+  const store = new StorySecrets({ dataDir, crypto, url: () => config.url, model: () => config.model,
+    fetch: async (url, init) => { calls.push({ url, body: JSON.parse(init.body), headers: init.headers }); return response(); } });
+  await store.load();
+  const saved = await store.save({ apiKey: KEY });
+  assert.equal(saved.ok, true);
+  assert.equal(saved.dm.saved, true);
+  assert.equal(saved.dm.model, '', '密钥记录不再带模型');
+  noLeak(await readFile(join(dataDir, 'fun', 'story-secrets.json'), 'utf8'));
+  const provider = await store.cognition(null);
+  await assert.rejects(provider.request({ brief: 'x' }), { code: 'NO_URL' });
+  config.url = API; config.model = 'config-model';
+  await provider.request({ brief: 'x' });
+  assert.equal(calls[0].url, `${API}/chat/completions`);
+  assert.equal(calls[0].body.model, 'config-model');
+  assert.equal(calls[0].headers.Authorization, `Bearer ${KEY}`);
+  noLeak(calls[0].body);
+
+  // 旧密文（地址 + 模型在里面）先读出、再重写成只含密钥。
+  const legacyDir = await fixture();
+  const older = new StorySecrets({ dataDir: legacyDir, crypto });
+  await older.save({ apiUrl: API, apiKey: KEY, model: 'legacy-model' });
+  assert.deepEqual(await older.legacyEndpoint(), { apiUrl: API, model: 'legacy-model' });
+  assert.equal((await older.rewriteKeyOnly()).ok, true);
+  assert.deepEqual(await older.legacyEndpoint(), { apiUrl: '', model: '' });
+  const rewritten = await readFile(join(legacyDir, 'fun', 'story-secrets.json'), 'utf8');
+  noLeak(rewritten);
+  assert.equal(rewritten.includes(Buffer.from(API).toString('base64').slice(0, 8)), false);
+  const moved = new StorySecrets({ dataDir: legacyDir, crypto, url: () => API, model: () => 'moved-model',
+    fetch: async (url, init) => { calls.push({ url, body: JSON.parse(init.body) }); return response(); } });
+  const movedProvider = await moved.cognition(null);
+  await movedProvider.request({ brief: 'x' });
+  assert.equal(calls.at(-1).url, `${API}/chat/completions`);
+  assert.equal(calls.at(-1).body.model, 'moved-model');
+});
+
 test('host cognition is unchanged when unset, omitted values preserve, paired blanks clear', async () => {
   const dataDir = await fixture();
   const host = { request: async () => ({ text: 'host' }) };
@@ -120,12 +160,15 @@ test('host cognition is unchanged when unset, omitted values preserve, paired bl
   assert.equal((await store.save({})).ok, true);
   assert.equal((await store.save({ apiUrl: API, apiKey: KEY })).ok, true);
   assert.equal((await store.save({})).dm.saved, true);
-  for (const input of [{ apiUrl: API }, { apiKey: KEY }, { apiUrl: API, apiKey: '' }, { apiUrl: '', apiKey: KEY }]) {
+  for (const input of [{ apiUrl: API }, { apiUrl: API, apiKey: '' }]) {
     const result = await store.save(input);
     assert.equal(result.ok, false);
     assert.equal(result.code, 'INVALID_PAIR');
     noLeak(result);
   }
+  // 0.7.3：只提交 API Key 是正常路径（地址与模型在配置里）。
+  assert.equal((await store.save({ apiKey: KEY })).ok, true);
+  assert.equal(store.status.saved, true);
   assert.equal((await store.save({ apiUrl: '', apiKey: '' })).ok, true);
   assert.equal(store.status.saved, false);
   assert.equal(await store.cognition(host), host);

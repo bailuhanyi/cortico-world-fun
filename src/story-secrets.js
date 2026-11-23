@@ -21,6 +21,7 @@ const MESSAGES = Object.freeze({
   API_NETWORK: '主持接口连接失败，请检查地址和网络后有限重试。',
   API_FORMAT: '主持接口返回格式无效；需要 OpenAI 兼容的 chat/completions JSON 响应。',
   API_MODEL: '主持模型未设置或格式无效，请使用现有宿主所选模型。',
+  NO_URL: '主持接口地址还没填；请到「配置 → 从0开始的肥鱼大冒险」填写接口地址与模型名。API Key 仍只存在本机，不放进配置。',
 });
 
 class StorySecretError extends Error {
@@ -42,15 +43,32 @@ function credentials(input) {
   const apiKey = input.apiKey.trim();
   if (!apiUrl && !apiKey) return null;
   if (!apiUrl || !apiKey) reject('INVALID_PAIR');
-  if (apiUrl.length > 2048 || /[\u0000-\u0020\u007f]/u.test(apiUrl)) reject('INVALID_URL');
-  let url;
-  try { url = new URL(apiUrl); } catch { reject('INVALID_URL'); }
-  if (!['https:', 'http:'].includes(url.protocol) || !url.hostname || url.username || url.password || url.search || url.hash) reject('INVALID_URL');
-  if (apiKey.length > 4096 || /[\u0000-\u0020\u007f]/u.test(apiKey)) reject('INVALID_KEY');
+  assertUrl(apiUrl);
+  assertKey(apiKey);
   // 模型名由用户填写，不预设任何厂商；留空表示交给接口自己的默认模型。
   const model = typeof input.model === 'string' ? input.model.trim() : '';
   if (model.length > 200 || /[\u0000-\u001f\u007f]/u.test(model)) reject('API_MODEL');
   return { apiUrl, apiKey, model };
+}
+
+/** 只有密钥的记录（0.7.3 起地址与模型在配置里，密钥仍单独加密保存）。 */
+function keyOnly(input) {
+  if (!input || typeof input.apiKey !== 'string') reject('INVALID_KEY');
+  const apiKey = input.apiKey.trim();
+  if (!apiKey) return null;
+  assertKey(apiKey);
+  return { apiUrl: '', apiKey, model: '' };
+}
+
+function assertKey(apiKey) {
+  if (apiKey.length > 4096 || /[\u0000-\u0020\u007f]/u.test(apiKey)) reject('INVALID_KEY');
+}
+
+function assertUrl(apiUrl) {
+  if (apiUrl.length > 2048 || /[\u0000-\u0020\u007f]/u.test(apiUrl)) reject('INVALID_URL');
+  let url;
+  try { url = new URL(apiUrl); } catch { reject('INVALID_URL'); }
+  if (!['https:', 'http:'].includes(url.protocol) || !url.hostname || url.username || url.password || url.search || url.hash) reject('INVALID_URL');
 }
 
 function endpoint(apiUrl) {
@@ -148,6 +166,8 @@ export class StorySecrets {
   #crypto;
   #fetch;
   #model = '';
+  #urlFrom;
+  #modelFrom;
   #timeout;
   #onInvalidate;
   #loaded = false;
@@ -159,7 +179,7 @@ export class StorySecrets {
   #requests = new Set();
 
   constructor({ dataDir, crypto = createDpapiCrypto(), fetch = globalThis.fetch,
-    timeout = 20_000, onInvalidate = () => {} } = {}) {
+    timeout = 20_000, onInvalidate = () => {}, url, model } = {}) {
     if (typeof dataDir !== 'string' || !isAbsolute(dataDir)) reject('SECRET_STORAGE');
     this.#dir = join(dataDir, 'fun');
     this.#file = join(this.#dir, 'story-secrets.json');
@@ -167,6 +187,9 @@ export class StorySecrets {
     this.#fetch = fetch;
     this.#timeout = timeout;
     this.#onInvalidate = onInvalidate;
+    // 0.7.3：地址与模型在配置里现读；密钥仍只存本机密文。
+    this.#urlFrom = typeof url === 'function' ? url : null;
+    this.#modelFrom = typeof model === 'function' ? model : null;
   }
 
   get status() {
@@ -215,7 +238,12 @@ export class StorySecrets {
     try {
       const decoded = await this.#crypto.unprotect(ciphertext);
       if (typeof decoded !== 'string' || Buffer.byteLength(decoded) > 16 * 1024) reject('SECRET_CRYPTO');
-      const value = credentials(JSON.parse(decoded));
+      const parsed = JSON.parse(decoded);
+      if (!parsed || typeof parsed !== 'object' || typeof parsed.apiKey !== 'string' || !parsed.apiKey.trim()) reject('SECRET_CRYPTO');
+      // 旧记录带地址与模型（成对校验）；新记录只有密钥，地址与模型从配置读。
+      const value = typeof parsed.apiUrl === 'string' && parsed.apiUrl.trim()
+        ? credentials(parsed)
+        : { apiUrl: '', apiKey: parsed.apiKey.trim(), model: '' };
       if (!value) reject('SECRET_CRYPTO');
       return value;
     } catch { reject('SECRET_CRYPTO'); }
@@ -247,6 +275,13 @@ export class StorySecrets {
     const hasKey = Object.hasOwn(input, 'apiKey');
     const hasModel = Object.hasOwn(input, 'model');
     if (!hasUrl && !hasKey && !hasModel) return this.load();
+    // 0.7.3：面板只提交 API Key；地址与模型在配置里。
+    if (hasKey && !hasUrl && !hasModel) {
+      let value;
+      try { value = keyOnly(input); } catch (error) { return Promise.resolve(this.#failure(error)); }
+      if (!value) return this.clear();
+      return this.#write(value);
+    }
     if (hasUrl || hasKey) {
       if (!hasUrl || !hasKey) return Promise.resolve(this.#failure(new StorySecretError('INVALID_PAIR')));
       let value;
@@ -265,6 +300,31 @@ export class StorySecrets {
     })();
   }
 
+  /** Internal only: the saved endpoint and model, for the one-time 0.7.3 config migration. */
+  async legacyEndpoint() {
+    try {
+      const ciphertext = await this.#read();
+      if (!ciphertext) return { apiUrl: '', model: '' };
+      const value = await this.#decrypt(ciphertext);
+      return { apiUrl: value.apiUrl, model: value.model };
+    } catch { return { apiUrl: '', model: '' }; }
+  }
+
+  /**
+   * 迁移写完配置后调用：把旧记录重写成「只含密钥」的密文。
+   * 地址与模型不再留在密文里；密钥本身仍是 DPAPI 密文。
+   */
+  async rewriteKeyOnly() {
+    try {
+      const ciphertext = await this.#read();
+      if (!ciphertext) return { ok: true, dm: this.status };
+      const value = await this.#decrypt(ciphertext);
+      return this.#write({ apiKey: value.apiKey });
+    } catch (error) {
+      return this.#failure(error);
+    }
+  }
+
   #write(value) {
     if (this.#crypto?.supported !== true) return Promise.resolve(this.#failure(new StorySecretError('WINDOWS_ONLY')));
     const revision = this.#invalidate();
@@ -277,7 +337,8 @@ export class StorySecrets {
         catch { reject('SECRET_CRYPTO'); }
         if (revision !== this.#revision) reject('SECRET_REVOKED');
         if (typeof ciphertext !== 'string' || !/^[A-Za-z0-9+/]+={0,2}$/u.test(ciphertext)
-          || ciphertext.length > MAX_FILE_BYTES - 256 || ciphertext.includes(value.apiKey) || ciphertext.includes(value.apiUrl)) reject('SECRET_CRYPTO');
+          || ciphertext.length > MAX_FILE_BYTES - 256 || (value.apiKey && ciphertext.includes(value.apiKey))
+          || (value.apiUrl && ciphertext.includes(value.apiUrl))) reject('SECRET_CRYPTO');
         await safeDirectory(this.#dir, true);
         // Reject an existing symlink before replacing the file.
         await this.#read();
@@ -373,9 +434,14 @@ export class StorySecrets {
         const value = await this.#decrypt(ciphertext);
         current();
         if (controller.signal.aborted) reject(timedOut ? 'API_TIMEOUT' : 'SECRET_REVOKED');
-        const model = value.model;
-        if (model && (model.length > 200 || /[\u0000-\u001f\u007f]/u.test(model))) reject('API_MODEL');
-        const url = endpoint(value.apiUrl);
+        const model = String(this.#modelFrom?.() ?? '').trim() || value.model;
+        if (model && (typeof model !== 'string' || model.length > 200 || /[\u0000-\u001f\u007f]/u.test(model))) reject('API_MODEL');
+        // 0.7.3：地址优先读配置；旧密文里的地址只作迁移前的回退。
+        const configured = String(this.#urlFrom?.() ?? '').trim();
+        const apiUrl = configured || value.apiUrl;
+        if (!apiUrl) reject('NO_URL');
+        try { assertUrl(apiUrl); } catch { reject('INVALID_URL'); }
+        const url = endpoint(apiUrl);
         let response;
         try {
           response = await this.#fetch(url, {
@@ -396,7 +462,7 @@ export class StorySecrets {
         const text = parsed?.choices?.[0]?.message?.content;
         // A malicious upstream must not turn its response into a secret echo.
         if (typeof text !== 'string' || !text.trim() || text.length > 2500
-          || [value.apiKey, value.apiUrl, url].some((secret) => text.includes(secret))) reject('API_FORMAT');
+          || [value.apiKey, apiUrl, url].filter(Boolean).some((secret) => text.includes(secret))) reject('API_FORMAT');
         const usage = parsed.usage;
         const input = usage?.prompt_tokens;
         const output = usage?.completion_tokens;

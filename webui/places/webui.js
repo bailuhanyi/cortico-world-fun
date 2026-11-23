@@ -1,6 +1,7 @@
 import { dom, hasSafeImage, list, pictureData, styleDescription } from './helpers.js';
 import { createMigrationView } from './migration.js';
 import { STYLES } from './styles.js';
+import { createArtworkStore, RESOURCE_SLOTS } from '../story/resources.js';
 
 const split = (value) => [...new Set(value.split(/[\n，、,；;]+/u).map((item) => item.trim()).filter(Boolean))];
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
@@ -61,6 +62,12 @@ export function mountPlaces(ctx) {
   let image;
   let imageError;
   let confirmAction;
+  let artworkBusy = '';
+  let artworkNotice = '';
+  let artworkError = '';
+  /** 图片解码失败的槽位：仍要留「恢复示意」，否则坏图会把唯一的出口也藏掉。 */
+  const artworkFailed = new Set();
+  const artwork = createArtworkStore(ctx, () => { if (live() && view === 'artwork') render(); });
   const live = () => !disposed && !ctx.signal?.aborted;
   const places = () => list(snapshot?.places);
   const find = (id) => places().find((place) => place.id === id);
@@ -505,6 +512,73 @@ export function mountPlaces(ctx) {
     paint();
     return wrapper;
   }
+  /** 本地插画：槽位与校验复用出游面板那一套，存储键不变，已导入的图不会丢。 */
+  async function importArtwork(slot, input) {
+    const picked = input.files?.[0];
+    if (!picked || artworkBusy) return;
+    artworkBusy = slot.id; artworkError = ''; artworkNotice = '';
+    render();
+    try {
+      const result = await artwork.import(slot.id, picked);
+      if (!live()) return;
+      artworkFailed.delete(slot.id);
+      artworkNotice = result?.persistent
+        ? '插画已应用，并保存在这台浏览器里。'
+        : '插画已应用；这个浏览器不允许长期保存，刷新后会没有。';
+    } catch (error) {
+      if (!live()) return;
+      artworkError = error?.message || '图片导入失败。';
+    } finally {
+      artworkBusy = '';
+      if (live()) render();
+    }
+  }
+  function artworkView() {
+    const slots = RESOURCE_SLOTS.filter((slot) => slot.id !== 'creek-letter-ending');
+    const cards = slots.map((slot) => {
+      const saved = artwork.get(slot.id);
+      const failed = artworkFailed.has(slot.id);
+      const hasArt = Boolean(saved || failed);
+      const file = node('input', { type: 'file', accept: 'image/png,image/jpeg,image/webp', hidden: true, 'aria-label': `导入${slot.title}插画` });
+      file.addEventListener('change', () => void importArtwork(slot, file));
+      const preview = node('div', { class: 'fpl-artwork-preview' });
+      if (saved) {
+        const picture = node('img', { src: saved, alt: `${slot.title}的本地插画`, decoding: 'async' });
+        // 坏图：标记后回落到示意场景，下一次渲染就不再挂这张图。
+        picture.addEventListener('error', () => {
+          artwork.markFailed(slot.id);
+          artworkFailed.add(slot.id);
+          artworkError = '这张图没能显示，已回到示意场景。';
+          if (live()) render();
+        }, { once: true });
+        preview.append(picture);
+      } else {
+        preview.append(node('p', { class: 'fpl-muted' }, failed ? '图片未能加载 · 默认示意场景' : '默认示意场景'));
+      }
+      return node('section', { class: 'fpl-card fpl-artwork-card' },
+        node('div', {}, node('h4', {}, slot.title), node('p', { class: 'fpl-muted' }, slot.description)),
+        preview,
+        node('code', {}, `story-artwork-v1:${slot.id}`),
+        row(button(artworkBusy === slot.id ? '正在读取…' : saved ? '换一张本地图' : '选择本地图', () => file.click(), { disabled: Boolean(artworkBusy) }),
+          hasArt ? button('恢复示意', () => {
+            artwork.clear(slot.id);
+            artworkFailed.delete(slot.id);
+            artworkError = '';
+            artworkNotice = '已恢复示意场景。';
+            render();
+          }) : null),
+        file);
+    });
+    return node('section', { class: 'fpl-stack' },
+      node('h3', { tabindex: -1 }, '本地插画'),
+      note('只存在这台浏览器里，不上传；换浏览器或清缓存会没有。导入后回到这里、或重新进一次出游面板就能看到。'),
+      artworkNotice ? node('p', { class: 'fpl-notice', role: 'status' }, artworkNotice) : null,
+      artworkError ? node('p', { class: 'fpl-error', role: 'alert' }, artworkError) : null,
+      node('div', { class: 'fpl-artwork-grid' }, cards),
+      node('section', { class: 'fpl-card fpl-stack' }, node('h4', {}, '关于本地插画'),
+        node('p', {}, '仅接受 PNG、JPEG、WebP，每张不超过 2 MB、1600 万像素；会检查文件类型与内容，不接受 SVG。图片不会上传，请只导入你有权使用的素材。'),
+        note('清理浏览器数据可能移除插画；图片加载失败时会回到文字与示意场景，操作入口照常保留。')));
+  }
   function settings() {
     // This form is rebuilt from the snapshot, so its revision must match the displayed values.
     editRevision = snapshot.revision;
@@ -530,11 +604,12 @@ export function mountPlaces(ctx) {
   function render() {
     if (!live()) return;
     const active = ['detail', 'edit', 'create', 'cover', 'browse'].includes(view) ? 'browse' : view;
-    navigation.replaceChildren(...[['browse', '浏览地点'], ['settings', '住所与画风'], ['migration', '从小世界迁入']].map(([id, label]) =>
+    navigation.replaceChildren(...[['browse', '浏览地点'], ['settings', '住所与画风'], ['artwork', '本地插画'], ['migration', '从小世界迁入']].map(([id, label]) =>
       button(label, () => { tell(); go(id); }, { 'aria-current': active === id ? 'page' : null })), button('刷新', refresh));
     let contents;
     if (!snapshot) contents = node('p', { class: 'fpl-empty' }, '正在读取地点库…');
     else if (view === 'settings') contents = settings();
+    else if (view === 'artwork') contents = artworkView();
     else if (view === 'migration') contents = migration.render();
     else if (view === 'create') contents = editor();
     else if (view === 'edit' && detail) contents = editor(detail);

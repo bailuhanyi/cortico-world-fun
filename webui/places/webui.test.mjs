@@ -14,7 +14,7 @@ import { createShimDom } from '../../test/dom-shim.mjs';
 const flush = () => new Promise((resolve) => setImmediate(resolve));
 // Minimal DOM for actual form/RPC interactions, not browser layout validation.
 const { createDocument } = createShimDom();
-async function mountLibrary(t, prepare) {
+async function mountLibrary(t, prepare, options = {}) {
   const dir = await mkdtemp(join(tmpdir(), 'fun-locations-ui-'));
   const world = new FunWorld({ dataDir: dir });
   await world.start({});
@@ -25,7 +25,7 @@ async function mountLibrary(t, prepare) {
   const root = document.createElement('div');
   const calls = [];
   let pending = 0;
-  const mounted = mountPlaces({ root, async invoke(method, args) {
+  const mounted = mountPlaces({ root, memo: options.memo, async invoke(method, args) {
     calls.push({ method, payload: structuredClone(args[0]) }); pending++;
     try { return await rpc(method, args[0]); } finally { pending--; }
   } });
@@ -113,6 +113,77 @@ test('地点图鉴的分类显示中文并按大类分组，快捷筛选能分�
 
 test('host-native locations module exports a mount function', () => {
   assert.equal(typeof mountPlaces, 'function');
+});
+
+/* ------------------------------ 本地插画 ------------------------------ */
+
+const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a5V8AAAAASUVORK5CYII=', 'base64');
+function memoStore() {
+  const map = new Map();
+  return { map, get: (key, fallback) => map.has(key) ? map.get(key) : fallback, set: (key, value) => { if (value === null) map.delete(key); else map.set(key, value); } };
+}
+function browserFileStubs(t) {
+  const previous = { FileReader: globalThis.FileReader, Image: globalThis.Image };
+  globalThis.FileReader = class {
+    readAsDataURL(file) { this.result = file.dataUrl; queueMicrotask(() => this.onload?.()); }
+  };
+  globalThis.Image = class {
+    set src(_value) { queueMicrotask(() => { this.naturalWidth = 100; this.naturalHeight = 100; this.onload?.(); }); }
+  };
+  t.after(() => { globalThis.FileReader = previous.FileReader; globalThis.Image = previous.Image; });
+}
+const artworkFile = (type = 'image/png', bytes = PNG) => ({
+  type, size: bytes.length, dataUrl: `data:${type};base64,${bytes.toString('base64')}`,
+  arrayBuffer: async () => bytes,
+});
+const wait = async () => { for (let i = 0; i < 20; i++) { await flush(); await new Promise((resolve) => setTimeout(resolve, 1)); } };
+
+test('本地插画在地点册：导航进入、导入后刷新仍在、恢复示意', async (t) => {
+  browserFileStubs(t);
+  const memo = memoStore();
+  const h = await mountLibrary(t, null, { memo });
+  assert.ok(h.root.textContent.includes('本地插画'));
+  h.click('本地插画'); await h.settled();
+  assert.match(h.root.textContent, /只存在这台浏览器里，不上传/);
+  assert.match(h.root.textContent, /鱼的家/);
+  assert.match(h.root.textContent, /傍晚溪边/);
+  assert.doesNotMatch(h.root.textContent, /蓝绳与便笺/, 'creek-letter-ending 不显示');
+
+  const input = h.root.querySelectorAll('input').find((item) => item.getAttribute('aria-label')?.includes('鱼的家'));
+  assert.ok(input);
+  input.files = [artworkFile()];
+  input.dispatchEvent(new Event('change'));
+  await wait();
+  assert.equal(memo.map.get('story-artwork-v1:home-day'), artworkFile().dataUrl);
+  assert.match(h.root.textContent, /插画已应用/);
+  assert.equal(h.root.querySelectorAll('img').length, 1);
+
+  h.mounted.dispose();
+  const reopened = await mountLibrary(t, null, { memo });
+  reopened.click('本地插画'); await reopened.settled();
+  assert.equal(reopened.root.querySelectorAll('img').length, 1, '刷新（重挂载）后插画仍在');
+  const image = reopened.root.querySelectorAll('img')[0];
+  image.dispatchEvent(new Event('error'));
+  await wait();
+  assert.equal(reopened.root.querySelectorAll('img').length, 0, '坏图回落到示意场景');
+  assert.match(reopened.root.textContent, /没能显示/);
+  reopened.click('恢复示意'); await wait();
+  assert.equal(memo.map.has('story-artwork-v1:home-day'), false);
+  assert.match(reopened.root.textContent, /已恢复示意/);
+});
+
+test('本地插画拒绝不支持的格式，不写浏览器存储', async (t) => {
+  browserFileStubs(t);
+  const memo = memoStore();
+  const h = await mountLibrary(t, null, { memo });
+  h.click('本地插画'); await h.settled();
+  const input = h.root.querySelectorAll('input').find((item) => item.getAttribute('aria-label')?.includes('鱼的家'));
+  input.files = [{ type: 'image/svg+xml', size: 10, arrayBuffer: async () => Buffer.from('<svg/>') }];
+  input.dispatchEvent(new Event('change'));
+  await wait();
+  assert.match(h.root.textContent, /PNG、JPEG 或 WebP/);
+  assert.equal(memo.map.size, 0);
+  assert.equal(h.root.querySelectorAll('img').length, 0);
 });
 
 test('migration requires decisions, never maps a missing or duplicate target, and preserves explicit policy', () => {

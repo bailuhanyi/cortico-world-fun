@@ -1,5 +1,5 @@
 import { createStoryController } from './controller.js';
-import { createArtworkStore, RESOURCE_SLOTS } from './resources.js';
+import { createArtworkStore } from './resources.js';
 import { illustration, icon } from './artwork.js';
 import { STYLES } from './styles.js';
 import { mountStories } from '../stories.js';
@@ -50,10 +50,11 @@ export function mountPanel(root, ctx) {
   let controller;
   let authorRoot;
   let authorPanel;
-  let privateSettings;
-  let nodeLimitSettings;
+  let advancedSettings;
   let imageBusy = false;
   let imageResult;
+  let autoImageBusy = false;
+  let autoImageNotice = '';
   const imageOutput = node('div', { class: 'sw-image-result', role: 'status' });
   async function ownCall(method, payload) {
     if (typeof ctx.storyCall === 'function') return ctx.storyCall(method, payload, { signal: ctx.signal, timeoutMs: method === 'storyImage' ? 65000 : 20000 });
@@ -79,7 +80,6 @@ export function mountPanel(root, ctx) {
   let playScroll = { key: '', top: 0, atBottom: true };
   let localNotice = '';
   let localError = '';
-  let importing = '';
   const openDetails = new Set();
   const shell = node('section', { class: 'sw', 'aria-label': '故事工坊' });
   const style = node('style', { text: STYLES });
@@ -328,6 +328,48 @@ export function mountPanel(root, ctx) {
     return node('button', { type: 'button', class: 'sw-switch', role: 'switch', 'aria-label': '鱼自己游玩', 'aria-checked': String(checked),
       disabled: busy || (!checked && (!state.snapshot.autonomy.available || trip?.state === 'draft' || !state.ready || state.loading || state.recovering || Boolean(state.busy))),
       'data-focus': 'trip-mode', onclick: () => controller.setMode(!checked) });
+  }
+
+  /** 顶栏「自动配图」：开 = 每到新的一处 / 故事翻一页，自动准备委派参数。 */
+  function autoImageSwitch(snapshot) {
+    const images = snapshot?.images ?? {};
+    const masterOn = images.masterOn === true;
+    const hasTrip = Boolean(snapshot?.trip);
+    const allowed = masterOn && hasTrip;
+    const checked = allowed && images.auto === true;
+    const reason = !masterOn ? t.settingsAutoImageMasterOff : !hasTrip ? t.settingsAutoImageNoTrip : t.settingsAutoImageHint;
+    const noteText = allowed ? autoImageNotice : reason;
+    return node('div', { class: 'sw-top-switch-wrap' },
+      node('span', { class: 'sw-top-switch-label' }, t.settingsAutoImage),
+      node('button', { type: 'button', class: 'sw-switch sw-top-switch', role: 'switch',
+        'aria-checked': String(checked), 'aria-label': t.settingsAutoImage, title: reason,
+        'data-focus': 'auto-images', disabled: autoImageBusy || !allowed,
+        onclick: () => void toggleAutoImages(!images.auto) }),
+      node('span', { class: 'sw-top-switch-note', role: 'status', 'aria-live': 'polite' }, noteText));
+  }
+
+  async function toggleAutoImages(next) {
+    const state = controller?.state;
+    const images = state?.snapshot?.images;
+    if (autoImageBusy || !images || images.masterOn !== true || !state?.snapshot?.trip) return;
+    const previous = images.auto === true;
+    // 乐观更新：失败时回滚，并让 aria-live 小字说清楚。
+    autoImageBusy = true; autoImageNotice = '';
+    images.auto = next;
+    render();
+    try {
+      const result = await ownCall('saveStoryAutoImages', { auto: next });
+      if (disposed || ctx.signal?.aborted) return;
+      if (!result?.ok) throw new Error(result?.error || '');
+      autoImageNotice = result.autoImages ? t.settingsAutoImageOn : t.settingsAutoImageOff;
+      await controller.refresh();
+    } catch {
+      images.auto = previous;
+      autoImageNotice = t.settingsAutoImageFailed;
+    } finally {
+      autoImageBusy = false;
+      if (!disposed) render();
+    }
   }
 
   /** 沉浸模式的「回看」：把整趟发生过的事放进一张覆盖层，不挤占这一屏。 */
@@ -695,89 +737,31 @@ export function mountPanel(root, ctx) {
     return fragment;
   }
 
-  function buildNodeLimitSettings() {
-    const model = { value: 16, loaded: false, busy: false };
-    const input = node('input', { type: 'number', min: '0', max: String(Number.MAX_SAFE_INTEGER), step: '1', inputmode: 'numeric',
-      'data-focus': 'story-node-limit', 'aria-label': t.storyNodeLimitField });
-    input.value = '16';
-    const status = node('p', { class: 'sw-note', role: 'status', 'aria-live': 'polite' });
-    const error = node('p', { class: 'sw-settings-error', role: 'alert' });
-    const save = button(t.storyNodeLimitSave, async () => {
-      if (model.busy) return;
-      if (!input.value.trim() || !Number.isSafeInteger(Number(input.value)) || Number(input.value) < 0) {
-        error.textContent = t.storyNodeLimitInvalid; return;
-      }
-      model.busy = true; error.textContent = ''; status.textContent = t.storyNodeLimitSaving; paint();
-      try {
-        const result = await ownCall('saveStoryNodeLimit', { nodeLimit: Number(input.value) });
-        if (disposed || ctx.signal?.aborted) return;
-        if (!result?.ok || !Number.isSafeInteger(result.nodeLimit)) throw new Error();
-        model.value = result.nodeLimit; input.value = String(model.value); status.textContent = t.storyNodeLimitSaved;
-      } catch { if (!disposed) { error.textContent = t.storyNodeLimitSaveFailed; status.textContent = ''; } }
-      finally { model.busy = false; if (!disposed) paint(); }
-    }, { primary: true, key: 'story-node-limit-save' });
-    const restore = button(t.storyNodeLimitDefault, () => {
-      input.value = '16'; error.textContent = ''; status.textContent = ''; paint();
-    }, { quiet: true, key: 'story-node-limit-default' });
-    input.addEventListener('input', () => { error.textContent = ''; status.textContent = ''; paint(); });
-    function paint() {
-      input.disabled = model.busy || !model.loaded;
-      save.disabled = model.busy || !model.loaded || input.value === String(model.value);
-      restore.disabled = model.busy || !model.loaded || input.value === '16';
-    }
-    async function load() {
-      if (model.busy || model.loaded) return;
-      model.busy = true; status.textContent = t.storyNodeLimitLoading; paint();
-      try {
-        const result = await ownCall('storySettings');
-        if (disposed || ctx.signal?.aborted) return;
-        if (!result?.ok || !Number.isSafeInteger(result.nodeLimit) || result.nodeLimit < 0) throw new Error();
-        model.value = result.nodeLimit; input.value = String(model.value); model.loaded = true; status.textContent = '';
-      } catch { if (!disposed) { error.textContent = t.storyNodeLimitLoadFailed; status.textContent = ''; } }
-      finally { model.busy = false; if (!disposed) paint(); }
-    }
-    const container = node('section', { class: 'sw-card sw-card-pad sw-node-limit-settings' },
-      node('div', { class: 'sw-settings-card-title' }, icon('settings'), node('div', {}, node('h3', {}, t.storyNodeLimitTitle), node('p', { class: 'sw-card-summary' }, t.storyNodeLimitSummary))),
-      node('label', { class: 'sw-setting-field' }, t.storyNodeLimitField, input),
-      actionRow(save, restore), status, error);
-    paint();
-    return { node: container, load };
-  }
-
-  function buildPrivateSettings() {
+  /**
+   * 出游 → 设置 → 高级：只放这一台机器的凭据与专家选项。
+   *
+   * 故事长度、主持地址/模型、图片来源都在配置页；本地插画在地点册。
+   * 这里只剩：API Key（DPAPI）、直连 ComfyUI 的手动出图（仅直连来源）、自定义工作流。
+   */
+  function buildAdvancedSettings() {
     const mask = '••••••••';
-    const model = { saved: false, supported: true, loaded: false, busy: '', imageSource: '', imageTouched: false, imagesEnabled: false, revision: 0,
-      workflow: '', workflowTouched: false,
-      modelName: '', savedModel: '', modelTouched: false, modelRevision: 0,
-      apiUrl: { value: '', touched: false, revision: 0 }, apiKey: { value: '', touched: false, revision: 0 } };
+    const model = { saved: false, supported: true, loaded: false, busy: '', revision: 0,
+      workflow: '', workflowTouched: false, imagesEnabled: false, direct: false,
+      apiKey: { value: '', touched: false, revision: 0 } };
     const status = node('p', { class: 'sw-note', role: 'status', 'aria-live': 'polite' });
     const error = node('p', { class: 'sw-settings-error', role: 'alert' });
     const support = note('');
     const saved = node('span', { class: 'sw-badge', 'data-settings-saved': '' });
     const imageBadge = node('span', { class: 'sw-badge sw-settings-state', 'data-settings-image-state': '' });
-    const fields = {};
-    const privateField = (key, title) => {
-      const input = node('input', { type: 'password', autocomplete: 'new-password', spellcheck: 'false',
-        'data-focus': `settings-${key}`, 'aria-label': title, 'data-private-setting': key });
-      const repaint = () => { input.value = model[key].value || model.saved ? mask : ''; };
-      input.addEventListener('input', () => {
-        model[key].value = input.value; model[key].touched = true; ++model[key].revision; ++model.revision; paint();
-      });
-      // Never reveal a previous value when refocusing a masked input.
-      input.addEventListener('focus', () => { if (input.value === mask) input.value = ''; });
-      input.addEventListener('blur', repaint);
-      fields[key] = { input, repaint };
-      return node('label', { class: 'sw-setting-field' }, title, input);
-    };
-    const url = privateField('apiUrl', t.storyDmApiUrl);
-    const key = privateField('apiKey', t.storyDmApiKey);
-    const modelInput = node('input', { type: 'text', maxlength: '200', autocomplete: 'off', spellcheck: 'false',
-      'data-focus': 'settings-model', 'aria-label': t.storyDmModel, placeholder: t.storyDmModelHint });
-    modelInput.addEventListener('input', () => {
-      model.modelName = modelInput.value; model.modelTouched = true; ++model.modelRevision; ++model.revision; paint();
+    const keyInput = node('input', { type: 'password', autocomplete: 'new-password', spellcheck: 'false',
+      'data-focus': 'settings-apiKey', 'aria-label': t.storyDmApiKey, 'data-private-setting': 'apiKey' });
+    const repaintKey = () => { keyInput.value = model.apiKey.value || model.saved ? mask : ''; };
+    keyInput.addEventListener('input', () => {
+      model.apiKey.value = keyInput.value; model.apiKey.touched = true; ++model.apiKey.revision; ++model.revision; paint();
     });
-    const source = node('input', { type: 'text', maxlength: '300', 'data-focus': 'settings-imageSource', 'aria-label': t.storyImageSource, autocomplete: 'off' });
-    source.addEventListener('input', () => { model.imageSource = source.value; model.imageTouched = true; ++model.revision; paint(); });
+    // Never reveal a previous value when refocusing a masked input.
+    keyInput.addEventListener('focus', () => { if (keyInput.value === mask) keyInput.value = ''; });
+    keyInput.addEventListener('blur', repaintKey);
     const workflow = node('textarea', { rows: '6', spellcheck: 'false', class: 'sw-workflow-json',
       'data-focus': 'settings-workflow', 'aria-label': t.storyImageWorkflowLabel, placeholder: t.storyImageWorkflowPlaceholder });
     workflow.addEventListener('input', () => { model.workflow = workflow.value; model.workflowTouched = true; paint(); });
@@ -787,26 +771,11 @@ export function mountPanel(root, ctx) {
       node('p', { class: 'sw-card-note' }, t.storyImageWorkflowSummary),
       node('label', { class: 'sw-setting-field' }, t.storyImageWorkflowLabel, workflow),
       note(t.storyImageWorkflowHint));
+    const manualButton = button(t.storyImageManual, () => void requestImage(), { key: 'story-image' });
     const save = button(t.settingsSave, async () => {
       if (model.busy) return;
-      const args = { imageSource: model.imageSource.trim() };
-      const credentialsTouched = model.apiUrl.touched || model.apiKey.touched;
-      if (model.modelTouched && (model.modelName.length > 200 || /[\u0000-\u001f\u007f]/u.test(model.modelName))) { error.textContent = t.storyDmModelInvalid; return; }
-      if (model.modelTouched && !model.saved && !credentialsTouched) { error.textContent = t.storyDmModelNeedsApi; return; }
-      if (model.supported && (credentialsTouched || model.modelTouched)) {
-        args.model = model.modelName.trim();
-      }
-      if (model.supported && credentialsTouched) {
-        args.apiUrl = model.apiUrl.value.trim(); args.apiKey = model.apiKey.value.trim();
-        try {
-          if (Boolean(args.apiUrl) !== Boolean(args.apiKey)) throw new Error();
-          if (args.apiUrl) {
-            const parsed = new URL(args.apiUrl);
-            if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password || parsed.search || parsed.hash) throw new Error();
-          }
-        } catch { error.textContent = t.storyDmApiInvalid; return; }
-      }
-      if (!validImageSource(args.imageSource)) { error.textContent = t.storyImageInvalid; return; }
+      const args = {};
+      if (model.apiKey.touched) args.apiKey = model.apiKey.value.trim();
       if (model.workflowTouched) {
         args.workflow = model.workflow.trim();
         if (args.workflow) {
@@ -816,52 +785,34 @@ export function mountPanel(root, ctx) {
         }
       }
       const revision = model.revision;
-      const modelRevision = model.modelRevision;
-      const privateRevisions = { apiUrl: model.apiUrl.revision, apiKey: model.apiKey.revision };
+      const keyRevision = model.apiKey.revision;
       model.busy = 'save'; status.textContent = t.settingsSaving; error.textContent = ''; paint();
-      for (const field of Object.values(fields)) field.repaint();
+      repaintKey();
       try {
         const result = await ownCall('saveStorySettings', args);
         if (disposed || ctx.signal?.aborted) return;
         if (!result?.ok) {
           if (result) applySafeView(result);
-          if (result?.partial !== 'dm') { error.textContent = result?.error || t.settingsFailure; return; }
-          if (model.modelRevision === modelRevision) {
-            model.modelTouched = false;
-            if (Object.hasOwn(args, 'model')) model.savedModel = model.modelName = modelInput.value = args.model;
-          }
-          for (const name of ['apiUrl', 'apiKey']) if (model[name].revision === privateRevisions[name]) {
-            model[name].value = ''; model[name].touched = false; fields[name].repaint();
-          }
-          error.textContent = t.settingsPartialDm;
+          // partial: dm 表示密钥已经落盘，界面上的明文可以清掉；工作流草稿留着。
+          if (result?.partial === 'dm') { clearPrivate(); model.apiKey.touched = false; }
+          error.textContent = result?.partial === 'dm' ? t.settingsPartialDm : (result?.error || t.settingsFailure);
           return;
         }
-        if (model.modelRevision === modelRevision) {
-          model.modelTouched = false;
-          if (Object.hasOwn(args, 'model')) model.savedModel = model.modelName = modelInput.value = args.model;
-        }
         applySafeView(result);
-        // Remove submitted plaintext even if an unrelated source field changed.
-        // A newer private input remains a masked, unsaved draft.
-        for (const name of ['apiUrl', 'apiKey']) if (model[name].revision === privateRevisions[name]) {
-          model[name].value = ''; model[name].touched = false; fields[name].repaint();
-        }
-        if (revision === model.revision || model.imageSource.trim() === args.imageSource) {
-          model.imageTouched = false;
-          source.value = model.imageSource = savedImageSource;
+        // Remove submitted plaintext; a newer draft stays masked and unsaved.
+        if (model.apiKey.revision === keyRevision) {
+          model.apiKey.value = ''; model.apiKey.touched = false;
         }
         if (Object.hasOwn(args, 'workflow') && model.workflow.trim() === args.workflow) {
-          model.workflowTouched = false;
-          workflow.value = model.workflow = savedWorkflow;
+          model.workflowTouched = false; workflow.value = model.workflow = savedWorkflow;
         }
         status.textContent = t.settingsSaved;
+        if (revision === model.revision) error.textContent = '';
       } catch { if (!disposed) error.textContent = t.settingsFailure; }
-      finally { if (!disposed) { model.busy = ''; paint(); for (const field of Object.values(fields)) field.repaint(); } }
+      finally { if (!disposed) { model.busy = ''; paint(); repaintKey(); } }
     }, { primary: true, key: 'settings-save' });
     const cancel = button(t.settingsCancel, () => {
-      clearPrivate(); model.modelName = model.savedModel; modelInput.value = model.savedModel;
-      model.imageTouched = false; source.value = model.imageSource = savedImageSource;
-      model.workflowTouched = false; workflow.value = model.workflow = savedWorkflow;
+      clearPrivate(); model.workflowTouched = false; workflow.value = model.workflow = savedWorkflow;
       ++model.revision; error.textContent = ''; status.textContent = t.settingsCancelled; paint();
     }, { quiet: true, key: 'settings-cancel' });
     const clear = button(t.storyDmApiClear, async () => {
@@ -873,52 +824,46 @@ export function mountPanel(root, ctx) {
         if (!result?.ok) throw new Error();
         applySafeView(result); model.saved = false; clearPrivate(); status.textContent = t.settingsCleared;
       } catch { if (!disposed) error.textContent = t.settingsClearFailure; }
-      finally { if (!disposed) { model.busy = ''; paint(); for (const field of Object.values(fields)) field.repaint(); } }
+      finally { if (!disposed) { model.busy = ''; paint(); repaintKey(); } }
     }, { danger: true, key: 'settings-clear' });
     const reload = button(t.settingsReload, () => void load(), { quiet: true, key: 'settings-reload' });
-    let savedImageSource = '';
     let savedWorkflow = '';
     function applySafeView(result) {
       // Deliberately read only public status, never credential values from a response.
       if (typeof result.dm?.saved === 'boolean') model.saved = result.dm.saved;
       if (typeof result.dm?.supported === 'boolean') model.supported = result.dm.supported;
-      if (typeof result.imageSource === 'string') {
-        savedImageSource = result.imageSource;
-        if (!model.imageTouched) source.value = model.imageSource = savedImageSource;
-      }
       if (typeof result.imageWorkflow === 'string') {
         savedWorkflow = result.imageWorkflow;
         if (!model.workflowTouched) workflow.value = model.workflow = savedWorkflow;
       }
-      if (typeof result.dm?.model === 'string') {
-        model.savedModel = result.dm.model;
-        if (!model.modelTouched) modelInput.value = model.modelName = model.savedModel;
-      }
-      if (typeof result.imagesEnabled === 'boolean') setImageEnabled(result.imagesEnabled);
+      if (typeof result.imagesEnabled === 'boolean') setImageState({ enabled: result.imagesEnabled });
     }
     function clearPrivate() {
-      for (const name of ['apiUrl', 'apiKey']) { model[name].value = ''; model[name].touched = false; fields[name].repaint(); }
-      model.modelName = ''; model.modelTouched = false; modelInput.value = '';
+      model.apiKey.value = ''; model.apiKey.touched = false; repaintKey();
     }
     function paint() {
-      const dirty = model.apiUrl.touched || model.apiKey.touched || model.imageTouched || model.modelTouched || model.workflowTouched;
+      const dirty = model.apiKey.touched || model.workflowTouched;
       saved.textContent = dirty ? t.storyDmApiPending : model.saved ? t.storyDmApiSaved : t.storyDmApiUnset;
       support.textContent = model.supported ? '' : t.storyDmApiUnsupported;
       save.disabled = Boolean(model.busy) || !model.loaded || !dirty;
       clear.disabled = Boolean(model.busy) || !model.loaded || !model.saved;
       cancel.disabled = Boolean(model.busy) || !dirty;
       reload.disabled = Boolean(model.busy);
-      fields.apiUrl.input.disabled = !model.supported;
-      fields.apiKey.input.disabled = !model.supported;
+      keyInput.disabled = !model.supported;
       const hasWorkflow = Boolean(model.workflow.trim());
       workflowBadge.textContent = hasWorkflow ? t.storyImageWorkflowOn : t.storyImageWorkflowOff;
       workflowBadge.className = hasWorkflow ? 'sw-badge sw-settings-state sw-settings-state-on' : 'sw-badge sw-settings-state';
-      container.setAttribute('aria-busy', String(Boolean(model.busy)));
-    }
-    function setImageEnabled(enabled) {
-      model.imagesEnabled = enabled === true;
       imageBadge.textContent = model.imagesEnabled ? t.storyImageOn : t.storyImageOff;
       imageBadge.className = model.imagesEnabled ? 'sw-badge sw-settings-state sw-settings-state-on' : 'sw-badge sw-settings-state';
+      manualButton.disabled = Boolean(model.busy) || imageBusy || !model.imagesEnabled;
+      manualButton.textContent = imageBusy ? t.storyImagePending : t.storyImageManual;
+      manualCard.hidden = !model.direct;
+      container.setAttribute('aria-busy', String(Boolean(model.busy)));
+    }
+    function setImageState({ enabled, direct } = {}) {
+      if (typeof enabled === 'boolean') model.imagesEnabled = enabled;
+      if (typeof direct === 'boolean') model.direct = direct;
+      paint();
     }
     async function load() {
       if (model.busy) return;
@@ -928,39 +873,29 @@ export function mountPanel(root, ctx) {
         if (disposed || ctx.signal?.aborted) return;
         if (!result?.ok) throw new Error();
         applySafeView(result); model.loaded = true; status.textContent = '';
-        for (const field of Object.values(fields)) if (!model[field.input.getAttribute('data-private-setting')].touched) field.repaint();
+        repaintKey();
       } catch { if (!disposed) error.textContent = t.settingsLoadFailure; }
       finally { if (!disposed) { model.busy = ''; paint(); } }
     }
     const saveBar = node('div', { class: 'sw-settings-actions' }, actionRow(save, cancel, clear, reload));
-    const dmCard = node('section', { class: 'sw-card sw-card-pad sw-private-settings-card' },
+    const keyCard = node('section', { class: 'sw-card sw-card-pad sw-private-settings-card' },
       node('div', { class: 'sw-settings-card-head' },
-        node('div', { class: 'sw-settings-card-title' }, icon('settings'), node('div', {}, node('h3', {}, t.storyDmTitle), node('p', { class: 'sw-card-summary' }, t.storyDmSummary))), saved),
-      node('div', { class: 'sw-private-grid' }, url, key),
-      node('label', { class: 'sw-setting-field' }, t.storyDmModel, modelInput),
-      support,
-      node('details', { class: 'sw-settings-help' }, node('summary', {}, t.storyDmHelpSummary), note(t.storyDmApiHint)),
-      saveBar, status, error);
-    const imageCard = node('section', { class: 'sw-card sw-card-pad sw-settings-image-card' },
-      node('div', { class: 'sw-settings-subhead' }, node('div', {}, node('h3', {}, t.storyImageTitle), node('p', { class: 'sw-card-summary' }, t.storyImageSummary)), imageBadge),
-      node('label', { class: 'sw-setting-field' }, t.storyImageSource, source),
-      node('details', { class: 'sw-settings-help' }, node('summary', {}, t.storyImageHelpSummary), note(t.storyImageSourceHint)),
-      workflowBox,
-      note(t.storyImageSettingsHint));
-    const container = node('div', { class: 'sw-settings-stack sw-private-settings' }, dmCard, imageCard);
+        node('div', { class: 'sw-settings-card-title' }, icon('settings'), node('div', {}, node('h3', {}, t.settingsKeyTitle), node('p', { class: 'sw-card-summary' }, t.settingsKeySummary))), saved),
+      node('label', { class: 'sw-setting-field' }, t.storyDmApiKey, keyInput),
+      note(t.settingsKeyHint), support,
+      node('details', { class: 'sw-settings-help' }, node('summary', {}, t.storyDmHelpSummary), note(t.storyDmApiHint)));
+    const manualCard = node('section', { class: 'sw-card sw-card-pad sw-settings-manual' },
+      node('div', { class: 'sw-settings-subhead' }, node('div', {}, node('h3', {}, t.settingsImageManualTitle), node('p', { class: 'sw-card-summary' }, t.settingsImageManualSummary)), imageBadge),
+      node('p', { class: 'sw-card-note' }, t.settingsImageManualHint),
+      node('div', { class: 'sw-settings-actions' }, actionRow(manualButton)),
+      imageOutput, workflowBox);
+    manualCard.hidden = true;
+    // 保存条放在两张卡下面：改密钥和改工作流共用同一个「保存设置」。
+    const container = node('div', { class: 'sw-settings-stack sw-private-settings' }, keyCard, manualCard, saveBar, status, error);
     paint();
-    return { node: container, load, clear: clearPrivate, setImageEnabled };
+    return { node: container, load, clear: clearPrivate, setImageState };
   }
-  function validImageSource(value) {
-    const urls = value.match(/[a-z][a-z\d+.-]*:\/\/\S+/ig) ?? [];
-    return urls.every((address) => {
-      try {
-        const url = new URL(address);
-        const local = url.hostname === 'localhost' || url.hostname === '[::1]' || /^127\./.test(url.hostname);
-        return ['http:', 'https:'].includes(url.protocol) && local && url.pathname === '/' && !url.username && !url.password && !url.search && !url.hash;
-      } catch { return false; }
-    });
-  }
+
   async function requestImage() {
     if (imageBusy) return;
     const previousImage = imageOutput.querySelector('.sw-generated-image');
@@ -994,50 +929,24 @@ export function mountPanel(root, ctx) {
     finally { imageBusy = false; if (!disposed) render(); }
   }
 
-  /** 设置页的一个分区：标题 + 一句人话 + 内容。只分组和改名，不改任何存取逻辑。 */
-  function settingsPart(title, intro, ...children) {
-    return node('section', { class: 'sw-settings-part' },
-      node('div', { class: 'sw-settings-part-head' }, node('h3', {}, title), intro ? node('p', {}, intro) : null),
-      ...children);
-  }
-
+  /**
+   * 出游 → 设置 → 高级。故事长度、主持地址/模型、图片来源都在配置页；
+   * 本地插画在地点册；配图开关在顶栏。这里只留这一台机器的凭据与专家选项。
+   */
   function settings(state) {
-    if (!nodeLimitSettings) nodeLimitSettings = buildNodeLimitSettings();
-    void nodeLimitSettings.load();
-    if (!privateSettings) { privateSettings = buildPrivateSettings(); void privateSettings.load(); }
-    privateSettings.setImageEnabled(state?.snapshot?.images?.enabled === true);
-    const slots = RESOURCE_SLOTS.filter((slot) => slot.id !== 'creek-letter-ending').map((slot) => {
-      const file = node('input', { type: 'file', accept: 'image/png,image/jpeg,image/webp', hidden: true, 'aria-label': `导入${slot.title}插画` });
-      file.addEventListener('change', async () => {
-        const picked = file.files?.[0]; if (!picked || importing) return;
-        importing = slot.id; localError = ''; localNotice = ''; render();
-        try {
-          await artwork.import(slot.id, picked);
-          if (!disposed) localNotice = '插画已应用。浏览器允许时会保留在本面板的本地存储中。';
-        } catch (error) { if (!disposed) localError = error.message ?? '图片导入失败。'; }
-        finally { importing = ''; if (!disposed) render(); }
-      });
-      return node('section', { class: 'sw-card sw-resource' }, scene(slot.id, slot.title, '', { tag: artwork.get(slot.id) ? '已设置插画' : '默认示意场景' }),
-        node('div', { class: 'sw-card-pad' }, node('code', {}, slot.id), node('p', {}, slot.description), file,
-          actionRow(button(importing === slot.id ? '正在读取…' : '选择本地图', () => file.click(), { icon: 'image', small: true, disabled: Boolean(importing), key: `import-${slot.id}` }),
-            artwork.get(slot.id) ? button('恢复示意', () => artwork.clear(slot.id), { quiet: true, small: true, key: `clear-${slot.id}` }) : null)));
-    });
-    return node('div', { class: 'sw-stack' }, node('div', { class: 'sw-lead' }, node('h2', {}, t.settingsTitle), node('p', {}, t.settingsIntro)),
-      settingsPart(t.settingsPartLength, t.settingsPartLengthHint, nodeLimitSettings.node),
-      settingsPart(t.settingsPartPrivate, t.settingsPartPrivateHint, privateSettings.node),
-      settingsPart(t.settingsPartImage, t.settingsPartImageHint,
-        node('section', { class: 'sw-card sw-card-pad' }, node('div', { class: 'sw-side-title' }, icon('image'), t.storyImageTitle),
-          node('p', { class: 'sw-card-note' }, state?.snapshot?.images?.message ?? t.storyImageUnavailable),
-          actionRow(button(imageBusy ? t.storyImagePending : t.storyImageGenerate, () => void requestImage(),
-            { disabled: imageBusy || !state?.snapshot?.images?.enabled && !state?.snapshot?.images?.generationAvailable, key: 'story-image' })), imageOutput)),
-      settingsPart(t.settingsPartArtwork, t.settingsPartArtworkHint,
-        node('div', { class: 'sw-settings-grid' }, slots),
-        node('section', { class: 'sw-card sw-card-pad' }, node('div', { class: 'sw-side-title' }, icon('info'), t.settingsArtworkAbout),
-          node('p', { class: 'sw-card-note' }, '仅接受 PNG、JPEG、WebP，每张不超过 2 MB、1600 万像素。文件类型与内容会经过检查，不接受 SVG。图片不会上传；请只导入你有权使用的素材。'),
-          note(t.localStorageHint),
-          note('清理浏览器数据可能移除插画。图片加载失败时会回到文字与示意场景，操作入口照常保留。'))),
-      settingsPart(t.settingsPartElsewhere, null,
-        node('section', { class: 'sw-card sw-card-pad' }, node('div', { class: 'sw-side-title' }, icon('settings'), t.settingsElsewhereTitle),
+    if (!advancedSettings) { advancedSettings = buildAdvancedSettings(); void advancedSettings.load(); }
+    const images = state?.snapshot?.images ?? {};
+    advancedSettings.setImageState({ enabled: images.enabled === true, direct: images.sourceKind === 'comfyui' });
+    return node('div', { class: 'sw-stack' },
+      node('div', { class: 'sw-lead' }, node('h2', {}, t.settingsTitle), node('p', {}, t.settingsIntro)),
+      advancedSettings.node,
+      node('section', { class: 'sw-settings-part' },
+        node('div', { class: 'sw-settings-part-head' }, node('h3', {}, t.settingsPartElsewhere)),
+        node('section', { class: 'sw-card sw-card-pad' },
+          node('div', { class: 'sw-side-title' }, icon('settings'), t.settingsElsewhereTitle),
+          node('ul', { class: 'sw-where-list' },
+            node('li', {}, t.settingsWhereLength),
+            node('li', {}, t.settingsWhereArtwork)),
           node('p', { class: 'sw-card-note' }, t.settingsElsewhereNote))));
   }
 
@@ -1066,6 +975,7 @@ export function mountPanel(root, ctx) {
     }
     top.replaceChildren(node('div', { class: 'sw-brand' }, node('span', { class: 'sw-logo' }, icon('fish')), node('div', {}, node('strong', {}, '故事工坊'), node('small', {}, '把日常，慢慢过成故事'))),
       node('div', { class: 'sw-top-actions' }, node('span', { class: 'sw-status' }, node('span', { class: 'sw-dot' }), snapshot?.trip ? '旅途进行中' : '欢迎回家'),
+        autoImageSwitch(snapshot),
         button(immersive ? '沉浸中' : '沉浸', () => { immersive = !immersive; drawerOpen = false; render(); },
           { quiet: !immersive, primary: immersive, small: true, icon: immersive ? 'book' : 'image', key: 'immersive', pressed: immersive, ariaLabel: immersive ? '退出沉浸模式，回到对话式' : '切换沉浸模式：一屏一幕' }),
         button('刷新', () => controller?.refresh(), { quiet: true, small: true, icon: 'refresh', disabled: !state || state.loading || Boolean(state.busy) || state.recovering, key: 'refresh' })));
@@ -1101,7 +1011,7 @@ export function mountPanel(root, ctx) {
   render();
   function dispose() {
     if (disposed) return;
-    privateSettings?.clear();
+    advancedSettings?.clear();
     controller.dispose(); disposed = true;
     ctx.signal?.removeEventListener('abort', dispose);
     if (shell.parentNode === root) shell.remove();

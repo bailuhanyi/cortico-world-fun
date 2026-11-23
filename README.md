@@ -21,15 +21,16 @@
 - **出门时只读**：显示「出门中 · 某地（逛了 1/3）」，在房间里换姿势不会影响正在走的行程。
 - 素材规格、命名与十张贴图的对齐坐标见 [素材单](<E:/deep seek/素材单-鱼的家2D房间/素材单.md>)。
 
-## 版本：0.4.4 → 0.7.2
+## 版本：0.4.4 → 0.7.3
 
 下游文档（用户手册、市场描述）一度停在 0.4.4，这里补一条线，细节仍以 [CHANGELOG.md](CHANGELOG.md) 为准：
 
 - **0.4.4** 新增第七个面板「家」：一张 2D 房间、十个活动、可换背景与每个姿势的图；房间状态单独存在 `fun/home/`，不写行程、不读别的插件。
 - **0.7.0** 家从 P0 推到 P5：站位改成 `{x, y, scale}` 并按 Q 版实测落地板、脚下接触阴影、随时段变色、可点热点、快照、画架选图、导出/导入房间；家同时成了入口（最近纪念品、未逛完的行程、第一个心愿、「今天想做什么」）；新增只读 `fun_home_state` 与写 `fun_home_activity`，`describe.json` 的工具数到 24。自动出门当时是「10:00–20:00 自己走一趟」。
 - **0.7.1** 把「自己出门」改成方案 B：`funHomeAutoGo`（许可）+ `funHomeAutoSlots`（时段，默认 `10:30,15:30,19:30`）都开且时段非空时，到点只推一条 internal 事件 `fun.home.free` 叫她先看当天日程；**不读`鱼的每一天`的日程、不挑地方、不替她出门**。因此 `describe.json` 从 0 个事件变成 1 个。家里没上传角色图时改用随包内置的十张 Q 版立绘（约 1.2 MB），站位按 Q 版重新量过；修了画架选图不带 `kind` 必报 400 的问题；纪念品摆件因图标压字先不摆（`fun_home_state` 数据仍在，面板里把 `SHOW_KEEPSAKES` 改回 `true` 即恢复）。
-- **配置页现在 15 项**（`enabled` 由框架管）：`funOn` / `funSessionTTLMin` / `funAskReport` / `funTasteFromFeast` / `funHomeAutoGo` / `funHomeAutoSlots` / `funStoryDM` / `funStoryTextOn` / `funStoryAuthorInChat` / `funStoryFree` / `funStoryFreeTurns` / `funStoryImages` / `funStoryAutoImages` / `funAutoSteps` / `funAutoCalls`。主持密钥与图片来源仍在「出游 → 设置」，不进普通配置。
+- **配置页现在 19 项**（`enabled` 由框架管）：`funOn` / `funSessionTTLMin` / `funAskReport` / `funTasteFromFeast` / `funHomeAutoGo` / `funHomeAutoSlots` / `funStoryDM` / `funStoryTextOn` / `funStoryAuthorInChat` / `funStoryFree` / `funStoryFreeTurns` / `funStoryImages` / `funStoryAutoImages` / `funAutoSteps` / `funAutoCalls`，加上 0.7.3 归位的 `funStoryNodeLimit` / `funStoryDmUrl` / `funStoryDmModel` / `funStoryImageSource`。**API Key 不进配置**：仍在「出游 → 设置 → 高级」，只存本机 DPAPI 密文；自定义工作流也在那里。
 - **0.7.2** 是代码体检整改：六个只读故事查询加 10 分钟记忆化（重复问只回「没变化」，写操作立即失效，`full:true` 重取）；工具说明与提示词瘦身（实发 schema 9,472 → 9,216，`ENV_PROMPT` 1,202 → 903）；文字通道默认开，聊天里六个查询与开局推进都在，作者工具另有一个开关 `funStoryAuthorInChat`；`hmToMin` / `el()` / `feedback` 抽成共享模块，只读查询拆到 `src/story-read.js`。
+- **0.7.3** 是设置重组：故事长度、主持接口地址与模型、剧情图片来源搬进配置页（热改），旧 `story-node-limit.json` / `story-secrets.json` 密文里的地址与模型 / `story-images/settings.json` 的来源在首次启动时一次性迁移；「自动配图」开关移到出游页顶部；本地插画搬到「地点册 → 本地插画」；出游「设置」只剩「高级设置」（API Key、直连手动出图、自定义工作流）。面板 id 与页签名不变。
 - **工具面**：共 24 个；默认只挂 23 个——文字通道默认开着，作者工具 `fun_story` 要另开「聊天里也能管故事」。关掉文字通道则只剩 17 个。六个只读故事查询有 10 分钟记忆化，同一参数重复问只回 `{ok:true, unchanged:true}` 短回执，任何写操作立即失效，`full:true` 可强制重取。
 
 面板 id、同名函数与工具前缀的对照（`places` = 去哪儿、`locations` = 地点册）见 [docs/命名对照.md](docs/命名对照.md)——只做解释，不改 id。
@@ -46,7 +47,7 @@ powershell -ExecutionPolicy Bypass -File .\install.ps1 -CooRoot "E:\Coopanion" -
 powershell -ExecutionPolicy Bypass -File .\install.ps1 -CooRoot "E:\Coopanion"
 ```
 
-安装属于后续人工流程，本轮不执行。以后安装并重启 Coo，面板 → 世界 →「从0开始的肥鱼大冒险」应为 `active`，普通配置页有 15 项，接口与图片来源到故事面板设置区填写。
+安装属于后续人工流程，本轮不执行。以后安装并重启 Coo，面板 → 世界 →「从0开始的肥鱼大冒险」应为 `active`，普通配置页有 19 项；接口地址、模型与图片来源在配置页，API Key 在「出游 → 设置 → 高级」。
 
 ## 故事工坊预览
 
@@ -70,7 +71,7 @@ v2 可在高级 JSON 中附加 `references`（最多 24 条）。每条使用 `{
 
 v2 节点可声明 owner/fish/joint，鱼自主只控制 fish，owner 必须通过用户按钮提交；共同选择按作者声明处理分歧，等待与超时不会变成同意。单人旧故事保持兼容；0.3.3 已移除双人预设故事，不影响作者自己编写双人作品。
 
-可选文本主持 `funStoryDM` 默认关闭。去「出游 → 设置」填写接口地址、API Key 和模型名；地址与 Key 都是密码输入，失焦和保存后只显示掩码与「已保存 / 未设置」。地址与 Key 两项留空使用宿主 `cognition.request`；都填写则由本插件直连 OpenAI 兼容 `POST /chat/completions`（填写 `https://服务地址/v1` 或完整 `/chat/completions` 路径，不含 URL 凭据、查询或片段）。模型名按你的服务商填，例如 `deepseek-chat`、`qwen-plus`、`gpt-4o-mini`；留空则不发送 `model` 字段，由接口使用它自己的默认模型，宿主配置不受影响。仅 Windows 使用 DPAPI CurrentUser 加密地址和密钥，密文单独保存在 `<dataDir>/fun/story-secrets.json`；密钥由 Windows 用户环境保护，不与密文同文件。其他平台禁用自定义凭据保存，仍可使用宿主模型。明文不进入 config/state、日志、工具回执、describe、提示词或作品导出。密钥只发送至用户填写的接口，不发给宿主或其他插件；换机器或重装后需重填。「清除密钥」立即撤销旧请求和提议，随后删除密文；之后回到宿主模型，宿主不可用则明确提示，手动游玩始终可用。
+可选文本主持 `funStoryDM` 默认关闭。接口地址与模型名在配置页（`funStoryDmUrl` / `funStoryDmModel`，热改），API Key 在「出游 → 设置 → 高级 → 文本主持密钥」里填，是密码输入，失焦和保存后只显示掩码与「已保存 / 未设置」。地址与 Key 两项留空使用宿主 `cognition.request`；都填写则由本插件直连 OpenAI 兼容 `POST /chat/completions`（填写 `https://服务地址/v1` 或完整 `/chat/completions` 路径，不含 URL 凭据、查询或片段）。模型名按你的服务商填，例如 `deepseek-chat`、`qwen-plus`、`gpt-4o-mini`；留空则不发送 `model` 字段，由接口使用它自己的默认模型，宿主配置不受影响。仅 Windows 使用 DPAPI CurrentUser 加密密钥，密文单独保存在 `<dataDir>/fun/story-secrets.json`，地址与模型不在密文里；密钥由 Windows 用户环境保护，不与密文同文件。其他平台禁用自定义凭据保存，仍可使用宿主模型。密钥明文不进入 config/state、日志、工具回执、describe、提示词或作品导出。密钥只发送至配置里填写的接口，不发给宿主或其他插件；换机器或重装后需重填。「清除密钥」立即撤销旧请求和提议，随后删除密文；之后回到宿主模型，宿主不可用则明确提示，手动游玩始终可用。
 
 主持严格只提议当前合法选项，须由当前行动者明确提交。每趟最多 6 次、每步最多 2 次（含重试、失败、取消）；请求前保存预算，重启后保留。已报告的实际 token 单独累计，未知用量不估算。接口等待最多 20 秒，401/403、429、超时与格式错误均给出固定安全提示；不回显地址、密钥或响应正文。取消或超时不会应用迟到提议，直连会中止本地 HTTP；宿主或上游已接收的请求仍可能计费。本地验证仅使用模拟 HTTP，不代表已验证任何真实模型服务。
 
@@ -78,7 +79,7 @@ v2 节点可声明 owner/fish/joint，鱼自主只控制 fish，owner 必须通�
 
 「回忆」页每张卡有「移到回收站」：删掉的行程从回忆与纪念册移除，但会留在页面底部的「回收站（N）」里，可以恢复或彻底删除，也能一键清空。回收站最多 30 条、重启后仍在；纪念品架是独立收藏账本，删回忆不会拿走已经带回家的东西；正史完成记录也不会因此回退。
 
-剧情图片生成 `funStoryImages` 是独立的默认关闭开关。打开后在故事面板的设置区填写**一个来源**，明确点击「生成/委派当前场景图片」；回家时可取得委派回执。文字故事不等待图片，关闭时不发任何图片请求，只使用预制或显式导入插画。
+剧情图片生成 `funStoryImages` 是独立的默认关闭开关。打开后在**配置页**填「剧情图片来源」；只有来源是本机 ComfyUI 时，「出游 → 设置 → 高级 → 直连出图」才显示「生成当前场景图片」按钮。委派来源靠出游页顶部的「自动配图」开关自动准备参数；回家时可取得委派回执。文字故事不等待图片，关闭时不发任何图片请求，只使用预制或显式导入插画。
 
 |来源|谁执行 / 需要什么|失败与默认行为|图片位置|
 |---|---|---|---|
@@ -86,7 +87,7 @@ v2 节点可声明 owner/fish/joint，鱼自主只控制 fish，owner 必须通�
 |本机 URL，例如 `http://127.0.0.1:8188`|fun 直接调用本机 ComfyUI；只支持 loopback 根地址，无凭据/查询/hash/API路径。需要 ComfyUI 和可用传统 checkpoint|优先使用服务端返回的有效 default checkpoint，否则选第一个，固定 512×512、20 步 Euler workflow；30 秒总限时、8 MiB 图片上限，401/失败/无模型/错误格式保留原插画，可改用委派。Flux/SD3 等专用 workflow 可通过下面的自定义工作流接入|本插件 `<dataDir>/fun/story-images/` 随机图片 ID；ComfyUI 自己也会按 SaveImage 节点保存输出|
 |其他插件名 / 说明|fun 只输出结构化委派，主对话或指定插件执行；用户自行准备该插件|不探测私有状态，不假设插件API，不能执行就明确跳过|执行方管理|
 
-**自定义工作流（可选，仅直连本机 ComfyUI 时生效）**：在「出游 → 设置 → 剧情图片生成」的「自定义工作流」里贴 ComfyUI 的 **API 格式** JSON（界面里「Save (API Format)」导出），把正向提示词那段文字换成 `{{prompt}}`（必填）；想固定种子写 `{{seed}}`，不写则每次自动随机，避免 ComfyUI 按提示词缓存出同一张图。它会整体替换内置的 512×512 图：模型、尺寸、步数、LoRA 全由你的工作流决定，因此**不再查询 `/object_info/CheckpointLoaderSimple`**，出图取 `outputs` 里第一个带回 `images` 的节点（SaveImage 节点 ID 随意）。限制：≤ 32 KB、≤ 200 个节点、节点只接受 `class_type` / `inputs` / `_meta`；不合法时保存会被拒绝并保留原有来源。设置与来源一起存在 `fun/story-images/settings.json`，不写 World 状态或普通配置。
+**自定义工作流（可选，仅直连本机 ComfyUI 时生效）**：在「出游 → 设置 → 高级 → 直连出图」的「自定义工作流」里贴 ComfyUI 的 **API 格式** JSON（界面里「Save (API Format)」导出），把正向提示词那段文字换成 `{{prompt}}`（必填）；想固定种子写 `{{seed}}`，不写则每次自动随机，避免 ComfyUI 按提示词缓存出同一张图。它会整体替换内置的 512×512 图：模型、尺寸、步数、LoRA 全由你的工作流决定，因此**不再查询 `/object_info/CheckpointLoaderSimple`**，出图取 `outputs` 里第一个带回 `images` 的节点（SaveImage 节点 ID 随意）。限制：≤ 32 KB、≤ 200 个节点、节点只接受 `class_type` / `inputs` / `_meta`；不合法时保存会被拒绝并保留原有工作流。工作流存在 `fun/story-images/settings.json`（只留工作流），来源在配置里；都不写 World 状态或普通配置。
 
 直连协议为 ComfyUI 的 `GET /object_info/CheckpointLoaderSimple` → `POST /prompt` → `GET /history/{prompt_id}` → `GET /view`。不访问宿主工具 HTTP 路由、不自动调用其他 World、不跟随重定向或外部图片 URL，因此不是越过 World 工具边界的内部 HTTP 旁路。取消/变更配置/继续故事会停止本地等待并拒绝迟到结果；ComfyUI 已排队任务可能仍执行。生成、轮询和下载均不占用故事动作队列。
 
@@ -130,7 +131,7 @@ Write a story is collapsed by default and remembers expansion per World in brows
 - **地点可以自己加**：绑定稳定地点 ID，改显示名仍可用；关联地点或项目被删除时，包显示「暂不可用」，普通出游继续。恢复对应内容或修改剧情包后可再用。
 - **高级创作可校验和预览**：展开「高级编辑」，支持模板、JSON 校验、分支预览、导入和导出。校验与预览不保存、不替她行动。同 ID 更新要明确选择覆盖；更换剧情版本不会让正在进行的一趟从头重演。
 
-`fun_story` 与面板共用同一套操作：`list/template/validate/preview/export/import/enable/disable/remove`。最多 20 个自定义包；每包不超过 32 KB，节点上限默认 16，可在「故事工坊 → 设置」首卡片修改，填 0 表示不限节点数；选择提供 2–4 个选项。JSON 版本为 1，节点引用需存在、可到达且无循环。包只提供文本与分支，不执行脚本，不自动移动、等待或增送物品。
+`fun_story` 与面板共用同一套操作：`list/template/validate/preview/export/import/enable/disable/remove`。最多 20 个自定义包；每包不超过 32 KB，节点上限默认 16，可在**配置页「故事长度（节点上限）」**修改，填 0 表示不限节点数；选择提供 2–4 个选项。JSON 版本为 1，节点引用需存在、可到达且无循环。包只提供文本与分支，不执行脚本，不自动移动、等待或增送物品。
 
 ## 双模式：选项式故事与自由场景包
 
@@ -413,7 +414,7 @@ fun_story_act      { tripId, stamp, intent: "close", confirm: true }
 面板可处理已有的未完行程，不提供「点一下让她去这儿」——新行程的进门和游逛是**她自己**的动作，
 替她按下去就等于代码替她做决定，那和这个插件的立意相反（见下面「刻意没做的」）。
 
-## 配置（`worlds.fun`，15 项，凭据不在普通配置中）
+## 配置（`worlds.fun`，19 项，凭据不在普通配置中）
 
 | 键 | 默认 | 管什么 |
 |---|---|---|
@@ -423,13 +424,17 @@ fun_story_act      { tripId, stamp, intent: "close", confirm: true }
 | `funTasteFromFeast` | `true` | 吃喝的味道去不去「鱼的每一天」拿（关掉就只说吃喝、一个字不提味道）。**不是自动探测**，装没装都要自己拨 |
 | `funHomeAutoGo` | `false` | 主人允许她自己出门；关着时连定时器都不注册 |
 | `funHomeAutoSlots` | `10:30,15:30,19:30` | 自己出门的时段（HH:MM，逗号分隔）；留空 = 只留许可、不叫醒 |
-| `funStoryDM` | `false` | 可选文本主持；接口地址与密钥在故事面板设置，Windows DPAPI 加密 |
+| `funStoryDM` | `false` | 可选文本主持；接口地址与模型在配置页，API Key 在「出游 → 设置 → 高级」，Windows DPAPI 加密 |
+| `funStoryNodeLimit` | `16` | 新建/导入故事最多几个节点；0 = 不限。旧 `story-node-limit.json` 首次启动迁移 |
+| `funStoryDmUrl` | `''` | 文本主持接口地址（OpenAI 兼容）；留空沿用宿主。API Key 不在配置里 |
+| `funStoryDmModel` | `''` | 文本主持模型名；留空由接口用自己的默认模型 |
+| `funStoryImageSource` | `''` | 剧情图片来源：空 = 委派「鱼的生图包」；loopback URL = 直连 ComfyUI；其他文本 = 指定插件 |
 | `funStoryTextOn` | `true` | 文字通道能不能开局 / 推进；关掉后聊天里只留两个故事查询 |
 | `funStoryAuthorInChat` | `false` | 聊天里也能用作者工具 `fun_story`；默认不挂，省约 1.1k 字符/轮 |
 | `funStoryFree` | `false` | 自由模式（v3 场景包） |
 | `funStoryFreeTurns` | `40` | 自由模式一段最多几回合（1 回合 = 1 次模型调用） |
-| `funStoryImages` | `false` | 剧情图片总闸；来源在故事面板设置，默认委派，显式本机 URL 才可选直连 |
-| `funStoryAutoImages` | `true` | 不用点按钮，自动准备配图参数（只对委派型来源） |
+| `funStoryImages` | `false` | 剧情图片总闸；来源在配置页，默认委派，显式本机 URL 才可选直连 |
+| `funStoryAutoImages` | `true` | 自动准备配图参数（只对委派型来源）；开关也在出游页顶部 |
 | `funAutoSteps` | `20` | 鱼自己玩：每段最多几步 |
 | `funAutoCalls` | `6` | 鱼自己玩：每段最多几次决定（每次都是真实模型请求） |
 
