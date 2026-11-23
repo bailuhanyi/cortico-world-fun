@@ -39,28 +39,34 @@ const CSS = `
 .fun-story-node:last-child{border-bottom:0}
 .fun-story-node p{white-space:pre-wrap}
 .fun-story-group{border:1px solid color-mix(in srgb,var(--fs-line) 86%,var(--fs-accent));border-radius:10px;background:color-mix(in srgb,var(--fs-card) 97%,var(--fs-accent));margin:10px 0;overflow:hidden}.fun-story-group>summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:8px;padding:10px 12px;font-weight:700}.fun-story-group>summary::-webkit-details-marker{display:none}.fun-story-group>summary:before{content:'›';display:grid;place-items:center;width:18px;height:18px;border:1px solid var(--fs-line);border-radius:5px;color:var(--fs-dim);transition:transform .15s}.fun-story-group[open]>summary:before{transform:rotate(90deg)}.fun-story-group>summary .fun-story-group-progress{margin-left:auto;color:var(--fs-dim);font-size:11px;font-weight:500}.fun-story-group-content{padding:0 12px 10px}.fun-story-group-content>.fun-story-grid{margin-top:0}.fun-story-sticky-actions{position:sticky;bottom:8px;z-index:3;padding:9px 10px;border:1px solid var(--fs-line);border-radius:10px;background:color-mix(in srgb,var(--fs-card) 92%,transparent);backdrop-filter:blur(10px);box-shadow:0 6px 18px color-mix(in srgb,var(--fs-ink) 12%,transparent);margin-top:12px}.fun-story-sticky-actions .fun-story-row{margin:0}.fun-story-sticky-actions .fun-story-field{margin-left:auto;color:var(--fs-dim);font-size:11px}.fun-story-branches{margin-top:0}.fun-story-editor-head{padding-bottom:4px}.fun-story-editor-toggle{min-width:72px}.fun-story-simple>details+details{margin-top:10px}
-.fun-story-mode{display:flex;gap:6px;margin:10px 0 4px;flex-wrap:wrap}
+.fun-story-mode{display:flex;gap:6px;margin:4px 0 10px;flex-wrap:wrap;align-items:center}
 .fun-story-mode button{border:1px solid var(--fs-line);border-radius:99px;background:var(--fs-card);color:inherit;padding:5px 12px;font:inherit;font-size:12px;cursor:pointer}
-.fun-story-mode button[aria-selected=true]{border-color:var(--fs-accent);background:color-mix(in srgb,var(--fs-accent) 12%,var(--fs-card));font-weight:700}
+.fun-story-mode button[aria-pressed=true]{border-color:var(--fs-accent);background:color-mix(in srgb,var(--fs-accent) 12%,var(--fs-card));font-weight:700}
+.fun-story-mode-note{margin:0 0 8px;color:var(--fs-dim);font-size:11.5px}
 .fun-story-free-note{margin:6px 0 10px;color:var(--fs-dim);font-size:12px}
+/* 折叠只负责收起/展开：小箭头 + 文字，不再像第三个创建入口 */
+.fun-stories .fun-story-editor-toggle{display:inline-flex;align-items:center;gap:4px;min-width:0;min-height:0;padding:3px 8px;border:1px solid transparent;border-radius:7px;background:none;color:var(--fs-dim);font-size:11.5px}
+.fun-stories .fun-story-editor-toggle::before{content:'▾';font-size:11px;line-height:1;display:inline-block;transition:transform .15s}
+.fun-stories .fun-story-editor-toggle[aria-expanded=false]::before{transform:rotate(-90deg)}
+.fun-stories .fun-story-editor-toggle:hover{border-color:var(--fs-line);color:var(--fs-accent);background:none}
+/* 从文件导入：选文件是主路径，粘贴保留 */
+.fun-story-file{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:8px 0 4px}
+.fun-stories .fun-story-file-btn{min-height:0;padding:5px 14px;border:1px solid var(--fs-accent);border-radius:999px;background:var(--fs-card);color:var(--fs-accent);font-size:12.5px;font-weight:600}
+.fun-story-file-btn:hover{background:color-mix(in srgb,var(--fs-accent) 8%,var(--fs-card))}
+.fun-story-file-note{margin:0;font-size:11.5px;color:var(--fs-dim)}
+.fun-story-file-note[data-state=ok]{color:var(--fs-accent)}
+.fun-story-file-note[data-state=error]{color:var(--fs-error)}
 @media(max-width:520px){.fun-story-group-content{padding-inline:9px}.fun-story-sticky-actions{bottom:4px;padding:8px}.fun-story-sticky-actions .fun-story-row{align-items:stretch}.fun-story-sticky-actions .fun-story-row>button{flex:1}.fun-story-sticky-actions .fun-story-sticky-status{width:100%;margin:0;text-align:center}}
-/* 作品库：标题条 + 作品卡 + 右侧创作入口（宽屏两列，窄屏收掉右侧那一栏） */
+/* 作品库：一个创建入口 + 作品卡；去掉右栏，正文收窄到 1040 居中 */
 .fun-story-head{display:flex;justify-content:space-between;align-items:flex-start;gap:14px 18px;flex-wrap:wrap;padding-bottom:14px;margin-bottom:18px;border-bottom:1px solid var(--fs-line)}
 .fun-story-head h2{margin:3px 0 5px}
 .fun-story-kicker{font-size:11px;letter-spacing:.14em;color:var(--fs-dim);text-transform:uppercase}
 .fun-story-head-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .fun-story-new{min-height:40px!important;padding:0 18px!important;border-radius:999px!important;white-space:nowrap}
+.fun-stories{max-width:1040px;margin:0 auto}
 .fun-story-layout{display:grid;gap:20px}
-@media(min-width:1000px){.fun-story-layout{grid-template-columns:minmax(0,1fr) 276px;align-items:start}}
 .fun-story-main{min-width:0}
-.fun-story-rail{border:1px solid var(--fs-line);border-radius:14px;padding:18px;background:var(--fs-card);min-width:0}
-.fun-story-rail h3{font-size:14px;letter-spacing:.03em;margin-bottom:10px}
-.fun-story-rail p{font-size:12px;line-height:1.85;color:var(--fs-dim);margin:0 0 14px}
-.fun-story-rail-actions{display:grid;gap:8px}
-.fun-story-rail-actions button{width:100%;min-height:38px;border-radius:9px;background:var(--fs-card);font:inherit;font-size:12.5px}
-.fun-story-rail-actions button:hover{border-color:var(--fs-accent)}
-.fun-story-rail .fun-story-rail-quote{margin:18px 0 0;padding-top:14px;border-top:1px dashed var(--fs-line);font-size:11.5px}
-@media(max-width:999px){.fun-story-rail{display:none}}
+@media(max-width:999px){.fun-stories{max-width:none}}
 .fun-story-filters{display:flex;gap:7px;flex-wrap:wrap;margin:12px 0 14px}
 .fun-story-filters button{border-radius:999px;padding:5px 13px;background:transparent;min-height:32px;font-size:12.5px}
 .fun-story-filters button[aria-pressed=true]{border-color:var(--fs-accent);background:color-mix(in srgb,var(--fs-accent) 12%,var(--fs-card));font-weight:700}
@@ -547,7 +553,6 @@ export function mountStories(ctx) {
     updateDirty();
   });
   const editingLabel = el('p', { class: 'fun-story-note fun-story-editing', role: 'status' });
-  const advanced = el('details', { class: 'fun-story-advanced' });
   const retainJson = () => jsonDrafts.set(editingId, { value: draft.value, baseline: jsonBaseline, overwrite: overwrite.checked });
   function loadJson(value, id = '', title = '') {
     retainJson();
@@ -561,7 +566,7 @@ export function mountStories(ctx) {
     editingLabel.textContent = id ? `${t.storyEditing} · ${title || id}` : '';
     editorResult.replaceChildren();
     editorReport.set(retained && retained.value !== retained.baseline ? t.storyEditRetained : id ? t.storyEditLoaded : t.storyNewJsonReady);
-    advanced.open = true;
+    setAuthorMode('json');
     setExpanded(true, true);
     draft.focus({ preventScroll: true });
   }
@@ -644,20 +649,61 @@ export function mountStories(ctx) {
     });
   const simple = simpleEditor(button, savePack, updateDirty, t);
   const free = freeEditor(button, savePack, updateDirty, t);
-  let authorMode = 'static';
-  const staticTab = button('选项式故事', () => setAuthorMode('static'), { role: 'tab', class: 'fun-story-mode-tab', 'aria-selected': 'true' });
-  const freeTab = button('自由场景包', () => setAuthorMode('free'), { role: 'tab', class: 'fun-story-mode-tab', 'aria-selected': 'false' });
-  const modeBar = el('div', { class: 'fun-story-mode', role: 'tablist', 'aria-label': '故事类型' }, staticTab, freeTab);
+let authorMode = 'static';
+  const MODES = [
+    ['static', '选项式故事', '先选地点，再写开场、人物与分支。想让故事顺着走，也可以做一个只写设定的场景包。'],
+    ['free', '自由场景包', '只写大方向、正史、人物和收尾条件；每一回合怎么演交给主持。'],
+    ['json', '从文件导入', '选一个导出的 .json 文件，或直接粘贴；校验、预览与导入都在这儿，导入会写进故事库。'],
+  ];
+  const modeButtons = new Map(MODES.map(([id, label]) => [id, button(label, () => setAuthorMode(id), { class: 'fun-story-mode-tab', 'aria-pressed': 'false' })]));
+  const modeBar = el('div', { class: 'fun-story-mode', role: 'group', 'aria-label': '从哪儿开始' }, [...modeButtons.values()]);
+  const modeNote = el('p', { class: 'fun-story-mode-note' });
   function setAuthorMode(mode) {
     authorMode = mode;
-    staticTab.setAttribute('aria-selected', String(mode === 'static'));
-    freeTab.setAttribute('aria-selected', String(mode === 'free'));
+    for (const [id, node] of modeButtons) node.setAttribute('aria-pressed', String(id === mode));
     simple.node.hidden = mode !== 'static';
     free.node.hidden = mode !== 'free';
+    jsonPane.hidden = mode !== 'json';
+    modeNote.textContent = MODES.find(([id]) => id === mode)?.[2] ?? '';
     updateDirty();
   }
-  advanced.appendChild(el('summary', {}, t.storyJsonEditor));
-  advanced.appendChild(el('section', { class: 'fun-story-json-editor', 'aria-label': '高级 JSON 编辑器' },
+  // 选文件是导入的主路径：读成文本后仍走原有校验 / 导入，粘贴也保留。
+  const jsonFile = el('input', { type: 'file', accept: '.json,application/json', hidden: true, class: 'fun-story-json-file', 'aria-label': '选择故事包 JSON 文件' });
+  const jsonFileNote = el('p', { class: 'fun-story-file-note', role: 'status' }, '单个 .json 文件，≤ 32 KB；也可以直接粘贴到下面');
+  const jsonPick = button('选择 JSON 文件…', () => jsonFile.click(), { class: 'fun-story-file-btn' });
+  jsonFile.addEventListener('change', () => {
+    const file = jsonFile.files?.[0];
+    jsonFile.value = '';
+    if (!file) return;
+    const size = Number(file.size) || 0;
+    if (size > 32 * 1024) {
+      jsonFileNote.setAttribute('data-state', 'error');
+      jsonFileNote.textContent = `「${file.name}」有 ${(size / 1024).toFixed(1)} KB，超过 32 KB 上限`;
+      return;
+    }
+    void (async () => {
+      try {
+        const text = String(await file.text()).replace(/^\uFEFF/, '');
+        JSON.parse(text);
+        draft.value = text;
+        jsonBaseline = '';
+        editingId = '';
+        editingLabel.textContent = '';
+        draftEdits += 1;
+        setAuthorMode('json');
+        jsonFileNote.setAttribute('data-state', 'ok');
+        jsonFileNote.textContent = `已选 ${file.name} · ${(size / 1024).toFixed(1)} KB，确认无误再点「导入故事包」`;
+        updateDirty();
+      } catch (error) {
+        jsonFileNote.setAttribute('data-state', 'error');
+        jsonFileNote.textContent = error instanceof SyntaxError
+          ? '这个文件不是有效的 JSON，先确认导出的是故事包。'
+          : '这个文件读不出来，换一个 .json 试试。';
+      }
+    })();
+  });
+  const jsonPane = el('section', { class: 'fun-story-advanced fun-story-json-editor fun-story-json-pane fun-story-mode-pane', 'data-pane': 'json', 'aria-label': '从文件导入', hidden: true },
+    el('div', { class: 'fun-story-file' }, jsonPick, jsonFile, jsonFileNote),
     el('div', { class: 'fun-story-row' }, el('h3', {}, '完整 JSON'), button(t.storyNewJson, () => loadJson(''))), editingLabel,
     el('div', { class: 'fun-story-row' }, el('label', { class: 'fun-story-field' }, '模板地点', place),
       editAction('填入模板', 'template', '正在取模板…'),
@@ -671,7 +717,7 @@ export function mountStories(ctx) {
           jsonBaseline = '';
           editingId = '';
           editingLabel.textContent = '';
-          advanced.open = true;
+          setAuthorMode('json');
           setExpanded(true, true);
           updateDirty();
           editorReport.set('自由模式模板已填入：只写设定与收尾条件，不写分支。', result);
@@ -681,34 +727,22 @@ export function mountStories(ctx) {
     el('div', { class: 'fun-story-row' }, editAction('校验 JSON', 'validate', '正在校验…'),
       editAction('预览草稿', 'preview', '正在预览…'), editAction('导入故事包', 'import', '正在导入…'),
       el('label', { class: 'fun-story-field' }, overwrite, '覆盖同 ID 故事包')),
-    editorReport.node, editorResult));
+    editorReport.node, editorResult);
   authorContent.appendChild(el('p', { class: 'fun-story-note' }, t.storyDraftHint));
   authorContent.appendChild(modeBar);
+  authorContent.appendChild(modeNote);
   authorContent.appendChild(simple.node);
   authorContent.appendChild(free.node);
-  authorContent.appendChild(advanced);
+  authorContent.appendChild(jsonPane);
   setAuthorMode('static');
   setExpanded(expanded);
-  // 右侧栏就是三个起点：新建两种模式、或直接贴 JSON。窄屏没有这一栏，
-  // 标题条上的「＋ 编写故事」和创作区里的模式页签仍然能到同样的地方。
+  // 标题条的「＋ 编写故事」是唯一创建入口：展开创作区并停在选项式。
   function startNew(mode) {
     setAuthorMode(mode);
     setExpanded(true, true);
     const first = mode === 'free' ? free.node.querySelector('.fun-story-free-title') : simple.node.querySelector('.fun-story-author-title');
     first?.focus?.({ preventScroll: true });
   }
-  const rail = el('aside', { class: 'fun-story-rail', 'aria-label': '从一个小片段开始' },
-    el('h3', {}, '从一个小片段开始'),
-    el('p', {}, '先选地点，再写开场、人物与分支。想让故事顺着走，也可以做一个只写设定的场景包。'),
-    el('div', { class: 'fun-story-rail-actions' },
-      button('新建选项式故事', () => startNew('static')),
-      button('新建自由场景包', () => startNew('free')),
-      button('导入完整 JSON', () => {
-        setExpanded(true, true);
-        advanced.open = true;
-        draft.focus({ preventScroll: true });
-      })),
-    el('p', { class: 'fun-story-rail-quote' }, '高级 JSON、校验与隔离试玩，都留在左边的创作区里。'));
   const newButton = button(`＋ ${t.storyWrite}`, () => startNew('static'), { class: 'fun-story-primary fun-story-new' });
   box.replaceChildren(
     el('header', { class: 'fun-story-heading fun-story-head' },
@@ -722,8 +756,7 @@ export function mountStories(ctx) {
         authoring,
         el('section', { class: 'fun-story-library', 'aria-label': '故事包列表' },
           el('div', { class: 'fun-story-row' }, el('h3', {}, '已收录故事包'), countNote, refreshButton),
-          filters, loadReport.node, libraryReport.node, packList)),
-      rail));
+          filters, loadReport.node, libraryReport.node, packList))));
 
   function packCard(pack) {
     const title = pack.title || pack.id;

@@ -607,7 +607,7 @@ test('R3 列表编辑导出完整复杂 JSON、自动展开滚动，并保留每
     await waitFor(() => draft.value === exported('user-offline'), '复杂故事完整加载');
     assert.deepEqual(JSON.parse(draft.value), complex);
     assert.equal(root.querySelector('.fun-story-editor-toggle').getAttribute('aria-expanded'), 'true');
-    assert.equal(root.querySelector('.fun-story-advanced').open, true);
+    assert.equal(root.querySelector('.fun-story-json-pane').hidden, false, '编辑故事要切到「从文件导入」那个起点');
     assert.equal(root.querySelector('.fun-story-overwrite').checked, true);
     assert.equal(document.activeElement, draft);
     assert.ok(scrolled.some(({ node }) => node.className.includes('fun-story-authoring')));
@@ -651,6 +651,47 @@ test('R3 保存期间继续编辑、保存失败与读取编辑失败均不清�
   await waitFor(() => root.textContent.includes('读取测试失败'), '编辑读取失败');
   assert.equal(draft.value, '{"newer":2}');
   assert.equal(root.querySelector('.fun-story-dirty').textContent, '有未保存修改');
+});
+
+test('R3 故事工坊：三个起点都在、右栏已移除，窄屏同一组按钮可达', async () => {
+  const { root } = await mountStoriesView({ invoke: async () => ({ ...storyViewData(), packs: [] }) });
+  assert.equal(root.querySelector('.fun-story-rail'), null, '右侧「从一个小片段开始」已移除');
+  assert.deepEqual(root.querySelectorAll('.fun-story-mode-tab').map((node) => node.textContent),
+    ['选项式故事', '自由场景包', '从文件导入']);
+  const content = root.querySelector('.fun-story-author-content');
+  assert.equal(content.hidden, true, '默认收起');
+  root.findByText('＋ 编写故事').fire();
+  assert.equal(content.hidden, false);
+  assert.equal(root.querySelector('.fun-story-simple').hidden, false, '默认停在选项式');
+  assert.equal(root.querySelector('.fun-story-json-pane').hidden, true);
+  root.findByText('从文件导入').fire();
+  assert.equal(root.querySelector('.fun-story-json-pane').hidden, false);
+  assert.equal(root.querySelector('.fun-story-simple').hidden, true, '同一时间只显示一个起点');
+  root.findByText('自由场景包').fire();
+  assert.equal(root.querySelector('.fun-story-json-pane').hidden, true);
+  assert.equal(root.querySelector('.fun-story-simple').hidden, true);
+});
+
+test('R3 从文件导入：读进草稿；超 32 KB 与坏 JSON 不覆盖原内容', async () => {
+  const { root } = await mountStoriesView({ invoke: async () => ({ ...storyViewData(), packs: [] }) });
+  root.findByText('＋ 编写故事').fire();
+  root.findByText('从文件导入').fire();
+  const input = root.querySelector('.fun-story-json-file');
+  const draft = root.querySelector('.fun-story-json');
+  draft.value = '{"keep":true}'; draft.fire('input');
+  const pick = (text, size) => ({ name: 'story.json', size: size ?? text.length, text: async () => text });
+  input.files = [pick('\uFEFF{"version":2,"id":"user-a"}')];
+  input.fire('change');
+  await waitFor(() => draft.value === '{"version":2,"id":"user-a"}', '文件读进草稿');
+  assert.match(root.textContent, /已选 story\.json/);
+  input.files = [pick('{"bad":', 20)];
+  input.fire('change');
+  await waitFor(() => root.textContent.includes('不是有效的 JSON'), '坏 JSON 提示');
+  assert.equal(draft.value, '{"version":2,"id":"user-a"}', '坏文件不清空原草稿');
+  input.files = [pick('{}', 33 * 1024)];
+  input.fire('change');
+  await waitFor(() => root.textContent.includes('超过 32 KB'), '超限提示');
+  assert.equal(draft.value, '{"version":2,"id":"user-a"}', '超限不清空原草稿');
 });
 
 test('R3 英文新增作者文案与存储不可用回退', async () => {

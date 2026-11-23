@@ -755,7 +755,8 @@ test('R4 no-sample empty state enters the full author panel through same-world R
   assert.equal(h.calls.filter((call) => call.method === 'authorList').length, 1);
   assert.equal(root.querySelector('.fun-story-editor-toggle').getAttribute('aria-expanded'), 'true');
   const modes = root.querySelectorAll('.fun-story-mode-tab');
-  assert.equal(modes.length, 2, 'author form offers both story kinds');
+  assert.equal(modes.length, 3, 'author form offers both story kinds plus file import');
+  assert.deepEqual([...modes].map((node) => node.textContent), ['选项式故事', '自由场景包', '从文件导入']);
   const groups = root.querySelectorAll('.fun-story-static-group');
   assert.equal(groups.length, 4, 'author form is divided into four sections');
   assert.equal(groups[0].getAttribute('open'), ''); assert.equal(groups[1].getAttribute('open'), '');
