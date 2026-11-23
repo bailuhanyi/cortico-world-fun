@@ -11,8 +11,8 @@
 > - 测试基础设施（紧接着的一轮）：新增 `test/tmp.mjs`（`tempDir` / `trackWorld` / `cleanup(t, dir, world)` / `cleanupAll`），13 个测试文件与 `test/harness.mjs` 统一走它（先 stop World 再删目录，ENOTEMPTY 重试 20 次）；`tools/clean-tmp.mjs` 清掉系统临时目录里 9,441 个历史 `fun-*` 残留（剩 1,172 个是近一小时的，会自然过期）。清理后全量重跑：37 套件 554 条 **0 失败**，临时目录**零新增**。
 > - 本机 Coo 的 vendor 仍是 0.7.5（20:31 手工同步过旧的 `src/world.js` + `dist/webui.js`），**版本号没改**；要显示 0.7.6 需在 Coo 完全退出后跑 `install.ps1 -CooRoot E:\Coopanion`。
 > - **main 上还有未发版的改动**（2026-11-23 21:3x）：`6bfbddc` 从回忆「从最近可继续检查点开分支」建好后**直接跳到「出游」**（`controller.fork` 返回是否真的建出新行程，面板据此 `navigate('play')`；没建出来就留在原地看错误）。0.7.6 已经发到 npm，这个修复进不了它，**下次发版一起带**；当前未升版本、未重新打包。
-> - 代码已 push 到 `origin/main`（本地 22 个提交已同步）；**npm 仍未发**；真机点选验收（面板、412 窄屏、暗色）没做。
-> - **待人工（本轮未执行）**：① `npm publish .\cortico-world-fun-0.7.6.tgz`（或从仓库 `npm publish`；`prepublishOnly` 会重跑 npm test + verify + publish-check）；② 装进本机 Coo 并核对 `/api/extensions`、asset 哈希与 fun 数据快照。
+> - 代码已 push 到 `origin/main`；**0.7.6 已发 npm**（latest = 0.7.6；`dist.shasum` `feedf3d3d097c4b5da7a363df2cd97dd7b36186c`、`unpackedSize` 2,663,552，与本地 `release-0.7.6\cortico-world-fun-0.7.6.tgz` 同一份字节；`node tools/verify-published.mjs 0.7.6` 对线上包已通过）。真机点选验收（面板、412 窄屏、暗色）没做。
+> - **待人工**：装进本机 Coo（当前 vendor 仍是 0.7.5）——退出 Coo 后跑 `install.ps1 -CooRoot E:\Coopanion`，再核对 `/api/extensions`、asset 哈希与 fun 数据快照。
 
 > **发布状态（2026-11-23 15:5x，已装机，取代下面 14:5x 那条）**：0.7.5 **已装进本机 Coo**。装机时间 15:50:13，`npm run verify` 与全量 `npm test` 此前已全绿；源码已本地提交（`44993cd`）。
 > - 装机核验：vendor `package.json` = 0.7.5；`/api/extensions` 里 `cortico-world-fun` **0.7.5 / `state=loaded` / `enabled=true` / `webUi=served`**；`/assets/extensions/cortico-world-fun/0.7.5/webui.js` 200、**452,497 B**、SHA-256 `0C879FC80BDFD9B6772C327F2421A3505EFD3BA7604DD436F67547774DE551D3` 与 `dist/webui.js` 一致；日志 `[15:51:24] worlds.fun: 从0开始的肥鱼大冒险已启动`；`node_modules\cortico-world-fun` junction 与 `data\extensions\package.json` 的 `file:` 依赖均指向 vendor。
