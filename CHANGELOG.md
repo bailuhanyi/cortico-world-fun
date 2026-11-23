@@ -2,6 +2,19 @@
 
 市场按 `##` 标题里的版本号切段，显示在「历史版本」里。
 
+## 0.7.2
+
+体检报告 `reports/fun-world-代码体检-20261123.md` 的 P0–P3 落实，另按群友反馈把文字通道默认打开。**无数据迁移**：`state.json` / `venues.json` / `stories.json` / `home/room.json` 的字段与语义都没变。
+
+- **P1 去重查询**：六个 `fun_story_*` 只读查询加 10 分钟记忆化——键 = 工具 + 参数，任何写操作（含面板写行程、改地点、改故事）立即失效，失败不缓存；命中只回短回执（`fun_story_candidates` 1,797 → 137 字符），新增 `full:true` 逃生门。提示词补一句「看到 unchanged 就停」。
+- **P1 schema 瘦身**：24 个工具的说明压掉重复措辞；宿主每轮实发 `tools()` 负载 9,472 → 9,216 字符（期间新增的 `full` 参数已抵掉）；`ENV_PROMPT` 1,202 → 903 字符，`别形容味道` / `不会探测` / `库里没找到` / `预设删不掉` 四条红线保留。
+- **改：文字通道默认开**（群友反馈聊天里要能玩故事）：`funStoryTextOn` 默认 `true`，默认 23 件工具；关掉后聊天里只留 `fun_story_candidates` / `fun_story_detail`（17 件）。新增 `funStoryAuthorInChat`（默认关）管作者工具 `fun_story`，两个都开 24 件。`describe.json` 仍声明全部 24 个；默认每轮约 9,159 字符，比体检当天 10,556 少 13%。
+- **P2 抽公共实现**：`hmToMin` 移到 `src/time.js`（`phases.js` / `venues.js` 再导出）；三个 `el()` 与 `feedback` / `errorCard` / `heading` 合并到 `webui/dom.js`；六个只读查询拆到 `src/story-read.js`；面板测试 DOM 桩抽出 `test/dom-shim.mjs`（家、地点册先用）。
+- **P0 文档**：用户手册、README、`package.json` zh/en 描述与两份 HANDOFF 补齐 0.7.x；`config.js` 的「不调别的 World 的工具」改成「本插件自己不调用」。
+- **P3 命名**：面板 id `places` / `locations` 与工具前缀不改，新增 `docs/命名对照.md`；`fun_wish` 合并、`fun_places` 加 `scope` 评估后不做。
+- 测试链新增 `test/story-read-cache.test.mjs`（6 例）；全链 38 个脚本除 `story-config` 的 DPAPI 环境用例外全绿；`npm run verify` 全绿。
+- 版本号升到 0.7.2；打包到 `story-world\artifacts\release-0.7.2`（tgz + 群友测试包），并装进本机 Coo。
+
 ## 0.7.1
 
 - **改：「自己出门」改成方案 B——World 只叫醒，不替她决定**。`worlds.fun.funHomeAutoGo` 仍是「主人允许她自己出门」，新增 `worlds.fun.funHomeAutoSlots`（默认 `10:30,15:30,19:30`，24 小时制、逗号分隔、留空只留许可不叫）。两个都有且时段非空时，World 到点推一条 internal 事件 `fun.home.free`：提醒她先看当天日程（`feast_life_now`），这一段自由就出门、写着上班/通勤/睡觉就别出门；同一时段一天只叫一次，正在出门或还有没逛完的行程不叫，叫醒记录落在 `fun/auto-go.json`。它**不读**「鱼的每一天」的日程、不挑地方、不替她出门；去不去、去哪儿、去几次由她和主对话定。`fun_go` 回执提示把这一趟写进当天日程（`feast_life_adjust`），回家回执照旧 `feast_life_play`。面板的「这趟是她自己出去的 / 撤销这次出门」和 `undoAutoGo` 已移除。`describe.json` 因此从 0 个事件变成 1 个。
@@ -9,19 +22,6 @@
 - **修：画架选图必报「kind 必须是 file 或 directory」**。面板调 `ctx.pickPath()` 没带参数，Coo 的 `/api/path-picker` 只认 `kind: file | directory`，于是对话框根本不弹、只回一句 400。现在带 `{ kind: 'file', title, extensions: ['.png','.jpg','.jpeg','.gif','.webp'] }`（后缀和服务端 `attachPainting` 认的格式一致），并补了一条会真点「选一张本地图」、断言选择器收到 `kind` 的面板测试。
 - **改：纪念品摆件先不摆**。0.7.0 的摆法按百分比落在房间上，图标会压在空白房间的说明文字和角色身上；等排版、图标和可拖完善再开。数据与接口都还在（`fun_home_state` 的 `keepsakes` 照常返回），面板里把 `SHOW_KEEPSAKES` 改回 `true` 就恢复。
 - 版本号升到 0.7.1；已打包（`story-world\artifacts\release-0.7.1`），并装进本机 Coo（备份 `cortico-world-fun.bak-20261123-0010`）。
-
-### 2026-11-23 体检整改（同一版本，未再发版）
-
-体检报告 `reports/fun-world-代码体检-20261123.md` 的 P0–P3 当天落实，细节见报告 §9：
-
-- **P1 去重查询**：六个 `fun_story_*` 只读查询加 10 分钟记忆化——键 = 工具 + 参数，任何写操作（含面板写行程、改地点、改故事）立即失效，失败不缓存；命中只回 `{ok:true, unchanged:true, since}` 短回执（`fun_story_candidates` 1,797 → 137 字符），新增 `full:true` 逃生门。提示词补一句「看到 unchanged 就停」。
-- **P1 schema 瘦身**：24 个工具的参数说明与描述压掉重复措辞，schema 13,378 → 12,560 字符；默认可见（23 件）11,479 字符；关掉文字通道 7,841 字符；`ENV_PROMPT` 1,202 → 903 字符。
-- **改：文字通道默认开**。群友反馈聊天里要能玩故事，`worlds.fun.funStoryTextOn` 默认改回 `true`：默认 23 件工具（只缺作者工具），关掉它才收成 17 件。`funStoryAuthorInChat` 保持默认关。
-- **P1 按开关暴露**：文字通道关着时聊天里只留 `fun_story_candidates` / `fun_story_detail`；作者工具 `fun_story` 挂到新开关 `funStoryAuthorInChat`（默认关）。默认 23 件、关文字通道 17 件、两个都开 24 件；`describe.json` 仍声明全部 24 个。
-- **P2 抽公共实现**：`hmToMin` 移到 `src/time.js`（`phases.js` / `venues.js` 再导出）；三个 `el()` 与 `feedback` / `errorCard` / `heading` 合并到 `webui/dom.js`；六个只读故事查询拆到 `src/story-read.js`；面板测试的 DOM 桩抽出 `test/dom-shim.mjs`（家、地点册先用）。
-- **P0 文档**：用户手册升到 0.7.1 并补家面板 0.7 特性、自己出门两键、24 个工具与记忆化说明；README 补「版本 0.4.4 → 0.7.1」、配置 14 项、工具表；`package.json` zh/en 描述补 0.7.0 / 0.7.1；两份 HANDOFF 的「0 个事件」更正为 1 个；`config.js` 的「不调别的 World 的工具」改成「本插件自己不调用」。
-- **P3 命名**：面板 id `places`（去哪儿）/ `locations`（地点册）与工具前缀不改，只新增 `docs/命名对照.md`；`fun_wish` 合并与 `fun_places` 加 `scope` 评估后不做。
-- 测试链新增 `test/story-read-cache.test.mjs`（6 例）；`npm run verify` 全绿。
 
 ## 0.7.0
 

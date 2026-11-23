@@ -21,7 +21,7 @@
 - **出门时只读**：显示「出门中 · 某地（逛了 1/3）」，在房间里换姿势不会影响正在走的行程。
 - 素材规格、命名与十张贴图的对齐坐标见 [素材单](<E:/deep seek/素材单-鱼的家2D房间/素材单.md>)。
 
-## 版本：0.4.4 → 0.7.1
+## 版本：0.4.4 → 0.7.2
 
 下游文档（用户手册、市场描述）一度停在 0.4.4，这里补一条线，细节仍以 [CHANGELOG.md](CHANGELOG.md) 为准：
 
@@ -29,6 +29,7 @@
 - **0.7.0** 家从 P0 推到 P5：站位改成 `{x, y, scale}` 并按 Q 版实测落地板、脚下接触阴影、随时段变色、可点热点、快照、画架选图、导出/导入房间；家同时成了入口（最近纪念品、未逛完的行程、第一个心愿、「今天想做什么」）；新增只读 `fun_home_state` 与写 `fun_home_activity`，`describe.json` 的工具数到 24。自动出门当时是「10:00–20:00 自己走一趟」。
 - **0.7.1** 把「自己出门」改成方案 B：`funHomeAutoGo`（许可）+ `funHomeAutoSlots`（时段，默认 `10:30,15:30,19:30`）都开且时段非空时，到点只推一条 internal 事件 `fun.home.free` 叫她先看当天日程；**不读`鱼的每一天`的日程、不挑地方、不替她出门**。因此 `describe.json` 从 0 个事件变成 1 个。家里没上传角色图时改用随包内置的十张 Q 版立绘（约 1.2 MB），站位按 Q 版重新量过；修了画架选图不带 `kind` 必报 400 的问题；纪念品摆件因图标压字先不摆（`fun_home_state` 数据仍在，面板里把 `SHOW_KEEPSAKES` 改回 `true` 即恢复）。
 - **配置页现在 15 项**（`enabled` 由框架管）：`funOn` / `funSessionTTLMin` / `funAskReport` / `funTasteFromFeast` / `funHomeAutoGo` / `funHomeAutoSlots` / `funStoryDM` / `funStoryTextOn` / `funStoryAuthorInChat` / `funStoryFree` / `funStoryFreeTurns` / `funStoryImages` / `funStoryAutoImages` / `funAutoSteps` / `funAutoCalls`。主持密钥与图片来源仍在「出游 → 设置」，不进普通配置。
+- **0.7.2** 是代码体检整改：六个只读故事查询加 10 分钟记忆化（重复问只回「没变化」，写操作立即失效，`full:true` 重取）；工具说明与提示词瘦身（实发 schema 9,472 → 9,216，`ENV_PROMPT` 1,202 → 903）；文字通道默认开，聊天里六个查询与开局推进都在，作者工具另有一个开关 `funStoryAuthorInChat`；`hmToMin` / `el()` / `feedback` 抽成共享模块，只读查询拆到 `src/story-read.js`。
 - **工具面**：共 24 个；默认只挂 23 个——文字通道默认开着，作者工具 `fun_story` 要另开「聊天里也能管故事」。关掉文字通道则只剩 17 个。六个只读故事查询有 10 分钟记忆化，同一参数重复问只回 `{ok:true, unchanged:true}` 短回执，任何写操作立即失效，`full:true` 可强制重取。
 
 面板 id、同名函数与工具前缀的对照（`places` = 去哪儿、`locations` = 地点册）见 [docs/命名对照.md](docs/命名对照.md)——只做解释，不改 id。
