@@ -51,6 +51,7 @@ import { branchChoiceFor, branchFollowup } from './branches.js';
 import { addMoment, timelineFor, normalizeRoute, storeRoute, routeText } from './journeys.js';
 import { recommendVenue } from './recommendations.js';
 import { StoryLibrary, storyResultText } from './story-library.js';
+import { readStoryQuery } from './story-read.js';
 import { randomUUID } from 'node:crypto';
 import { pickStory, advanceStoryChoice, normalizeStoryProgress, storyReferences } from './story-packs.js';
 import { describeMemory, describePack, describeStoryTrip, requestStoryDecision, STORY_ACTIONS, storyFailure, storyStamp, StoryAutonomy } from './story-panel.js';
@@ -79,6 +80,18 @@ const IMAGE_DELEGATION_TTL_MS = 45 * 60 * 1000;
 const EVENT_HOME_FREE = 'fun.home.free';
 /** 叫醒的补发窗口：定时器晚了一两分钟也还算这个时段。 */
 const AUTO_GO_CATCHUP_MIN = 10;
+/** 六个只读故事查询的记忆化窗口：同一参数 10 分钟内只回一条「没变化」。 */
+const STORY_READ_TTL_MS = 10 * 60 * 1000;
+/** 只读查询里唯一允许穿透缓存、强制重取的参数。 */
+const FULL_QUERY = { type: 'boolean', description: '跳过 10 分钟记忆化，重取完整结果。' };
+/**
+ * 文字通道关着时不暴露的故事工具：`start/act` 调了也只会报「未开启」，
+ * `places/current/recap/schedule` 是文字通道在推进时才会用的查询。
+ * 保留 `candidates` / `detail` 两个，应对聊天里问「有什么故事」。
+ */
+const STORY_TEXT_ONLY = [
+  'fun_story_start', 'fun_story_act', 'fun_story_places', 'fun_story_current', 'fun_story_recap', 'fun_story_schedule',
+];
 
 const msg = (err) => (err instanceof Error ? err.message : String(err));
 
@@ -124,9 +137,9 @@ export const FUN_TOOL_DECLS = [
         count: { type: 'integer', description: '看几个，默认 4。', minimum: 1, maximum: 8 },
         kind: {
           type: 'string',
-          description: '只看某一类。三档都认：某个大类（「吃饭喝东西」「户外」）、某种感受（「室内」「夜」「排队」「安静」「免费」「一个人」）、或者某一处的正名（「咖啡店」「猫咖」）。',
+          description: '筛一类：大类（「户外」）、感受（「室内」「夜」「免费」）或某处正名（「猫咖」）。',
         },
-        all: { type: 'boolean', description: '填 true 就列全部二十处（按开没开排序），不看 count。' },
+        all: { type: 'boolean', description: 'true = 列全部二十处（按开放排序），忽略 count。' },
       },
       additionalProperties: false,
     },
@@ -134,12 +147,12 @@ export const FUN_TOOL_DECLS = [
   {
     name: 'fun_go',
     tags: ['write'],
-    description: '开始一趟出游并返回当前时段的地点描写与可逛项目。place 必填，使用 fun_places 返回的地点名或别名。',
+    description: '开始一趟出游，返回当下描写与可逛项目。place 用 fun_places 给的地点名或别名。',
     parameters: {
       type: 'object',
       properties: {
-        place: { type: 'string', description: '去哪儿，例如「漫展」「海洋馆」。' },
-        company: { type: 'string', description: '跟谁一起去的，可选。一个人去就不填。' },
+        place: { type: 'string', description: '去哪儿，如「海洋馆」。' },
+        company: { type: 'string', description: '同行人，可选；一个人不填。' },
       },
       required: ['place'],
       additionalProperties: false,
@@ -148,19 +161,15 @@ export const FUN_TOOL_DECLS = [
   {
     name: 'fun_wander',
     tags: ['write'],
-    description: '在当前地点逛一个项目；可选 buy/photo/consume 记录本次真实收获。若回执含 choiceId/optionId，先用 fun_choice 处理再继续。',
+    description: '在当前地点逛一处；可记录本次真实收获。回执带 choiceId 时先用 fun_choice。',
     parameters: {
       type: 'object',
       properties: {
-        area: { type: 'string', description: '想逛哪一处，例如「过山车」「同人展台」。不填就自动挑一个还没逛过的。' },
-        note: { type: 'string', description: '逛到那儿你干了什么，一句话，可选。' },
-        buy: { type: 'string', description: '顺手买了什么纪念品，可选。填 souvenir 的名字。' },
-        photo: { type: 'string', description: '在哪儿拍了张照，可选。填 photoSpot 的名字。' },
-        consume: {
-          type: 'string',
-          description: '在咖啡店/奶茶店/餐厅吃了或喝了什么，可选。只能填这处地方真有的那几样。'
-            + '**只记名字不记味道**：味道要用 feast_menu / feast_eat 去「鱼的每一天」里点，那里才有九维口感。',
-        },
+        area: { type: 'string', description: '逛哪儿，如「过山车」；不填自动挑一处没逛过的。' },
+        note: { type: 'string', description: '一句话，可选。' },
+        buy: { type: 'string', description: '买了什么，填 souvenir 名。' },
+        photo: { type: 'string', description: '在哪儿拍照，填 photoSpot 名。' },
+        consume: { type: 'string', description: '只填这处真有的品类。只记名字不记味道——味道用 feast_menu/feast_eat 去「鱼的每一天」点。' },
       },
       additionalProperties: false,
     },
@@ -172,8 +181,8 @@ export const FUN_TOOL_DECLS = [
     parameters: {
       type: 'object',
       properties: {
-        choiceId: { type: 'string', description: '待选择事件回执给出的 choiceId。' },
-        optionId: { type: 'string', description: '使用回执中的 optionId，或填 skip 略过。' },
+        choiceId: { type: 'string', description: '回执的 choiceId。' },
+        optionId: { type: 'string', description: '回执的 optionId，或 skip。' },
       },
       required: ['choiceId', 'optionId'],
       additionalProperties: false,
@@ -185,19 +194,19 @@ export const FUN_TOOL_DECLS = [
     description: '继续未逛完的行程，返回进度和待选事件。',
     parameters: {
       type: 'object',
-      properties: { id: { type: 'string', description: 'fun_view 提供的未完行程 ID。' } },
+      properties: { id: { type: 'string', description: 'fun_view 的未完行程 ID。' } },
       required: ['id'], additionalProperties: false,
     },
   },
   {
     name: 'fun_home',
     tags: ['write'],
-    description: '回家并把已发生的经历记入纪念册。',
+    description: '回家，把已发生的经历记入纪念册。',
     parameters: {
       type: 'object',
       properties: {
-        note: { type: 'string', description: '这一趟怎么样，一句话，可选。' },
-        draftId: { type: 'string', description: '要按已有记录结束未完行程时，填 fun_view 提供的 ID。结束正在逛的行程时不填。' },
+        note: { type: 'string', description: '一句话，可选。' },
+        draftId: { type: 'string', description: '按已有记录结束未完行程时填 fun_view 的 ID；结束正在逛的不填。' },
       },
       additionalProperties: false,
     },
@@ -207,7 +216,7 @@ export const FUN_TOOL_DECLS = [
     // 只读的房间状态单独叫 `fun_home_state`；写活动叫 `fun_home_activity`。
     name: 'fun_home_state',
     tags: ['read', 'snapshot'],
-    description: '查看家里的房间状态：活动、备注、今天想做什么、待记一条、住所名、在不在外面。只读，不含图片字节。',
+    description: '查看房间状态：活动、备注、今天想做什么、待记一条、住所、是否在外。只读，不含图片。',
     parameters: {
       type: 'object',
       properties: {},
@@ -217,16 +226,16 @@ export const FUN_TOOL_DECLS = [
   {
     name: 'fun_home_activity',
     tags: ['write'],
-    description: '切换她在家的活动（十个固定 id），可附一句备注。expectedRevision 与当前不一致时返回原因，不自动重试。',
+    description: '切换她在家的活动（十个固定 id），可附一句备注。expectedRevision 不一致时返回原因，不自动重试。',
     parameters: {
       type: 'object',
       properties: {
         activity: {
           type: 'string',
-          description: '十个活动之一：idle / reading / watching / cards / gaming / painting / cooking / looking_outside / sleeping / chatting。',
+          description: 'idle / reading / watching / cards / gaming / painting / cooking / looking_outside / sleeping / chatting。',
         },
-        note: { type: 'string', description: '一句房间备注，最多 120 字，可选。' },
-        expectedRevision: { type: 'integer', minimum: 0, description: 'fun_home_state 返回的 revision。' },
+        note: { type: 'string', description: '房间备注，≤120 字，可选。' },
+        expectedRevision: { type: 'integer', minimum: 0, description: 'fun_home_state 的 revision。' },
       },
       required: ['activity', 'expectedRevision'],
       additionalProperties: false,
@@ -247,10 +256,10 @@ export const FUN_TOOL_DECLS = [
     description: '规划两站出门、前往下一站、改下一站或取消后续；不自动移动。',
     parameters: { type: 'object', properties: {
       action: { type: 'string', enum: ['plan', 'status', 'next', 'change', 'cancel'] },
-      places: { type: 'array', items: { type: 'string' }, minItems: 2, maxItems: 2, description: 'plan 时填两个不同地点正名或 ID。' },
-      id: { type: 'string', description: 'next/change/cancel 时填回执中的路线 ID。' },
-      place: { type: 'string', description: 'change 时的新下一站；只改尚未去的站。' },
-      company: { type: 'string', description: 'plan 时的同行人，可选。' },
+      places: { type: 'array', items: { type: 'string' }, minItems: 2, maxItems: 2, description: 'plan：两个不同地点。' },
+      id: { type: 'string', description: 'next/change/cancel：路线 ID。' },
+      place: { type: 'string', description: 'change：新下一站（只改未去的）。' },
+      company: { type: 'string', description: 'plan：同行人，可选。' },
     }, required: ['action'], additionalProperties: false },
   },
   {
@@ -260,13 +269,13 @@ export const FUN_TOOL_DECLS = [
     parameters: {
       type: 'object',
       properties: {
-        count: { type: 'integer', description: '看最近几趟，默认 5。', minimum: 1, maximum: 20 },
-        query: { type: 'string', description: '搜索地点、项目、备注、小事或纪念品。' },
-        place: { type: 'string', description: '只看这个地点的行程，正名或别名。' },
-        company: { type: 'string', description: '只看与这位同行人的行程。' },
-        from: { type: 'string', description: '开始日期 YYYY-MM-DD，包含当天。' },
-        to: { type: 'string', description: '结束日期 YYYY-MM-DD，包含当天。' },
-        id: { type: 'string', description: '精确查看一个已有行程 ID。' },
+        count: { type: 'integer', description: '最近几趟，默认 5。', minimum: 1, maximum: 20 },
+        query: { type: 'string', description: '搜地点、项目、备注、小事、纪念品。' },
+        place: { type: 'string', description: '只看这处，正名或别名。' },
+        company: { type: 'string', description: '只看这位同行人。' },
+        from: { type: 'string', description: 'YYYY-MM-DD，含当天。' },
+        to: { type: 'string', description: 'YYYY-MM-DD，含当天。' },
+        id: { type: 'string', description: '精确看一趟。' },
       },
       additionalProperties: false,
     },
@@ -274,22 +283,22 @@ export const FUN_TOOL_DECLS = [
   {
     name: 'fun_wishes',
     tags: ['read', 'snapshot'],
-    description: '查看出游心愿及状态；只有明确说过想去、想做的事才会记录，不会催促。',
+    description: '查看出游心愿及状态；只记明确说过的，不催促。',
     parameters: { type: 'object', properties: {}, additionalProperties: false },
   },
   {
     name: 'fun_wish',
     tags: ['write'],
-    description: '记录明确表达的出游心愿，或暂缓、恢复、取消。先选地点；项目、时段、纪念品须填真实清单正名。不会替你出游，也不按旧行程补完成。',
+    description: '记录明确表达的出游心愿，或暂缓、恢复、取消。项目/时段/纪念品须填真实正名；不替你出游、不按旧行程补完成。',
     parameters: {
       type: 'object',
       properties: {
         action: { type: 'string', enum: ['add', 'pause', 'resume', 'cancel'] },
-        id: { type: 'string', description: '管理现有心愿时填 fun_wishes 给出的 ID。' },
-        place: { type: 'string', description: '新增心愿的地点名，别名也认。' },
+        id: { type: 'string', description: 'fun_wishes 的心愿 ID。' },
+        place: { type: 'string', description: '地点名，别名也认。' },
         type: { type: 'string', enum: ['visit', 'area', 'phase', 'souvenir'] },
         target: { type: 'string', description: '项目/时段/纪念品正名；visit 不填。' },
-        reason: { type: 'string', description: '你明确表达的缘由，可选，不凭空猜测偏好。' },
+        reason: { type: 'string', description: '你明确说过的缘由，可选。' },
       },
       required: ['action'], additionalProperties: false,
     },
@@ -297,12 +306,12 @@ export const FUN_TOOL_DECLS = [
   {
     name: 'fun_keepsake',
     tags: ['write'],
-    description: '用 fun_view 的行程 ID 珍藏或取消珍藏一趟已回家的行程。珍藏独立保留，不影响收藏账本。',
+    description: '珍藏或取消珍藏一趟已回家的行程；不影响收藏账本。',
     parameters: {
       type: 'object',
       properties: {
-        id: { type: 'string', description: '行程 ID，来自纪念册（fun_view）。' },
-        keep: { type: 'boolean', description: 'true 珍藏，false 取消珍藏。' },
+        id: { type: 'string', description: 'fun_view 的行程 ID。' },
+        keep: { type: 'boolean', description: 'true 珍藏，false 取消。' },
       },
       required: ['id'],
       additionalProperties: false,
@@ -311,17 +320,17 @@ export const FUN_TOOL_DECLS = [
   {
     name: 'fun_story',
     tags: ['write'],
-    description: '管理本地故事工坊，校验和预览只读，导入或启停须指定操作。',
+    description: '管理本地故事工坊：校验/预览只读，导入、启停、删除要指定 action。需打开「聊天里也能管故事」才挂。',
     parameters: { type: 'object', properties: {
       action: { type: 'string', enum: ['list', 'template', 'validate', 'preview', 'playtest', 'export', 'import', 'enable', 'disable', 'remove'] },
-      id: { type: 'string', description: '已有剧情包 ID，来自 list。' },
-      json: { type: 'string', description: '完整剧情包 JSON，最多 32 KB；validate/preview 不保存。' },
-      placeId: { type: 'string', description: 'template 绑定的真实地点 ID，可来自自填地点；list 提供可用 ID。' },
-      mode: { type: 'string', enum: ['static', 'free'], description: 'template 的模板类型：static 选项式（默认），free 自由模式场景包。' },
-      area: { type: 'string', description: 'preview 的项目，默认使用起始节点项目。' },
-      time: { type: 'string', description: 'preview 的测试时刻 HH:MM，默认当前本地时刻。' },
-      path: { type: 'array', maxItems: 16, items: { type: 'string', maxLength: 24 }, description: 'playtest 已明确选择的选项路径；只使用临时状态。' },
-      replace: { type: 'boolean', description: 'import 覆盖已有同 ID 自定义包时才设 true。' },
+      id: { type: 'string', description: '已有包 ID（list 取）。' },
+      json: { type: 'string', description: '完整包 JSON，≤32 KB；validate/preview 不保存。' },
+      placeId: { type: 'string', description: 'template 绑定的地点 ID（list 可查）。' },
+      mode: { type: 'string', enum: ['static', 'free'], description: 'template 类型：static 选项式（默认）/ free 场景包。' },
+      area: { type: 'string', description: 'preview 的项目，默认起始项目。' },
+      time: { type: 'string', description: 'preview 的测试时刻 HH:MM，默认现在。' },
+      path: { type: 'array', maxItems: 16, items: { type: 'string', maxLength: 24 }, description: 'playtest 已选的路径，只用临时状态。' },
+      replace: { type: 'boolean', description: 'import 覆盖同 ID 包时设 true。' },
     }, required: ['action'], additionalProperties: false },
   },
   {
@@ -331,7 +340,7 @@ export const FUN_TOOL_DECLS = [
     parameters: {
       type: 'object',
       properties: {
-        place: { type: 'string', description: '只看某一处的架子（填地方名，可选）。不填就看全部。' },
+        place: { type: 'string', description: '只看这处；不填看全部。' },
       },
       additionalProperties: false,
     },
@@ -339,42 +348,42 @@ export const FUN_TOOL_DECLS = [
   {
     name: 'fun_story_places', tags: ['read', 'snapshot'],
     description: '查询故事地点索引或单个地点详情；只读，不开始出游。',
-    parameters: { type: 'object', properties: { id: { type: 'string', description: '地点稳定 ID；不填返回索引。' } }, additionalProperties: false },
+    parameters: { type: 'object', properties: { id: { type: 'string', description: '地点 ID；不填返回索引。' }, full: FULL_QUERY }, additionalProperties: false },
   },
   {
     name: 'fun_story_candidates', tags: ['read', 'snapshot'],
-    description: '查询可用故事候选和不含未来分支的公开简介；只读，不开始故事。',
-    parameters: { type: 'object', properties: {}, additionalProperties: false },
+    description: '查询可用故事候选和公开简介（不含未来分支）；只读。',
+    parameters: { type: 'object', properties: { full: FULL_QUERY }, additionalProperties: false },
   },
   {
     name: 'fun_story_detail', tags: ['read', 'snapshot'],
-    description: '查询一个故事的公开资料和可用原因，不返回节点或未来分支全文。',
-    parameters: { type: 'object', properties: { id: { type: 'string', description: '故事稳定 ID。' } }, required: ['id'], additionalProperties: false },
+    description: '查询一篇故事的公开资料与可用原因，不含节点全文。',
+    parameters: { type: 'object', properties: { id: { type: 'string', description: '故事 ID。' }, full: FULL_QUERY }, required: ['id'], additionalProperties: false },
   },
   {
     name: 'fun_story_current', tags: ['read', 'snapshot'],
-    description: '查询当前故事的实际状态、已发生片段与当前待选项；不会推进行程。',
-    parameters: { type: 'object', properties: {}, additionalProperties: false },
+    description: '查询当前故事的状态、已发生片段与待选项；不推进。',
+    parameters: { type: 'object', properties: { full: FULL_QUERY }, additionalProperties: false },
   },
   {
     name: 'fun_story_recap', tags: ['read', 'snapshot'],
-    description: '查询已结束故事的事实回顾；只含实际发生的片段和选择。',
-    parameters: { type: 'object', properties: { id: { type: 'string', description: '回忆 ID，可选；不填取最近故事回忆。' } }, additionalProperties: false },
+    description: '查询已结束故事的事实回顾，只含实际发生。',
+    parameters: { type: 'object', properties: { id: { type: 'string', description: '回忆 ID；不填取最近。' }, full: FULL_QUERY }, additionalProperties: false },
   },
   {
     name: 'fun_story_schedule', tags: ['read', 'snapshot'],
-    description: '生成故事候选的可复制短文本；复制不写入日程，也不会自动出发。',
-    parameters: { type: 'object', properties: { id: { type: 'string', description: '候选故事 ID，可选。' } }, additionalProperties: false },
+    description: '生成候选的可复制短文本；复制不写日程、不出发。',
+    parameters: { type: 'object', properties: { id: { type: 'string', description: '候选 ID，可选。' }, full: FULL_QUERY }, additionalProperties: false },
   },
   {
     name: 'fun_story_start', tags: ['write'],
-    description: '在聊天里开始一段故事（需要在从0开始的肥鱼大冒险设置里开启「文字通道也能玩故事」，否则会明确报未开启）。先用 fun_story_candidates 或 fun_story_detail 拿 packId、revision 和 fun_story_current 的 startStamp；开始前会重新校验条件。用户明确说要开始才填 confirm: true。',
+    description: '在聊天里开始一段故事（需开「文字通道也能玩故事」）。先从 fun_story_candidates / detail 取 packId、revision，从 fun_story_current 取 startStamp；开始前会重校验。用户明确说要开始才填 confirm:true。',
     parameters: {
       type: 'object',
       properties: {
-        packId: { type: 'string', description: '故事 ID，来自候选清单。' },
-        revision: { type: 'string', description: '故事版本，来自候选清单。' },
-        startStamp: { type: 'string', description: 'fun_story_current 返回的 startStamp。' },
+        packId: { type: 'string', description: '候选里的故事 ID。' },
+        revision: { type: 'string', description: '候选里的版本。' },
+        startStamp: { type: 'string', description: 'fun_story_current 的 startStamp。' },
         confirm: { type: 'boolean', description: '用户明确说要开始时填 true。' },
       },
       required: ['packId', 'revision', 'startStamp', 'confirm'],
@@ -383,17 +392,17 @@ export const FUN_TOOL_DECLS = [
   },
   {
     name: 'fun_story_act', tags: ['write'],
-    description: '在聊天里推进当前故事：把用户这一回合的原话交给它，不替用户编选择。选项式故事按当前回合身份提交：用户回合就按用户原话（含“选第二个”这类序号）替用户提交，记为 owner；轮到鱼时以鱼的身份提交，用户没指定时鱼按自己的角色决定。原话对不上时先返回 proposalId（不提交），用户确认后再带 proposalId 和 optionId 提交。自由模式（场景包）每次 say 推进一回合。结束这一段用 intent: close 并 confirm: true。',
+    description: '在聊天里推进当前故事，把用户原话交给它，不替用户编选择。选项式按回合身份提交：用户回合记 owner，鱼回合由鱼决定；原话对不上先返回 proposalId，确认后再带 proposalId+optionId。自由模式每句一回合；结束用 intent:close + confirm:true。',
     parameters: {
       type: 'object',
       properties: {
-        tripId: { type: 'string', description: '当前故事行程 ID，来自 fun_story_current。' },
-        stamp: { type: 'string', description: '当前进度戳，来自 fun_story_current；变了就重新读，不要猜。' },
-        intent: { type: 'string', enum: ['say', 'close'], description: 'say 说一句；close 结束这一段并保存回忆。' },
-        say: { type: 'string', description: '用户这一回合的原话，最多 200 字。' },
-        proposalId: { type: 'string', description: '选项式故事：上一次 fun_story_act 返回的提议 ID。' },
-        optionId: { type: 'string', description: '选项式故事：确认要提交的选项 ID。' },
-        from: { type: 'string', description: 'QQ 昵称，只用于日志归属，可选。' },
+        tripId: { type: 'string', description: 'fun_story_current 的行程 ID。' },
+        stamp: { type: 'string', description: 'fun_story_current 的进度戳；变了重读，别猜。' },
+        intent: { type: 'string', enum: ['say', 'close'], description: 'say 说一句；close 结束并保存回忆。' },
+        say: { type: 'string', description: '用户原话，≤200 字。' },
+        proposalId: { type: 'string', description: '上次返回的提议 ID。' },
+        optionId: { type: 'string', description: '确认提交的选项 ID。' },
+        from: { type: 'string', description: 'QQ 昵称，仅日志归属，可选。' },
         confirm: { type: 'boolean', description: 'intent 为 close 时填 true。' },
       },
       required: ['tripId', 'stamp', 'intent'],
@@ -438,6 +447,10 @@ export class FunWorld {
   /** 今天已经叫过哪些时段（落盘，重启不重复叫）。 */
   #inviteLog = null;
   #venueMigrationError;
+  /** 只读故事查询的记忆化：键 = 工具 + 参数，值 = 上一次的完整回执。 */
+  #readCache = new Map();
+  /** 任何写操作（工具或面板）都 +1；缓存条目的 epoch 对不上就作废。 */
+  #cacheEpoch = 0;
 
   constructor(opts = {}) {
     this.id = ID;
@@ -589,6 +602,8 @@ export class FunWorld {
     await rename(tmp, file);
     this.#userVenues = venues;
     this.#overrides = overrides;
+    // 地点名/别名/开放时段都进了 `fun_story_places` 与候选卡，写完必须让缓存重取。
+    this.#bumpCache();
   }
 
   /**
@@ -718,14 +733,71 @@ export class FunWorld {
   // -------------------------------------------------------------------------
 
   tools() {
-    return FUN_TOOL_DECLS.map((decl) => ({
-      ...decl,
-      handler: (args) => this.#runTool(decl.name, args ?? {}),
-    }));
+    // 工具面按开关收窄，schema 是每轮都要带的固定开销：
+    //   · 文字通道关着 → 只留 candidates / detail，应付聊天里「有什么故事」；
+    //   · 作者工具默认不挂（面板走 #invoke，不靠工具写故事）。
+    // 宿主每轮会重新取一次 tools()，改开关立即生效。
+    const textOn = this.cfg?.funStoryTextOn === true;
+    const authorOn = this.cfg?.funStoryAuthorInChat === true;
+    const hidden = new Set();
+    if (!textOn) for (const name of STORY_TEXT_ONLY) hidden.add(name);
+    if (!authorOn) hidden.add('fun_story');
+    return FUN_TOOL_DECLS
+      .filter((decl) => !hidden.has(decl.name))
+      .map((decl) => ({
+        ...decl,
+        handler: (args) => this.#runTool(decl.name, args ?? {}),
+      }));
+  }
+
+  /** 写操作把整张只读缓存清掉；读操作不动。 */
+  #bumpCache() {
+    this.#cacheEpoch += 1;
+    if (this.#readCache.size) this.#readCache.clear();
+  }
+
+  /** 缓存键：参数按键名排序，`full` 不参与（它只是穿透，不是另一个查询）。 */
+  #readCacheKey(name, args) {
+    const { full: _full, ...rest } = args ?? {};
+    const keys = Object.keys(rest).sort();
+    return `${name}\u0000${JSON.stringify(keys.map((key) => [key, rest[key]]))}`;
+  }
+
+  /**
+   * 命中就回一条短回执：`{ok, unchanged:true, since, hint}`。
+   *
+   * 只读工具的大头是 `fun_story_places` / `fun_story_candidates`（各约 1.8k 字符）；
+   * 同一份东西一天问六次就是一万字符。`full:true` 是逃生门，绕过记忆化重取。
+   */
+  #readCacheGet(name, args) {
+    if (args?.full === true) return null;
+    const hit = this.#readCache.get(this.#readCacheKey(name, args));
+    if (!hit || hit.epoch !== this.#cacheEpoch) return null;
+    const age = this.#now() - hit.at;
+    if (!(age >= 0 && age <= STORY_READ_TTL_MS)) {
+      this.#readCache.delete(this.#readCacheKey(name, args));
+      return null;
+    }
+    const short = {
+      ok: true, unchanged: true, since: hit.since, tool: name,
+      hint: '同一查询 10 分钟内结果没变；上下文里已有完整内容就别再问。被截断了再加 full:true 重取一次。',
+    };
+    return { ...short, text: JSON.stringify(short) };
+  }
+
+  /** 只在成功时记；失败不缓存，免得把一次临时错误钉住 10 分钟。 */
+  #readCacheSet(name, args, result) {
+    this.#readCache.set(this.#readCacheKey(name, args), {
+      epoch: this.#cacheEpoch,
+      at: this.#now(),
+      since: hmIn(this.timezone, Number(result?.queryAt) || this.#now()),
+    });
   }
 
   #runTool(name, args) {
     return this.#serial(async () => {
+      // 写工具一律先清只读缓存：`fun_story_current` 这类回执必须反映最新写结果。
+      if (FUN_TOOL_DECLS.find((decl) => decl.name === name)?.tags?.includes('write')) this.#bumpCache();
       const previous = this.#state ? structuredClone(this.#state) : null;
       try {
         return await this.#tool(name, args);
@@ -766,11 +838,15 @@ export class FunWorld {
       case 'fun_story_current':
       case 'fun_story_recap':
       case 'fun_story_schedule': {
+        const cached = this.#readCacheGet(name, args);
+        if (cached) return cached;
         let result;
         try { result = await this.#storyRead(name, args); }
         catch (error) { result = { ok: false, code: 'QUERY_FAILED', error: msg(error) }; }
+        const receipt = { ...result, text: JSON.stringify(result), ...(result.ok ? {} : { failed: true }) };
+        if (result.ok) this.#readCacheSet(name, args, result);
         // The host model consumes text; keep typed fields for direct local callers.
-        return { ...result, text: JSON.stringify(result), ...(result.ok ? {} : { failed: true }) };
+        return receipt;
       }
       case 'fun_story': {
         const result = await this.#storyLibrary.act(args);
@@ -1811,6 +1887,7 @@ export class FunWorld {
     await this.#save(next);
     this.#storyImages.cancel();
     this.#state = next;
+    this.#bumpCache();
   }
 
   #serial(task) {
@@ -1933,94 +2010,24 @@ export class FunWorld {
     return new Set((this.#normalizeState().storyCanon ?? []).map((row) => row.packId));
   }
 
-  #storyPublicCard(row) {
-    const { pack, enabled } = row;
-    const venue = this.#allPlaces().find((item) => item.id === pack.placeId);
-    const view = describePack(row, venue, minutesIn(this.timezone, this.#now()), this.#history(pack.placeId)?.visitCount ?? 0, this.#completedStoryIds(), { freeEnabled: this.cfg?.funStoryFree === true });
-    const meta = pack.metadata ?? {};
-    return {
-      id: pack.id, title: pack.title, placeId: pack.placeId, placeName: venue?.name ?? pack.placeId,
-      revision: pack.revision, formatVersion: pack.version, mode: pack.version === 3 ? 'free' : 'static',
-      author: meta.author ?? '未标注',
-      release: meta.release ?? 'v1', genre: meta.genre ?? '未标注', synopsis: meta.synopsis ?? '',
-      participation: meta.participation ?? 'solo', durationMinutes: meta.durationMinutes ?? null,
-      duration: meta.durationMinutes === undefined ? '未知' : `${meta.durationMinutes} 分钟`,
-      requirements: [...(meta.requirements ?? [])], enabled, available: view.available,
-      reason: view.problem ?? null, queryAt: this.#now(),
-    };
-  }
-
+  /** 六个公开只读查询：实现拆在 `story-read.js`，这里只把只读依赖递过去。 */
   async #storyRead(name, args = {}) {
-    const queryAt = this.#now();
-    const places = this.#places();
-    if (name === 'fun_story_places') {
-      const library = await this.#locationLibrary.snapshot();
-      const nowMin = minutesIn(this.timezone, queryAt);
-      const project = (place, detail = false) => {
-        const venue = places.find((item) => item.id === place.id);
-        return { id: place.id, name: place.name, playable: Boolean(venue?.areas?.length), isHome: place.isHome,
-          openState: venue ? hoursState(venue, nowMin) : null,
-          ...(detail ? { description: venue ? descNow(venue, nowMin) : place.desc,
-            aliases: [...place.aliases], kind: place.kind, tags: [...place.tags],
-            areas: venue ? [...areasNow(venue, nowMin)] : [], hours: venue ? { ...venue.hours } : null } : {}) };
-      };
-      if (args.id) {
-        const place = library.places.find((item) => item.id === args.id);
-        return place ? { ok: true, queryAt, place: project(place, true) }
-          : { ok: false, code: 'NOT_FOUND', error: '地点不存在。' };
-      }
-      return { ok: true, queryAt, places: library.places.map((place) => project(place)) };
-    }
-    const catalog = this.#storyLibrary.catalog();
-    if (name === 'fun_story_candidates' || name === 'fun_story_detail' || name === 'fun_story_schedule') {
-      const cards = catalog.map((row) => this.#storyPublicCard(row));
-      if (name === 'fun_story_detail') {
-        const card = cards.find((item) => item.id === args.id);
-        return card ? { ok: true, queryAt, story: card } : { ok: false, code: 'NOT_FOUND', error: '故事不存在。' };
-      }
-      const available = cards.filter((card) => card.enabled && card.available);
-      const candidates = cards.filter((card) => card.enabled);
-      if (name === 'fun_story_schedule') {
-        const card = args.id ? available.find((item) => item.id === args.id) : available[0];
-        if (!card) return { ok: false, code: args.id ? 'NOT_AVAILABLE' : 'NO_CANDIDATE', error: '当前没有符合条件的故事候选。' };
-        return { ok: true, queryAt, source: 'fun_story_schedule', text: `可考虑《${card.title}》· ${card.placeName} · 参与方式：${card.participation} · 时长：${card.duration}。这只是候选，不会开始故事或写入日程。` };
-      }
-      return { ok: true, queryAt, candidates };
-    }
-    if (name === 'fun_story_current') {
-      const status = this.#storyStatus();
-      if (!status.ok) return status;
-      const trip = status.trip;
-      return { ok: true, queryAt, state: trip ? trip.state : 'none', startStamp: status.startStamp, trip: trip ? {
-        id: trip.id, runId: this.#state.session?.storyRun?.runId ?? this.#state.draft?.storyRun?.runId ?? null,
-        title: trip.title, packId: trip.packId, revision: trip.revision, placeId: trip.placeId, placeName: trip.placeName,
-        step: trip.step, actor: trip.actor ?? null, complete: trip.complete, blocked: trip.blocked || null, nextArea: trip.nextArea || null,
-        mode: trip.mode ?? 'static', maxTurns: trip.maxTurns ?? null, free: trip.free ?? null,
-        events: [...trip.events], choices: [...trip.choices], pending: trip.pending ? { id: trip.pending.id, event: trip.pending.event,
-          prompt: trip.pending.prompt, actor: trip.pending.actor ?? 'owner',
-          jointResolution: trip.pending.jointResolution ?? null, votes: { ...(trip.pending.votes ?? {}) },
-          options: trip.pending.options.map(({ id, label }) => ({ id, label })) } : null,
-        // 文字通道只看这一行就知道该谁投：共同决定缺哪一席，就是那一席的回合。
-        hint: trip.step !== 'choose' ? null : trip.actor === 'fish'
-          ? '这一票轮到鱼（你）自己提交：把她的选择用 say 交进来即可，不要等用户替她选。'
-          : trip.actor === 'owner' ? '这一票等用户（主人）自己提交；鱼不能代投。' : null,
-        timeline: [...trip.timeline],
-      } : null };
-    }
-    if (name === 'fun_story_recap') {
-      const memories = this.#savedTrips().filter((trip) => trip.storyRun);
-      const memory = args.id ? memories.find((trip) => trip.id === args.id || trip.storyRun.runId === args.id) : memories[0];
-      if (!memory) return { ok: false, code: args.id ? 'NOT_FOUND' : 'NO_MEMORY', error: '没有找到已保存的故事回忆。' };
-      const view = describeMemory(memory);
-      const areas = [...new Set((memory.visited ?? []).map((item) => item.area).filter(Boolean))];
-      const choices = (memory.choices ?? []).map((item) => item.option).filter(Boolean);
-      const summary = [`${memory.storyRun.endingNodeId ? '完整' : '中途结束'}：${memory.storyRun.title}`, memory.placeName,
-        areas.length ? `实际走过：${areas.join('、')}` : '', choices.length ? `实际选择：${choices.join('、')}` : '',
-        memory.events?.length ? `实际事件：${memory.events.join('；')}` : ''].filter(Boolean).join('。');
-      return { ok: true, queryAt, source: 'fun_story_recap', memory: { ...view, runId: memory.storyRun.runId ?? null,
-        sourceRunId: memory.storyRun.sourceRunId ?? null, summary } };
-    }
-    return { ok: false, code: 'UNSUPPORTED_QUERY', error: '不支持的只读故事查询。' };
+    return readStoryQuery({
+      name,
+      args,
+      now: this.#now(),
+      timezone: this.timezone,
+      places: this.#places(),
+      allPlaces: this.#allPlaces(),
+      locationsSnapshot: () => this.#locationLibrary.snapshot(),
+      catalog: () => this.#storyLibrary.catalog(),
+      status: () => this.#storyStatus(),
+      savedTrips: () => this.#savedTrips(),
+      visitCount: (id) => this.#history(id)?.visitCount ?? 0,
+      completedStoryIds: () => this.#completedStoryIds(),
+      freeEnabled: this.cfg?.funStoryFree === true,
+      runId: this.#state.session?.storyRun?.runId ?? this.#state.draft?.storyRun?.runId ?? null,
+    });
   }
 
   /** 自主游玩的上限每次都现读设置：用户在设置里改完不用重开面板。 */
@@ -3207,7 +3214,10 @@ export class FunWorld {
         const writes = ['import', 'enable', 'disable', 'remove'];
         const payload = { ...(args?.[0] ?? {}), action: method };
         if (reads.includes(method)) return await this.#storyLibrary.act(payload);
-        if (writes.includes(method)) return await this.#serial(() => this.#storyLibrary.act(payload));
+        if (writes.includes(method)) {
+          this.#bumpCache();
+          return await this.#serial(() => this.#storyLibrary.act(payload));
+        }
         throw new Error('不支持的剧情包操作');
       }
       if (panel === 'places') {

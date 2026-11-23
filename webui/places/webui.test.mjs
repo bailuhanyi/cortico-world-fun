@@ -9,36 +9,11 @@ import { mountPlaces } from './webui.js';
 
 const oldPlaces = [{ sourceId: 'home', name: '旧家' }, { sourceId: 'river', name: '河畔' }];
 
+import { createShimDom } from '../../test/dom-shim.mjs';
+
 const flush = () => new Promise((resolve) => setImmediate(resolve));
 // Minimal DOM for actual form/RPC interactions, not browser layout validation.
-class FormElement extends EventTarget {
-  constructor(tag, document) {
-    super();
-    this.tagName = tag.toUpperCase(); this.ownerDocument = document; this.childNodes = [];
-    this.attributes = new Map(); this.dataset = {}; this.disabled = false; this.className = ''; this._text = '';
-  }
-  setAttribute(name, value) { this.attributes.set(name, String(value)); if (name === 'value') this.value = String(value); }
-  getAttribute(name) { return this.attributes.get(name) ?? null; }
-  get textContent() { return this._text + this.childNodes.map((child) => child.textContent).join(''); }
-  set textContent(value) { this._text = String(value); this.childNodes = []; }
-  get value() { return this._value ?? (this.tagName === 'TEXTAREA' ? this.textContent : ''); }
-  set value(value) { this._value = String(value); }
-  append(...children) {
-    for (let child of children) {
-      if (typeof child !== 'object') { const text = this.ownerDocument.createElement('#text'); text.textContent = child; child = text; }
-      this.childNodes.push(child); child.parentNode = this;
-    }
-  }
-  replaceChildren(...children) { for (const child of this.childNodes) child.parentNode = null; this.childNodes = []; this._text = ''; this.append(...children); }
-  remove() { if (this.parentNode) { const siblings = this.parentNode.childNodes; siblings.splice(siblings.indexOf(this), 1); this.parentNode = null; } }
-  focus() { this.ownerDocument.activeElement = this; }
-  click() { if (!this.disabled) this.dispatchEvent(new Event('click')); }
-  querySelectorAll(selector) {
-    const tags = selector.split(',').map((tag) => tag.trim().toUpperCase());
-    return this.childNodes.flatMap((child) => [...(tags.includes(child.tagName) ? [child] : []), ...child.querySelectorAll(selector)]);
-  }
-  querySelector(selector) { return this.querySelectorAll(selector)[0] ?? null; }
-}
+const { createDocument } = createShimDom();
 async function mountLibrary(t, prepare) {
   const dir = await mkdtemp(join(tmpdir(), 'fun-locations-ui-'));
   const world = new FunWorld({ dataDir: dir });
@@ -46,7 +21,7 @@ async function mountLibrary(t, prepare) {
   t.after(async () => { await world.stop(); await rm(dir, { recursive: true, force: true }); });
   const rpc = (method, payload) => world.webUi().invoke('locations', method, payload === undefined ? [] : [payload]);
   if (prepare) await prepare(rpc);
-  const document = { createElement(tag) { return new FormElement(tag, this); } };
+  const document = createDocument();
   const root = document.createElement('div');
   const calls = [];
   let pending = 0;

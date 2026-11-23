@@ -302,6 +302,70 @@ function souvenirArtwork(name) {
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">${symbols[souvenirCategory(name)]}</svg>`;
 }
 
+// webui/dom.js
+function el(tag, props, ...kids) {
+  const node2 = document.createElement(tag);
+  if (props) {
+    for (const [key, value] of Object.entries(props)) {
+      if (value === null || value === void 0 || value === false) continue;
+      if (key === "class") node2.className = value;
+      else if (key === "text") node2.textContent = value;
+      else if (key === "html") node2.innerHTML = value;
+      else if (key.startsWith("on") && typeof value === "function") node2.addEventListener(key.slice(2), value);
+      else if (key === "style" && typeof value === "object") Object.assign(node2.style, value);
+      else if (key === "style") node2.setAttribute("style", String(value));
+      else if (key === "hidden") node2.hidden = Boolean(value);
+      else node2.setAttribute(key, value);
+    }
+  }
+  for (const kid of kids.flat(Infinity)) {
+    if (kid === null || kid === void 0 || kid === false) continue;
+    node2.appendChild(typeof kid === "string" || typeof kid === "number" ? document.createTextNode(String(kid)) : kid);
+  }
+  return node2;
+}
+function elIn(doc, tag, attrs = {}, ...children) {
+  const element = doc.createElement(tag);
+  for (const [name, value] of Object.entries(attrs)) {
+    if (value === null || value === void 0 || value === false) continue;
+    if (name === "class") element.className = value;
+    else if (name === "text") element.textContent = String(value);
+    else if (name === "style") element.setAttribute("style", value);
+    else if (name === "hidden") element.hidden = Boolean(value);
+    else if (name.startsWith("on") && typeof value === "function") element.addEventListener(name.slice(2), value);
+    else element.setAttribute(name, String(value));
+  }
+  for (const child of children.flat(Infinity)) {
+    if (child === null || child === void 0 || child === false) continue;
+    element.append(typeof child === "object" ? child : String(child));
+  }
+  return element;
+}
+function errorCard(err, retry, retained = false) {
+  return el(
+    "div",
+    { class: "fun-err", role: "alert" },
+    el("span", { text: retained ? `刷新失败，保留上次内容：${err?.message ?? String(err)}` : `面板加载失败：${err?.message ?? String(err)}` }),
+    retry ? el("button", { type: "button", onclick: () => {
+      void retry();
+    } }, "重试") : null
+  );
+}
+function heading(title, subtitle) {
+  return el(
+    "header",
+    { class: "fun-heading" },
+    el("p", { class: "fun-kicker", text: `从0开始的肥鱼大冒险 · ${title}` }),
+    el("h2", { text: title }),
+    subtitle ? el("p", { class: "fun-heading-lead", text: subtitle }) : null
+  );
+}
+function feedback(box) {
+  const node2 = el("div", { class: "fun-feedback" });
+  box.appendChild(node2);
+  return node2;
+}
+
 // webui/stories.js
 var CSS = `
 .fun-stories{--fs-line:var(--border,#e3e4e3);--fs-ink:var(--foreground,#1b1a1e);--fs-dim:var(--muted-foreground,#5c5c60);--fs-card:var(--surface,#fbfbfb);--fs-soft:color-mix(in srgb,var(--fs-card) 93%,var(--fs-ink));--fs-accent:var(--accent,#00a870);--fs-error:var(--destructive,#b23b35);font:14px/1.65 var(--sans,-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif);color:var(--fs-ink);padding:8px 4px 24px;overflow-wrap:anywhere}
@@ -381,19 +445,10 @@ var CSS = `
 .fun-story-required-dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--fs-error);flex:none}.fun-story-required-dot[hidden]{display:none!important}.fun-story-group-progress{white-space:nowrap}.fun-story-group-content{padding-top:2px}.fun-story-group-content .fun-story-grid{gap:12px 14px;margin:10px 0}.fun-story-group-content .fun-story-field{display:flex;flex-direction:column;gap:5px;font-size:12px}.fun-story-group-content :is(input,select){height:36px;border-radius:8px;padding:6px 10px}.fun-story-group-content textarea{border-radius:8px;padding:8px 10px}.fun-story-sticky-actions .fun-story-sticky-status{margin-left:auto;color:var(--fs-dim);font-size:11px}.fun-story-sticky-actions .fun-story-sticky-status:empty{display:none}
 @media(max-width:420px){.fun-stories{padding-inline:0}.fun-story-editor{padding:10px}.fun-story-body{padding:10px 11px}}
 `;
-function el(tag, attrs = {}, ...children) {
-  const node2 = document.createElement(tag);
-  for (const [key, value] of Object.entries(attrs)) node2.setAttribute(key, value);
-  for (const child of children.flat()) {
-    if (child == null) continue;
-    node2.appendChild(typeof child === "string" ? document.createTextNode(child) : child);
-  }
-  return node2;
-}
 function messageList(messages) {
   return messages?.length ? el("ul", {}, messages.map((message) => el("li", {}, String(message)))) : null;
 }
-function feedback() {
+function feedback2() {
   const status = el("div", { role: "status" });
   const alert = el("div", { class: "fun-story-errors", role: "alert" });
   return {
@@ -492,7 +547,7 @@ function simpleEditor(button2, save, onDirty = () => {
     return { key, choice, result, event: event2, area: area2, node: node3 };
   });
   let places = [];
-  const report = feedback();
+  const report = feedback2();
   const updateAreas = () => {
     const areas = (places.find((item) => item.id === place.value)?.areas ?? []).map((name) => ({ value: name, label: name }));
     fillSelect(area, areas, "选择起始区域");
@@ -758,7 +813,7 @@ function freeEditor(button2, save, onDirty = () => {
   endThreshold.min = "0";
   endThreshold.max = "100";
   endThreshold.value = "2";
-  const report = feedback();
+  const report = feedback2();
   const playtestBox = el("div", { class: "fun-story-playtest" });
   const lines = (value) => String(value ?? "").split(/\r?\n/).map((line2) => line2.trim()).filter(Boolean);
   const buildPack = () => {
@@ -1026,7 +1081,7 @@ function mountStories(ctx) {
   place.appendChild(defaultPlace());
   const draft = el("textarea", { class: "fun-story-json", rows: "8", spellcheck: "false", placeholder: "粘贴故事包 JSON…" });
   const overwrite = el("input", { type: "checkbox", class: "fun-story-overwrite" });
-  const editorReport = feedback();
+  const editorReport = feedback2();
   const editorResult = el("div", { class: "fun-story-result" });
   draft.addEventListener("input", () => {
     draftEdits += 1;
@@ -1096,8 +1151,8 @@ function mountStories(ctx) {
       });
     }, { class: `fun-story-action${method === "import" ? " fun-story-primary" : ""}` });
   }
-  const loadReport = feedback();
-  const libraryReport = feedback();
+  const loadReport = feedback2();
+  const libraryReport = feedback2();
   const packList = el("div", { class: "fun-story-list" });
   const refreshButton = button2("刷新列表", () => {
     void load();
@@ -1265,7 +1320,7 @@ function mountStories(ctx) {
     const title = pack.title || pack.id;
     const metadata = pack.metadata;
     const durationLabel = metadata?.durationMinutes === void 0 ? "时长未知" : `${metadata.durationMinutes} 分钟`;
-    const report = feedback();
+    const report = feedback2();
     const resultBox = el("div", { class: "fun-story-result" });
     const confirm = el("div", { class: "fun-story-confirm" });
     const packAction = (text2, key, handler, css = "") => button2(text2, handler, {
@@ -4164,23 +4219,7 @@ function classifyHomeFile(name) {
   }
   return null;
 }
-function el2(document2, tag, attrs = {}, ...children) {
-  const element = document2.createElement(tag);
-  for (const [name, value] of Object.entries(attrs)) {
-    if (value === null || value === void 0 || value === false) continue;
-    if (name === "class") element.className = value;
-    else if (name === "text") element.textContent = String(value);
-    else if (name === "style") element.setAttribute("style", value);
-    else if (name === "hidden") element.hidden = Boolean(value);
-    else if (name.startsWith("on") && typeof value === "function") element.addEventListener(name.slice(2), value);
-    else element.setAttribute(name, String(value));
-  }
-  for (const child of children.flat(Infinity)) {
-    if (child === null || child === void 0 || child === false) continue;
-    element.append(typeof child === "object" ? child : String(child));
-  }
-  return element;
-}
+var el2 = elIn;
 function relativeTime(minutes) {
   if (minutes === null || minutes === void 0) return "";
   if (minutes < 1) return "刚开始";
@@ -6759,61 +6798,18 @@ var CSS2 = `
   .fun,.fpl,.sw{--f-line:currentColor}
 }
 `;
-function el3(tag, props, ...kids) {
-  const n = document.createElement(tag);
-  if (props) {
-    for (const [k, v] of Object.entries(props)) {
-      if (v === null || v === void 0 || v === false) continue;
-      if (k === "class") n.className = v;
-      else if (k === "text") n.textContent = v;
-      else if (k === "html") n.innerHTML = v;
-      else if (k.startsWith("on") && typeof v === "function") n.addEventListener(k.slice(2), v);
-      else if (k === "style") Object.assign(n.style, v);
-      else n.setAttribute(k, v);
-    }
-  }
-  for (const kid of kids.flat()) {
-    if (kid === null || kid === void 0 || kid === false) continue;
-    n.appendChild(typeof kid === "string" || typeof kid === "number" ? document.createTextNode(String(kid)) : kid);
-  }
-  return n;
-}
 function ensureStyle(root) {
   if (root.querySelector("style.fun-style")) return;
-  root.appendChild(el3("style", { class: "fun-style", text: CSS2 }));
+  root.appendChild(el("style", { class: "fun-style", text: CSS2 }));
 }
 function shell(root) {
   ensureStyle(root);
-  const box = el3("div", { class: "fun" });
+  const box = el("div", { class: "fun" });
   root.appendChild(box);
   return box;
 }
-function errorCard(err, retry, retained = false) {
-  return el3(
-    "div",
-    { class: "fun-err", role: "alert" },
-    el3("span", { text: retained ? `刷新失败，保留上次内容：${err?.message ?? String(err)}` : `面板加载失败：${err?.message ?? String(err)}` }),
-    retry ? el3("button", { type: "button", onclick: () => {
-      void retry();
-    } }, "重试") : null
-  );
-}
-function heading(title, subtitle) {
-  return el3(
-    "header",
-    { class: "fun-heading" },
-    el3("p", { class: "fun-kicker", text: `从0开始的肥鱼大冒险 · ${title}` }),
-    el3("h2", { text: title }),
-    subtitle ? el3("p", { class: "fun-heading-lead", text: subtitle }) : null
-  );
-}
-function feedback2(box) {
-  const node2 = el3("div", { class: "fun-feedback" });
-  box.appendChild(node2);
-  return node2;
-}
 function sceneArt(place, detail = false) {
-  return el3("div", {
+  return el("div", {
     class: `fun-art${detail ? " fun-art-detail" : ""}`,
     "aria-hidden": "true",
     "data-artwork": place.userVenue ? "custom" : place.id,
@@ -6821,7 +6817,7 @@ function sceneArt(place, detail = false) {
   });
 }
 function itemIcon(name) {
-  return el3("span", { class: "fun-icon", "aria-hidden": "true", "data-category": souvenirCategory(name), html: souvenirArtwork(name) });
+  return el("span", { class: "fun-icon", "aria-hidden": "true", "data-category": souvenirCategory(name), html: souvenirArtwork(name) });
 }
 function rememberFocus(container) {
   const active = document.activeElement;
@@ -6844,27 +6840,27 @@ function rememberFocus(container) {
 }
 var routeStatus = { planned: "待出发", active: "行程中", between: "站间歇脚", completed: "已完成", cancelled: "已取消" };
 function routeSummary(route, trips = [], selectTrip) {
-  const node2 = el3(
+  const node2 = el(
     "section",
     { class: "fun-route", "data-route-id": route.id, "aria-label": "联程记录" },
-    el3("strong", { text: `联程 · ${routeStatus[route.status] ?? "状态未知"}` }),
-    el3("div", { class: "fun-route-stops", text: (route.stops ?? []).map((stop) => stop.placeName || stop.placeId).join(" → ") })
+    el("strong", { text: `联程 · ${routeStatus[route.status] ?? "状态未知"}` }),
+    el("div", { class: "fun-route-stops", text: (route.stops ?? []).map((stop) => stop.placeName || stop.placeId).join(" → ") })
   );
   const retained = (route.tripIds ?? []).map((id) => trips.find((trip) => trip.id === id)).filter(Boolean);
-  if (selectTrip && retained.length) node2.appendChild(el3("div", { class: "fun-route-stops" }, retained.map((trip) => el3("button", {
+  if (selectTrip && retained.length) node2.appendChild(el("div", { class: "fun-route-stops" }, retained.map((trip) => el("button", {
     type: "button",
     class: "fun-link",
     "data-trip-id": trip.id,
     onclick: () => selectTrip(trip)
   }, `${trip.routeOrder ? `第 ${trip.routeOrder} 站 · ` : ""}${trip.placeName} · ${trip.day || "日期不详"}`))));
-  if (selectTrip && (route.tripIds ?? []).length > retained.length) node2.appendChild(el3("div", { class: "fun-note", text: "较早行程仅保留联程归属，详细记录已归档。" }));
+  if (selectTrip && (route.tripIds ?? []).length > retained.length) node2.appendChild(el("div", { class: "fun-note", text: "较早行程仅保留联程归属，详细记录已归档。" }));
   return node2;
 }
 function tripDetails(trip) {
-  const detail = el3("section", { class: "fun-trip-detail", "aria-label": `${trip.placeName}行程详情` });
-  if (trip.company) detail.appendChild(el3("p", { text: `同行 · ${trip.company}` }));
-  if (trip.timelineTruncated) detail.appendChild(el3("p", { class: "fun-note", text: "这趟记录较长，时间线保留进门与最近的活动；较早的逐项细节已省略。" }));
-  if (trip.routeId) detail.appendChild(el3("p", { class: "fun-note", text: `联程${trip.routeOrder ? ` · 第 ${trip.routeOrder} 站` : ""}`, "data-route-id": trip.routeId }));
+  const detail = el("section", { class: "fun-trip-detail", "aria-label": `${trip.placeName}行程详情` });
+  if (trip.company) detail.appendChild(el("p", { text: `同行 · ${trip.company}` }));
+  if (trip.timelineTruncated) detail.appendChild(el("p", { class: "fun-note", text: "这趟记录较长，时间线保留进门与最近的活动；较早的逐项细节已省略。" }));
+  if (trip.routeId) detail.appendChild(el("p", { class: "fun-note", text: `联程${trip.routeOrder ? ` · 第 ${trip.routeOrder} 站` : ""}`, "data-route-id": trip.routeId }));
   const supplied = Array.isArray(trip.timeline) && trip.timeline.length > 0;
   const timeline = supplied ? trip.timeline : [
     ...(trip.visited ?? []).map((area) => ({ kind: "area", text: typeof area === "string" ? area : area.area, area: typeof area === "string" ? area : area.area, at: null })),
@@ -6875,13 +6871,13 @@ function tripDetails(trip) {
     ...(trip.ate ?? []).map((item) => ({ kind: "consume", text: `${item.verb}了 ${item.item}`, at: null }))
   ];
   if (timeline.length) {
-    detail.appendChild(el3("div", { class: "fun-sec", text: "沿途时间线" }));
-    if (!supplied) detail.appendChild(el3("p", { class: "fun-note", text: "这趟旧记录没有保存逐项时间，以下均标为时间不详。" }));
-    const list3 = el3("ol", { class: "fun-timeline" });
+    detail.appendChild(el("div", { class: "fun-sec", text: "沿途时间线" }));
+    if (!supplied) detail.appendChild(el("p", { class: "fun-note", text: "这趟旧记录没有保存逐项时间，以下均标为时间不详。" }));
+    const list3 = el("ol", { class: "fun-timeline" });
     const blocks = [];
     let current = null;
     const block = (area) => {
-      const node2 = el3("li", { class: "fun-timeline-block", "data-area": area || "" }, el3("div", { class: "fun-timeline-area", text: area || "途中记录（区域未记）" }));
+      const node2 = el("li", { class: "fun-timeline-block", "data-area": area || "" }, el("div", { class: "fun-timeline-area", text: area || "途中记录（区域未记）" }));
       const value = { area, node: node2, events: [] };
       blocks.push(value);
       list3.appendChild(node2);
@@ -6891,11 +6887,11 @@ function tripDetails(trip) {
     for (const entry of timeline) {
       const known = typeof entry.at === "number" && Number.isFinite(entry.at);
       const clock = known ? [entry.day, entry.hm].filter(Boolean).join(" ") || "时间未标注" : "时间不详";
-      const row = el3(
+      const row = el(
         "div",
         { class: "fun-timeline-row", "data-kind": entry.kind, "data-at": known ? String(entry.at) : "unknown" },
-        el3("span", { class: "fun-timeline-time", text: clock }),
-        el3("span", null, entry.kind === "buy" ? itemIcon(entry.text) : null, `${labels[entry.kind] ?? "记录"} · ${entry.text || (entry.kind === "area" ? entry.area : "") || "未记内容"}`)
+        el("span", { class: "fun-timeline-time", text: clock }),
+        el("span", null, entry.kind === "buy" ? itemIcon(entry.text) : null, `${labels[entry.kind] ?? "记录"} · ${entry.text || (entry.kind === "area" ? entry.area : "") || "未记内容"}`)
       );
       if (entry.kind === "enter" || entry.kind === "close") {
         current = block(entry.kind === "enter" ? "出发与进门" : "回家");
@@ -6905,20 +6901,20 @@ function tripDetails(trip) {
       }
       const source = entry.kind === "choice" ? [...blocks].reverse().flatMap((group) => [...group.events].reverse()).find((event) => entry.event && event.name === entry.event && (!entry.area || event.area === entry.area)) : null;
       if (source && current === source.group && current.lastNode === source.node) {
-        source.node.appendChild(el3("div", { class: "fun-timeline-choice", "data-event": entry.event }, row));
+        source.node.appendChild(el("div", { class: "fun-timeline-choice", "data-event": entry.event }, row));
         continue;
       }
       const area = entry.area || "";
       if (!current || area !== current.area) current = block(area);
       if (entry.kind === "event") {
-        const event = el3("div", { class: "fun-timeline-event", "data-event": entry.event || entry.text }, row);
+        const event = el("div", { class: "fun-timeline-event", "data-event": entry.event || entry.text }, row);
         current.events.push({ name: entry.event || entry.text, area: current.area, group: current, node: event });
         current.node.appendChild(event);
         current.lastNode = event;
       } else {
         if (entry.kind === "choice" && entry.event) {
-          row.appendChild(el3("span", { class: "fun-timeline-source", text: `对应小事：${entry.event}` }));
-          const choice = el3("div", { class: "fun-timeline-choice", "data-event": entry.event }, row);
+          row.appendChild(el("span", { class: "fun-timeline-source", text: `对应小事：${entry.event}` }));
+          const choice = el("div", { class: "fun-timeline-choice", "data-event": entry.event }, row);
           current.node.appendChild(choice);
           current.lastNode = choice;
         } else {
@@ -6929,8 +6925,8 @@ function tripDetails(trip) {
     }
     detail.appendChild(list3);
   }
-  if (trip.note) detail.appendChild(el3("p", { text: `回家备注 · ${trip.note}` }));
-  if (trip.scene) detail.appendChild(el3("p", { class: "fun-dim", text: `生图 scene：${trip.scene}${trip.outfit ? ` · outfits：${trip.outfit}` : ""}` }));
+  if (trip.note) detail.appendChild(el("p", { text: `回家备注 · ${trip.note}` }));
+  if (trip.scene) detail.appendChild(el("p", { class: "fun-dim", text: `生图 scene：${trip.scene}${trip.outfit ? ` · outfits：${trip.outfit}` : ""}` }));
   return detail;
 }
 function tripLookup(ctx, method, parameter, label2) {
@@ -6945,11 +6941,11 @@ function tripLookup(ctx, method, parameter, label2) {
   return (id) => {
     const state = states.get(id) ?? { opened: false, pending: false, trips: null, error: "" };
     states.set(id, state);
-    const host = el3("section", { class: "fun-history", "data-lookup-id": id });
+    const host = el("section", { class: "fun-history", "data-lookup-id": id });
     const paint = () => {
       let focused = document.activeElement;
       while (focused && focused !== host) focused = focused.parentNode;
-      host.replaceChildren(el3(
+      host.replaceChildren(el(
         "button",
         {
           type: "button",
@@ -6976,17 +6972,17 @@ function tripLookup(ctx, method, parameter, label2) {
         restore();
         return;
       }
-      const content = el3("div", { class: "fun-history-content", "aria-live": "polite" });
+      const content = el("div", { class: "fun-history-content", "aria-live": "polite" });
       host.appendChild(content);
-      if (state.pending) content.appendChild(el3("div", { class: "fun-inline-status", role: "status", text: "正在找这段回忆…" }));
-      if (state.error) content.appendChild(el3("div", { class: "fun-err", role: "alert" }, el3("span", { text: state.error }), el3("button", { type: "button", onclick: () => {
+      if (state.pending) content.appendChild(el("div", { class: "fun-inline-status", role: "status", text: "正在找这段回忆…" }));
+      if (state.error) content.appendChild(el("div", { class: "fun-err", role: "alert" }, el("span", { text: state.error }), el("button", { type: "button", onclick: () => {
         void load();
       } }, "重试")));
-      if (state.trips?.length === 0) content.appendChild(el3("div", { class: "fun-note", text: "没有可回看的详细行程；较早记录可能已经归档。" }));
-      for (const trip of state.trips ?? []) content.appendChild(el3(
+      if (state.trips?.length === 0) content.appendChild(el("div", { class: "fun-note", text: "没有可回看的详细行程；较早记录可能已经归档。" }));
+      for (const trip of state.trips ?? []) content.appendChild(el(
         "details",
         { class: "fun-inspector", open: state.trips.length === 1 ? "open" : null, "data-trip-id": trip.id },
-        el3("summary", { text: `${trip.placeName} · ${trip.day || "日期不详"} · ${trip.summary || "行程记录"}` }),
+        el("summary", { text: `${trip.placeName} · ${trip.day || "日期不详"} · ${trip.summary || "行程记录"}` }),
         tripDetails(trip)
       ));
       restore();
@@ -7018,7 +7014,7 @@ function mountPlaces2(ctx) {
   const root = ctx.root;
   root.replaceChildren();
   const box = shell(root);
-  const body = el3("div");
+  const body = el("div");
   box.appendChild(body);
   let keyword = "";
   let quickFilter = "全部";
@@ -7029,35 +7025,35 @@ function mountPlaces2(ctx) {
   let notice = null;
   let loadSequence = 0;
   let currentData = null;
-  const status = feedback2(box);
-  body.appendChild(el3("div", { class: "fun-loading", role: "status", text: "正在看看有哪些地方开着…" }));
+  const status = feedback(box);
+  body.appendChild(el("div", { class: "fun-loading", role: "status", text: "正在看看有哪些地方开着…" }));
   const render = (data) => {
     const restoreFocus = rememberFocus(body);
     currentData = data;
     body.replaceChildren(heading("今天，想去哪儿？", "有些地方适合热闹，有些地方适合慢慢待着。"));
-    const pendingChoice = (choice) => choice ? el3(
+    const pendingChoice = (choice) => choice ? el(
       "div",
       { class: "fun-choice" },
-      el3("div", { class: "fun-choice-title", text: choice.prompt || "待选择事件" }),
-      el3("ul", { class: "fun-list" }, choice.options.map((option) => el3("li", { text: option.label }))),
-      el3("p", { class: "fun-choice-note", text: "她可以选一项，也可以略过。" })
+      el("div", { class: "fun-choice-title", text: choice.prompt || "待选择事件" }),
+      el("ul", { class: "fun-list" }, choice.options.map((option) => el("li", { text: option.label }))),
+      el("p", { class: "fun-choice-note", text: "她可以选一项，也可以略过。" })
     ) : null;
     const draft = data.draft;
     if (draft) {
-      const draftAction = (method, label2) => el3("button", {
+      const draftAction = (method, label2) => el("button", {
         type: "button",
         disabled: outingAction || method === "resume" && draft.canResume === false ? "disabled" : null,
         onclick: () => resolveDraft(method, draft.id)
       }, outingAction === method ? "处理中…" : label2);
-      body.appendChild(el3(
+      body.appendChild(el(
         "section",
         { class: "fun-draft" },
-        el3("h3", { text: `未逛完 · ${draft.placeName}` }),
-        el3("div", { class: "fun-meta", text: `最后活动 ${draft.lastDay ? `${draft.lastDay} ` : ""}${draft.lastHm} · 逛了 ${draft.visited.length} 处` }),
-        el3("div", { class: "fun-meta", text: draft.visited.length ? `逛过：${draft.visited.map((v) => v.area).join("、")}` : "还没逛到哪儿" }),
+        el("h3", { text: `未逛完 · ${draft.placeName}` }),
+        el("div", { class: "fun-meta", text: `最后活动 ${draft.lastDay ? `${draft.lastDay} ` : ""}${draft.lastHm} · 逛了 ${draft.visited.length} 处` }),
+        el("div", { class: "fun-meta", text: draft.visited.length ? `逛过：${draft.visited.map((v) => v.area).join("、")}` : "还没逛到哪儿" }),
         pendingChoice(draft.pendingChoice),
-        draft.canResume === false ? el3("div", { class: "fun-meta", text: "这处已不在地点清单中，可以按已有记录回家。" }) : null,
-        el3("div", { class: "fun-draft-actions" }, draftAction("resume", "继续逛"), draftAction("closeDraft", "按已有记录回家"))
+        draft.canResume === false ? el("div", { class: "fun-meta", text: "这处已不在地点清单中，可以按已有记录回家。" }) : null,
+        el("div", { class: "fun-draft-actions" }, draftAction("resume", "继续逛"), draftAction("closeDraft", "按已有记录回家"))
       ));
     }
     if (data.session) {
@@ -7066,46 +7062,46 @@ function mountPlaces2(ctx) {
       const leftAreas = venue ? venue.areas.filter((a) => !s.visited.some((v) => v.area === a)) : [];
       const leftText = venue?.state === "closed" ? "这处已经打烊" : leftAreas.length ? `还能逛：${leftAreas.slice(0, 5).join("、")}` : "这会儿开放的都逛过了";
       const progress = s.venueAreaCount ? `${s.visited.length}/${s.venueAreaCount}` : String(s.visited.length);
-      body.appendChild(el3(
+      body.appendChild(el(
         "div",
         { class: "fun-live" },
-        el3("h3", { text: `正在${s.placeName}逛` }),
-        el3(
+        el("h3", { text: `正在${s.placeName}逛` }),
+        el(
           "div",
           { class: "fun-meta" },
           `${s.enteredHm} 进门 · 待了 ${s.stayedMin} 分钟 · 逛了 ${progress} 处`,
-          s.stale ? el3("span", { class: "fun-stale", text: " · 这一趟挂得有点久了" }) : null
+          s.stale ? el("span", { class: "fun-stale", text: " · 这一趟挂得有点久了" }) : null
         ),
-        el3("div", { class: "fun-meta", text: `逛过：${s.visited.length ? s.visited.map((v) => v.area).join("、") : "还没逛到哪儿"}` }),
-        s.souvenirs.length ? el3("div", { class: "fun-chips" }, s.souvenirs.map((x) => el3("span", { class: "fun-chip fun-chip-on", text: `买了 ${x}` }))) : null,
-        s.photos.length ? el3("div", { class: "fun-chips" }, s.photos.map((x) => el3("span", { class: "fun-chip", text: `📷 ${x}` }))) : null,
-        s.ate && s.ate.length ? el3("div", { class: "fun-chips" }, s.ate.map((x) => el3("span", { class: "fun-chip fun-chip-ate", text: `${x.verb}了 ${x.item}` }))) : null,
-        s.events.length ? el3("ul", { class: "fun-list" }, s.events.slice(-3).map((e) => el3("li", { text: e }))) : null,
-        venue ? el3("div", { class: "fun-meta", text: leftText }) : null,
+        el("div", { class: "fun-meta", text: `逛过：${s.visited.length ? s.visited.map((v) => v.area).join("、") : "还没逛到哪儿"}` }),
+        s.souvenirs.length ? el("div", { class: "fun-chips" }, s.souvenirs.map((x) => el("span", { class: "fun-chip fun-chip-on", text: `买了 ${x}` }))) : null,
+        s.photos.length ? el("div", { class: "fun-chips" }, s.photos.map((x) => el("span", { class: "fun-chip", text: `📷 ${x}` }))) : null,
+        s.ate && s.ate.length ? el("div", { class: "fun-chips" }, s.ate.map((x) => el("span", { class: "fun-chip fun-chip-ate", text: `${x.verb}了 ${x.item}` }))) : null,
+        s.events.length ? el("ul", { class: "fun-list" }, s.events.slice(-3).map((e) => el("li", { text: e }))) : null,
+        venue ? el("div", { class: "fun-meta", text: leftText }) : null,
         pendingChoice(s.pendingChoice)
       ));
     } else if (!draft) {
-      body.appendChild(el3(
+      body.appendChild(el(
         "div",
         { class: "fun-live fun-live-idle" },
-        el3("h3", { text: "这会儿没在逛" }),
-        el3("div", { class: "fun-meta", text: `现在 ${data.nowHm} · ${data.total} 处地方里 ${data.openCount} 处开着` }),
-        el3("div", { class: "fun-meta fun-dim", text: "她会自己挑一处进去；你在下面点一张卡也能看细节。" })
+        el("h3", { text: "这会儿没在逛" }),
+        el("div", { class: "fun-meta", text: `现在 ${data.nowHm} · ${data.total} 处地方里 ${data.openCount} 处开着` }),
+        el("div", { class: "fun-meta fun-dim", text: "她会自己挑一处进去；你在下面点一张卡也能看细节。" })
       ));
     }
-    if (notice) body.appendChild(el3("div", {
+    if (notice) body.appendChild(el("div", {
       class: "fun-meta fun-outing-result",
       role: notice.error ? "alert" : "status",
       tabindex: "-1",
       text: notice.text
     }));
-    if (data.upcomingWish) body.appendChild(el3("div", { class: "fun-upcoming-wish", text: data.upcomingWish }));
+    if (data.upcomingWish) body.appendChild(el("div", { class: "fun-upcoming-wish", text: data.upcomingWish }));
     if (data.route) body.appendChild(routeSummary(data.route));
-    const recommendBox = el3("section", { class: "fun-recommendations", "aria-label": "此刻推荐" });
+    const recommendBox = el("section", { class: "fun-recommendations", "aria-label": "此刻推荐" });
     body.appendChild(recommendBox);
-    body.appendChild(el3("div", { class: "fun-sec", text: "全部地方 · 找一处看看" }));
-    const management = el3("details", { class: "fun-management" }, el3("summary", { text: "地点管理与说明" }));
-    const input = el3("input", {
+    body.appendChild(el("div", { class: "fun-sec", text: "全部地方 · 找一处看看" }));
+    const management = el("details", { class: "fun-management" }, el("summary", { text: "地点管理与说明" }));
+    const input = el("input", {
       class: "fun-search",
       type: "search",
       placeholder: "搜地方名、别名或标签（庙会 / 室内 / 夜…）",
@@ -7117,16 +7113,16 @@ function mountPlaces2(ctx) {
       keyword = input.value;
       renderList();
     });
-    body.appendChild(el3("div", { class: "fun-bar" }, input));
-    management.appendChild(el3(
+    body.appendChild(el("div", { class: "fun-bar" }, input));
+    management.appendChild(el(
       "div",
       { class: "fun-hint" },
       `这里只负责看和出发。要改地点（名字、描写、时间、能逛的、纪念品、画风、封面、关联）或添加新地点，请到「地点册」。　预设 ${data.total - data.userVenueCount} 处，自己加了 ${data.userVenueCount} 处。` + (data.overriddenCount ? `　已改过 ${data.overriddenCount} 处预设，可在地点册恢复。` : "") + (data.feast ? "　吃喝的味道会去「鱼的每一天」拿（可在配置里关掉）。" : "　吃喝只记名字、不描述味道（可在配置里打开「去鱼的每一天拿」）。")
     ));
-    const filterBar = el3("div", { class: "fun-filters", role: "group", "aria-label": "地点快捷筛选" });
+    const filterBar = el("div", { class: "fun-filters", role: "group", "aria-label": "地点快捷筛选" });
     const filterButtons = [];
     for (const label2 of ["全部", "现在开着", "室内", "户外", "夜游", "我的地点"]) {
-      const button2 = el3("button", { type: "button", "aria-pressed": String(quickFilter === label2), onclick: () => {
+      const button2 = el("button", { type: "button", "aria-pressed": String(quickFilter === label2), onclick: () => {
         quickFilter = label2;
         for (const item of filterButtons) item.button.setAttribute("aria-pressed", String(item.label === label2));
         renderList();
@@ -7135,7 +7131,7 @@ function mountPlaces2(ctx) {
       filterBar.appendChild(button2);
     }
     body.appendChild(filterBar);
-    const listBox = el3("div");
+    const listBox = el("div");
     body.appendChild(listBox);
     body.appendChild(management);
     function renderList() {
@@ -7146,7 +7142,7 @@ function mountPlaces2(ctx) {
       if (!kw && quickFilter === "全部" && recommendations.length) {
         const [hero, ...rest] = recommendations;
         const heroOpen = expanded === hero.id && expandedOrigin === "recommend";
-        const heroCard = el3(
+        const heroCard = el(
           "div",
           {
             class: `fun-recommend-card fun-hero${heroOpen ? " fun-card-active" : ""}`,
@@ -7163,24 +7159,24 @@ function mountPlaces2(ctx) {
               }
             }
           },
-          el3(
+          el(
             "div",
             { class: "fun-hero-body" },
-            el3(
+            el(
               "div",
               { class: "fun-chips" },
-              el3("span", { class: "fun-chip fun-chip-on", text: "此刻推荐" }),
-              hero.crowdLabel ? el3("span", { class: "fun-chip", text: hero.crowdLabel }) : null,
-              hero.phase ? el3("span", { class: "fun-chip", text: hero.phase }) : null
+              el("span", { class: "fun-chip fun-chip-on", text: "此刻推荐" }),
+              hero.crowdLabel ? el("span", { class: "fun-chip", text: hero.crowdLabel }) : null,
+              hero.phase ? el("span", { class: "fun-chip", text: hero.phase }) : null
             ),
-            el3("h3", { class: "fun-recommend-name", text: hero.name }),
-            el3("p", { class: "fun-recommend-reason", text: hero.wishReason || hero.revisitReason || `${hero.hours.open}–${hero.hours.close} · ${hero.crowdLabel} · ${hero.stateLabel}` }),
-            el3(
+            el("h3", { class: "fun-recommend-name", text: hero.name }),
+            el("p", { class: "fun-recommend-reason", text: hero.wishReason || hero.revisitReason || `${hero.hours.open}–${hero.hours.close} · ${hero.crowdLabel} · ${hero.stateLabel}` }),
+            el(
               "div",
               { class: "fun-chips" },
-              el3("span", { class: "fun-chip", text: `${hero.hours.open}–${hero.hours.close}` }),
-              el3("span", { class: "fun-chip", text: hero.stateLabel }),
-              hero.tags?.length ? el3("span", { class: "fun-chip", text: hero.tags[0] }) : null
+              el("span", { class: "fun-chip", text: `${hero.hours.open}–${hero.hours.close}` }),
+              el("span", { class: "fun-chip", text: hero.stateLabel }),
+              hero.tags?.length ? el("span", { class: "fun-chip", text: hero.tags[0] }) : null
             )
           ),
           sceneArt(hero)
@@ -7188,10 +7184,10 @@ function mountPlaces2(ctx) {
         recommendBox.appendChild(heroCard);
         if (heroOpen) recommendBox.appendChild(detail(hero));
         if (rest.length) {
-          recommendBox.appendChild(el3("p", { class: "fun-note", text: "几处开着的地方，点开只看细节；出发与选择仍由她自己决定。" }));
-          recommendBox.appendChild(el3("div", { class: "fun-recommend-grid" }, rest.map((p) => {
+          recommendBox.appendChild(el("p", { class: "fun-note", text: "几处开着的地方，点开只看细节；出发与选择仍由她自己决定。" }));
+          recommendBox.appendChild(el("div", { class: "fun-recommend-grid" }, rest.map((p) => {
             const selected = expanded === p.id && expandedOrigin === "recommend";
-            const cell2 = el3("div", { class: selected ? "fun-cell fun-cell-open" : "fun-cell" }, card(p, true));
+            const cell2 = el("div", { class: selected ? "fun-cell fun-cell-open" : "fun-cell" }, card(p, true));
             if (selected) cell2.appendChild(detail(p));
             return cell2;
           })));
@@ -7211,20 +7207,20 @@ function mountPlaces2(ctx) {
       const closed = matched.filter((p) => p.state === "closed");
       const cell = (p) => {
         const isOpen = expanded === p.id && expandedOrigin === "list";
-        const wrap = el3("div", { class: isOpen ? "fun-cell fun-cell-open" : "fun-cell" });
+        const wrap = el("div", { class: isOpen ? "fun-cell fun-cell-open" : "fun-cell" });
         wrap.appendChild(card(p));
         if (isOpen) wrap.appendChild(detail(p));
         return wrap;
       };
       const section = (title, items) => {
         if (!items.length) return;
-        listBox.appendChild(el3("div", { class: "fun-sec", text: title }));
-        listBox.appendChild(el3("div", { class: "fun-grid" }, items.map(cell)));
+        listBox.appendChild(el("div", { class: "fun-sec", text: title }));
+        listBox.appendChild(el("div", { class: "fun-grid" }, items.map(cell)));
       };
       section(kw || quickFilter !== "全部" ? `筛选结果 · 开着的（${open.length}）` : `开着的（${open.length}）`, open);
       section("已经关了", closed);
       if (!matched.length) {
-        listBox.appendChild(el3("div", { class: "fun-empty", text: kw ? `没有匹配「${keyword}」的地方，试试其他筛选。` : "这个筛选下还没有地方，换一项看看。" }));
+        listBox.appendChild(el("div", { class: "fun-empty", text: kw ? `没有匹配「${keyword}」的地方，试试其他筛选。` : "这个筛选下还没有地方，换一项看看。" }));
       }
     }
     const card = (p, recommended = false) => {
@@ -7235,7 +7231,7 @@ function mountPlaces2(ctx) {
       else cls.push("fun-card-open");
       if (selected) cls.push("fun-card-active");
       const stateCls = p.state === "open" ? "fun-card-state-open" : p.state === "closingSoon" ? "fun-card-state-soon" : "";
-      const node2 = el3(
+      const node2 = el(
         "div",
         {
           class: cls.join(" "),
@@ -7253,27 +7249,27 @@ function mountPlaces2(ctx) {
           }
         },
         sceneArt(p),
-        el3(
+        el(
           "div",
           { class: "fun-card-head" },
-          el3("span", { class: recommended ? "fun-recommend-name" : "fun-card-name", text: p.name }),
-          p.phase ? el3("span", { class: "fun-chip fun-chip-phase", text: p.phase }) : null,
-          el3("span", { class: `fun-card-state ${stateCls}`, text: p.stateLabel }),
-          el3("span", { class: "fun-card-arrow", text: selected ? "⌃" : "⌄" })
+          el("span", { class: recommended ? "fun-recommend-name" : "fun-card-name", text: p.name }),
+          p.phase ? el("span", { class: "fun-chip fun-chip-phase", text: p.phase }) : null,
+          el("span", { class: `fun-card-state ${stateCls}`, text: p.stateLabel }),
+          el("span", { class: "fun-card-arrow", text: selected ? "⌃" : "⌄" })
         ),
-        recommended ? el3("div", { class: "fun-recommend-reason", text: p.wishReason || p.revisitReason || `${p.hours.open}–${p.hours.close} · ${p.crowdLabel} · ${p.phase || p.tags?.slice(0, 2).join(" / ") || "现在开着"}` }) : null,
-        recommended ? null : el3("div", { class: "fun-card-desc", text: p.desc }),
-        !recommended && p.wishReason ? el3("div", { class: "fun-meta", text: p.wishReason }) : null,
-        !recommended && p.revisitReason ? el3("div", { class: "fun-meta", text: p.revisitReason }) : null,
-        el3(
+        recommended ? el("div", { class: "fun-recommend-reason", text: p.wishReason || p.revisitReason || `${p.hours.open}–${p.hours.close} · ${p.crowdLabel} · ${p.phase || p.tags?.slice(0, 2).join(" / ") || "现在开着"}` }) : null,
+        recommended ? null : el("div", { class: "fun-card-desc", text: p.desc }),
+        !recommended && p.wishReason ? el("div", { class: "fun-meta", text: p.wishReason }) : null,
+        !recommended && p.revisitReason ? el("div", { class: "fun-meta", text: p.revisitReason }) : null,
+        el(
           "div",
           { class: "fun-card-foot" },
-          el3("span", { text: `${p.hours.open}–${p.hours.close}` }),
-          el3("span", { text: p.crowdLabel }),
-          el3("span", { text: `${p.areaCount} 处可逛` }),
-          p.food ? el3("span", { class: "fun-chip fun-chip-ate", text: p.food.verb === "喝" ? "能喝" : "能吃" }) : null,
-          p.visitCount > 0 ? el3("span", { class: "fun-chip", text: `去过 ${p.visitCount} 次` }) : null,
-          p.recent ? el3("span", { class: "fun-chip", text: "刚去过" }) : null
+          el("span", { text: `${p.hours.open}–${p.hours.close}` }),
+          el("span", { text: p.crowdLabel }),
+          el("span", { text: `${p.areaCount} 处可逛` }),
+          p.food ? el("span", { class: "fun-chip fun-chip-ate", text: p.food.verb === "喝" ? "能喝" : "能吃" }) : null,
+          p.visitCount > 0 ? el("span", { class: "fun-chip", text: `去过 ${p.visitCount} 次` }) : null,
+          p.recent ? el("span", { class: "fun-chip", text: "刚去过" }) : null
         )
       );
       return node2;
@@ -7294,21 +7290,21 @@ function mountPlaces2(ctx) {
       }
     }
     const detail = (p) => {
-      const d = el3(
+      const d = el(
         "div",
         { class: "fun-detail" },
-        el3(
+        el(
           "div",
           { class: "fun-detail-top" },
-          el3(
+          el(
             "h4",
             { text: p.name },
-            p.overridden ? el3("span", { class: "fun-chip fun-chip-on", text: "已改", style: { marginLeft: "6px" } }) : null
+            p.overridden ? el("span", { class: "fun-chip fun-chip-on", text: "已改", style: { marginLeft: "6px" } }) : null
           ),
-          el3(
+          el(
             "div",
             { class: "fun-detail-actions" },
-            el3("button", {
+            el("button", {
               class: "fun-detail-close",
               type: "button",
               title: "收起",
@@ -7321,52 +7317,52 @@ function mountPlaces2(ctx) {
           )
         ),
         sceneArt(p, true),
-        el3("p", { class: "fun-dim", text: `${p.kindLabel} · ${p.crowdLabel} · ${p.hours.open}–${p.hours.close} · ${p.stateLabel}` }),
+        el("p", { class: "fun-dim", text: `${p.kindLabel} · ${p.crowdLabel} · ${p.hours.open}–${p.hours.close} · ${p.stateLabel}` }),
         // 此刻的那段描写：有阶段的场所显示的是「这会儿的样子」，不是通用那段。
-        el3("p", { class: "fun-detail-desc", text: p.desc }),
+        el("p", { class: "fun-detail-desc", text: p.desc }),
         // 时段一览：让她和主人都看得出「换个时间来是另一副样子」。
-        p.phases && p.phases.length > 1 ? el3(
+        p.phases && p.phases.length > 1 ? el(
           "div",
           {},
-          el3("div", { class: "fun-sec", text: "不同时段" }),
-          el3("div", { class: "fun-phases" }, p.phases.map((ph) => el3("span", {
+          el("div", { class: "fun-sec", text: "不同时段" }),
+          el("div", { class: "fun-phases" }, p.phases.map((ph) => el("span", {
             class: ph.label === p.phase ? "fun-chip fun-chip-phase fun-chip-on" : "fun-chip",
             title: `${ph.from}–${ph.to}`,
             text: `${ph.label} ${ph.from}–${ph.to}`
           })))
         ) : null,
         // 三块并成一排：能逛的 / 纪念品 / 拍照点，省纵向高度（原来三个小节摞起来很高）。
-        el3(
+        el(
           "div",
           { class: "fun-detail-cols" },
-          el3(
+          el(
             "div",
             { class: "fun-detail-col" },
-            el3("div", { class: "fun-sec", text: "能逛的" }),
-            el3("ul", { class: "fun-list" }, p.areas.map((a) => el3("li", { text: a })))
+            el("div", { class: "fun-sec", text: "能逛的" }),
+            el("ul", { class: "fun-list" }, p.areas.map((a) => el("li", { text: a })))
           ),
-          el3(
+          el(
             "div",
             { class: "fun-detail-col" },
-            el3("div", { class: "fun-sec", text: "纪念品" }),
-            el3("div", { class: "fun-chips" }, p.souvenirs.map((s) => el3("span", { class: "fun-chip" }, itemIcon(s), s))),
-            el3("div", { class: "fun-sec", text: "拍照点" }),
-            el3("div", { class: "fun-chips" }, p.photoSpots.map((s) => el3("span", { class: "fun-chip", text: s }))),
-            p.food ? el3(
+            el("div", { class: "fun-sec", text: "纪念品" }),
+            el("div", { class: "fun-chips" }, p.souvenirs.map((s) => el("span", { class: "fun-chip" }, itemIcon(s), s))),
+            el("div", { class: "fun-sec", text: "拍照点" }),
+            el("div", { class: "fun-chips" }, p.photoSpots.map((s) => el("span", { class: "fun-chip", text: s }))),
+            p.food ? el(
               "div",
               {},
-              el3("div", { class: "fun-sec", text: `能${p.food.verb}的` }),
-              el3("div", { class: "fun-chips" }, p.food.items.map((s) => el3("span", { class: "fun-chip", text: s }))),
-              el3("div", { class: "fun-note", text: `味道不在这儿——装了「鱼的每一天」才有九维口感，没装就只知道${p.food.verb}了什么。` })
+              el("div", { class: "fun-sec", text: `能${p.food.verb}的` }),
+              el("div", { class: "fun-chips" }, p.food.items.map((s) => el("span", { class: "fun-chip", text: s }))),
+              el("div", { class: "fun-note", text: `味道不在这儿——装了「鱼的每一天」才有九维口感，没装就只知道${p.food.verb}了什么。` })
             ) : null
           )
         ),
-        el3(
+        el(
           "div",
           { class: "fun-scene" },
-          p.hasScene ? el3("span", {}, "生图时 ", el3("b", { text: `scene 填「${p.scene}」` }), `，outfits 建议「${p.outfit}」`) : el3("span", {}, "素材库里没有这处的场景，生图时 ", el3("b", { text: "scene 不用填" }), "，把地方写进 prompt 就行")
+          p.hasScene ? el("span", {}, "生图时 ", el("b", { text: `scene 填「${p.scene}」` }), `，outfits 建议「${p.outfit}」`) : el("span", {}, "素材库里没有这处的场景，生图时 ", el("b", { text: "scene 不用填" }), "，把地方写进 prompt 就行")
         ),
-        el3("div", { class: "fun-note", text: "要改这处地点（名字、描写、时间、能逛的、纪念品、画风、封面、关联），请到「地点册」——那里是唯一的编辑器。" })
+        el("div", { class: "fun-note", text: "要改这处地点（名字、描写、时间、能逛的、纪念品、画风、封面、关联），请到「地点册」——那里是唯一的编辑器。" })
       );
       d.appendChild(historyView(p.id));
       return d;
@@ -7418,7 +7414,7 @@ function mountBook(ctx) {
   const root = ctx.root;
   root.replaceChildren();
   const box = shell(root);
-  const body = el3("div");
+  const body = el("div");
   box.appendChild(body);
   let bookTab = "all";
   let bookKeyword = "";
@@ -7426,8 +7422,8 @@ function mountBook(ctx) {
   let bookDate = "";
   let wishFormOpen = false;
   const expandedTrips = /* @__PURE__ */ new Set();
-  const status = feedback2(box);
-  body.appendChild(el3("div", { class: "fun-loading", role: "status", text: "正在翻开纪念册…" }));
+  const status = feedback(box);
+  body.appendChild(el("div", { class: "fun-loading", role: "status", text: "正在翻开纪念册…" }));
   const pending = /* @__PURE__ */ new Set();
   const errors = /* @__PURE__ */ new Map();
   let currentData = null;
@@ -7439,28 +7435,28 @@ function mountBook(ctx) {
     const places = data.places ?? [];
     const wishes = data.wishes ?? [];
     const adding = wishPending.has("add");
-    const section = el3("section", { class: "fun-wishes", "aria-label": "出游心愿" });
-    section.appendChild(el3(
+    const section = el("section", { class: "fun-wishes", "aria-label": "出游心愿" });
+    section.appendChild(el(
       "div",
       { class: "fun-bar" },
-      el3("span", { class: "fun-sec", text: "出游心愿" }),
-      el3("button", { type: "button", "aria-expanded": String(wishFormOpen), disabled: adding ? "disabled" : null, onclick: () => {
+      el("span", { class: "fun-sec", text: "出游心愿" }),
+      el("button", { type: "button", "aria-expanded": String(wishFormOpen), disabled: adding ? "disabled" : null, onclick: () => {
         wishFormOpen = !wishFormOpen;
         render(currentData);
       } }, wishFormOpen ? "收起表单" : "记个心愿")
     ));
-    const field = (label2, input) => el3(
+    const field = (label2, input) => el(
       "label",
       { class: "fun-field" },
-      el3("span", { class: "fun-field-label", text: label2 }),
+      el("span", { class: "fun-field-label", text: label2 }),
       input
     );
     const select = (className, placeholder, options, value) => {
-      const input = el3(
+      const input = el(
         "select",
         { class: className, disabled: adding ? "disabled" : null },
-        el3("option", { value: "", text: placeholder }),
-        options.map(([id, name]) => el3("option", { value: id, text: name }))
+        el("option", { value: "", text: placeholder }),
+        options.map(([id, name]) => el("option", { value: id, text: name }))
       );
       input.value = value;
       return input;
@@ -7476,7 +7472,7 @@ function mountBook(ctx) {
       wishDraft.target
     );
     targetInput.disabled = adding || !targets.length;
-    const reasonInput = el3("input", { class: "fun-wish-reason", type: "text", placeholder: "可选，记下为什么想去", disabled: adding ? "disabled" : null });
+    const reasonInput = el("input", { class: "fun-wish-reason", type: "text", placeholder: "可选，记下为什么想去", disabled: adding ? "disabled" : null });
     reasonInput.value = wishDraft.reason;
     placeInput.addEventListener("change", () => {
       wishDraft.placeId = placeInput.value;
@@ -7496,7 +7492,7 @@ function mountBook(ctx) {
     reasonInput.addEventListener("input", () => {
       wishDraft.reason = reasonInput.value;
     });
-    const errorNode = el3("div", { class: "fun-form-error", role: "alert", text: wishErrors.get("add") ?? "" });
+    const errorNode = el("div", { class: "fun-form-error", role: "alert", text: wishErrors.get("add") ?? "" });
     const save = async () => {
       if (wishPending.has("add")) return;
       const payload = {
@@ -7517,51 +7513,51 @@ function mountBook(ctx) {
       wishDraft = { placeId: payload.placeId, type: payload.type, target: payload.target, reason: reasonInput.value };
       await changeWish("add", payload, data);
     };
-    if (wishFormOpen) section.appendChild(el3(
+    if (wishFormOpen) section.appendChild(el(
       "div",
       { class: "fun-form fun-wish-form" },
-      el3("div", { class: "fun-form-note", text: "由你选择想去的地方，按保存才记下心愿；心愿不保证立即出发。" }),
-      el3("div", { class: "fun-form-grid" }, field("地点", placeInput), field("心愿类型", typeInput), field("目标", targetInput)),
+      el("div", { class: "fun-form-note", text: "由你选择想去的地方，按保存才记下心愿；心愿不保证立即出发。" }),
+      el("div", { class: "fun-form-grid" }, field("地点", placeInput), field("心愿类型", typeInput), field("目标", targetInput)),
       field("缘由（可选）", reasonInput),
       errorNode,
-      el3("button", { class: "fun-btn-primary", type: "button", disabled: adding ? "disabled" : null, onclick: save }, adding ? "保存中…" : "保存心愿")
+      el("button", { class: "fun-btn-primary", type: "button", disabled: adding ? "disabled" : null, onclick: save }, adding ? "保存中…" : "保存心愿")
     ));
-    if (!wishes.length) section.appendChild(el3("div", { class: "fun-note", text: "还没有出游心愿，想好了再记下。" }));
+    if (!wishes.length) section.appendChild(el("div", { class: "fun-note", text: "还没有出游心愿，想好了再记下。" }));
     const statusNames = { active: "待实现", paused: "已暂缓", completed: "已实现", cancelled: "已取消" };
-    const history = el3("details", {
+    const history = el("details", {
       class: "fun-wish-history",
       open: wishes.some((w) => w.status !== "active" && (wishErrors.has(`wish:${w.id}`) || wishPending.has(`wish:${w.id}`))) ? "open" : null
-    }, el3("summary", { text: `已实现、暂缓与取消（${wishes.filter((w) => w.status !== "active").length}）` }));
+    }, el("summary", { text: `已实现、暂缓与取消（${wishes.filter((w) => w.status !== "active").length}）` }));
     for (const wish of wishes) {
       const key = `wish:${wish.id}`;
       const busy = wishPending.has(key);
       const state = wish.status;
-      const actions = el3("div", { class: "fun-trip-actions" });
+      const actions = el("div", { class: "fun-trip-actions" });
       if (state === "active" || state === "paused") {
-        actions.appendChild(el3("button", {
+        actions.appendChild(el("button", {
           type: "button",
           disabled: busy ? "disabled" : null,
           onclick: () => changeWish(key, { action: state === "paused" ? "resume" : "pause", id: wish.id }, data)
         }, state === "paused" ? "恢复" : "暂缓"));
-        actions.appendChild(el3("button", {
+        actions.appendChild(el("button", {
           type: "button",
           disabled: busy ? "disabled" : null,
           onclick: () => changeWish(key, { action: "cancel", id: wish.id }, data)
         }, "取消"));
       }
-      if (busy) actions.appendChild(el3("span", { class: "fun-dim", text: "保存中…" }));
-      if (wishErrors.has(key)) actions.appendChild(el3("span", { class: "fun-trip-error", role: "alert", text: wishErrors.get(key) }));
-      (state === "active" ? section : history).appendChild(el3(
+      if (busy) actions.appendChild(el("span", { class: "fun-dim", text: "保存中…" }));
+      if (wishErrors.has(key)) actions.appendChild(el("span", { class: "fun-trip-error", role: "alert", text: wishErrors.get(key) }));
+      (state === "active" ? section : history).appendChild(el(
         "div",
         { class: "fun-wish fun-trip" },
-        el3(
+        el(
           "div",
           { class: "fun-trip-head" },
-          el3("span", { class: "fun-trip-name", text: wish.placeName ?? places.find((p) => p.id === wish.placeId)?.name ?? wish.placeId }),
-          el3("span", { class: "fun-wish-status fun-dim", text: statusNames[state] ?? state ?? "状态未知" })
+          el("span", { class: "fun-trip-name", text: wish.placeName ?? places.find((p) => p.id === wish.placeId)?.name ?? wish.placeId }),
+          el("span", { class: "fun-wish-status fun-dim", text: statusNames[state] ?? state ?? "状态未知" })
         ),
-        el3("div", { class: "fun-trip-sum", text: `${wishTypes[wish.type] ?? wish.type}${wish.target ? ` · ${wish.target}` : ""}` }),
-        wish.reason ? el3("div", { class: "fun-wish-note fun-note", text: `缘由：${wish.reason}` }) : null,
+        el("div", { class: "fun-trip-sum", text: `${wishTypes[wish.type] ?? wish.type}${wish.target ? ` · ${wish.target}` : ""}` }),
+        wish.reason ? el("div", { class: "fun-wish-note fun-note", text: `缘由：${wish.reason}` }) : null,
         actions
       ));
     }
@@ -7591,40 +7587,40 @@ function mountBook(ctx) {
       render(currentData ?? data);
     }
   };
-  const bookRail = (activeWishes) => el3(
+  const bookRail = (activeWishes) => el(
     "aside",
     { class: "fun-rail fun-book-rail", "aria-label": "下次想去" },
-    el3("h3", { text: "下次想去" }),
+    el("h3", { text: "下次想去" }),
     activeWishes.length ? [
-      el3(
+      el(
         "div",
         { class: "fun-rail-wish" },
-        el3("p", { text: activeWishes[0].reason || `${wishTypes[activeWishes[0].type] ?? "想去"}${activeWishes[0].target ? ` · ${activeWishes[0].target}` : ""}，${activeWishes[0].placeName ?? activeWishes[0].placeId}` }),
-        el3("span", { class: "fun-chip", text: `${activeWishes[0].placeName ?? activeWishes[0].placeId} · ${wishTypes[activeWishes[0].type] ?? activeWishes[0].type}` })
+        el("p", { text: activeWishes[0].reason || `${wishTypes[activeWishes[0].type] ?? "想去"}${activeWishes[0].target ? ` · ${activeWishes[0].target}` : ""}，${activeWishes[0].placeName ?? activeWishes[0].placeId}` }),
+        el("span", { class: "fun-chip", text: `${activeWishes[0].placeName ?? activeWishes[0].placeId} · ${wishTypes[activeWishes[0].type] ?? activeWishes[0].type}` })
       ),
-      activeWishes.length > 1 ? el3("p", { class: "fun-rail-more", text: `另外还记着 ${activeWishes.length - 1} 个心愿，去「心愿」页签里看。` }) : null
-    ] : el3("p", { text: "还没有记下的心愿。在「心愿」页签里记一个，她出门时会顺路想着。" }),
-    el3("div", { class: "fun-quote", text: "心愿只作提醒。\n什么时候出门，由她决定。" })
+      activeWishes.length > 1 ? el("p", { class: "fun-rail-more", text: `另外还记着 ${activeWishes.length - 1} 个心愿，去「心愿」页签里看。` }) : null
+    ] : el("p", { text: "还没有记下的心愿。在「心愿」页签里记一个，她出门时会顺路想着。" }),
+    el("div", { class: "fun-quote", text: "心愿只作提醒。\n什么时候出门，由她决定。" })
   );
   const render = (data) => {
     const restoreFocus = rememberFocus(body);
     currentData = data;
     body.replaceChildren(heading("那些一起出门的日子。", "每一趟都留在这里，想起时再翻一翻。"));
-    if (data.session) body.appendChild(el3(
+    if (data.session) body.appendChild(el(
       "div",
       { class: "fun-live" },
-      el3("h3", { text: "正在逛 · " + data.session.placeName }),
-      el3("div", { class: "fun-trip-sum", text: data.session.summary })
+      el("h3", { text: "正在逛 · " + data.session.placeName }),
+      el("div", { class: "fun-trip-sum", text: data.session.summary })
     ));
-    else if (data.trips?.length) body.appendChild(el3(
+    else if (data.trips?.length) body.appendChild(el(
       "div",
       { class: "fun-live" },
-      el3("div", { class: "fun-meta", text: "最近一趟 · " + data.trips[0].day }),
-      el3("h3", { text: data.trips[0].placeName }),
-      el3("div", { class: "fun-trip-sum", text: data.trips[0].summary })
+      el("div", { class: "fun-meta", text: "最近一趟 · " + data.trips[0].day }),
+      el("h3", { text: data.trips[0].placeName }),
+      el("div", { class: "fun-trip-sum", text: data.trips[0].summary })
     ));
-    const tabs = el3("nav", { class: "fun-tabs", "aria-label": "纪念册分类" });
-    for (const [id, label2] of [["all", "全部行程"], ["kept", "珍藏"], ["wishes", "心愿"]]) tabs.appendChild(el3("button", {
+    const tabs = el("nav", { class: "fun-tabs", "aria-label": "纪念册分类" });
+    for (const [id, label2] of [["all", "全部行程"], ["kept", "珍藏"], ["wishes", "心愿"]]) tabs.appendChild(el("button", {
       type: "button",
       "aria-pressed": String(bookTab === id),
       onclick: () => {
@@ -7640,11 +7636,11 @@ function mountBook(ctx) {
     }
     if (!data.total && !(data.keepsakeCount > 0)) {
       body.appendChild(tabs);
-      body.appendChild(el3("div", { class: "fun-empty", text: "纪念册还是空的——她收一次摊，这里就有一趟。" }));
+      body.appendChild(el("div", { class: "fun-empty", text: "纪念册还是空的——她收一次摊，这里就有一趟。" }));
       restoreFocus();
       return;
     }
-    body.appendChild(el3(
+    body.appendChild(el(
       "div",
       { class: "fun-stats" },
       stat(data.totalRecent ?? data.total, "近期行程"),
@@ -7653,43 +7649,43 @@ function mountBook(ctx) {
       stat(data.souvenirCount, "件纪念品"),
       stat(data.photoCount, "张照片")
     ));
-    if (data.mostVisited?.length) body.appendChild(el3(
+    if (data.mostVisited?.length) body.appendChild(el(
       "details",
       { class: "fun-wish-history" },
-      el3("summary", { text: "常去的" }),
-      el3("div", { class: "fun-chips" }, data.mostVisited.slice(0, 8).map((m) => el3("span", { class: "fun-chip", text: `${m.name} ×${m.times}` })))
+      el("summary", { text: "常去的" }),
+      el("div", { class: "fun-chips" }, data.mostVisited.slice(0, 8).map((m) => el("span", { class: "fun-chip", text: `${m.name} ×${m.times}` })))
     ));
     const activeWishes = (data.wishes ?? []).filter((w) => w.status === "active");
-    if (activeWishes.length) body.appendChild(el3(
+    if (activeWishes.length) body.appendChild(el(
       "div",
       { class: "fun-note fun-wish-summary" },
       `记着 ${activeWishes.length} 个心愿：${activeWishes.slice(0, 3).map((w) => w.placeName ?? w.placeId).join("、")}${activeWishes.length > 3 ? " 等" : ""}。什么时候出门，由她决定。`
     ));
-    const layout = el3("div", { class: "fun-with-rail" });
-    const main = el3("div", { class: "fun-book-main" });
+    const layout = el("div", { class: "fun-with-rail" });
+    const main = el("div", { class: "fun-book-main" });
     layout.appendChild(main);
     layout.appendChild(bookRail(activeWishes));
     body.appendChild(layout);
     main.appendChild(tabs);
-    const search = el3("input", { class: "fun-book-search", type: "search", placeholder: "搜地点、同行人、日期、备注或沿途回忆", value: bookKeyword, "aria-label": "搜索纪念册", "data-focus-key": "book-search" });
+    const search = el("input", { class: "fun-book-search", type: "search", placeholder: "搜地点、同行人、日期、备注或沿途回忆", value: bookKeyword, "aria-label": "搜索纪念册", "data-focus-key": "book-search" });
     const placeOptions = new Map((data.trips ?? []).map((trip) => [trip.placeId, trip.placeName]));
-    const place = el3(
+    const place = el(
       "select",
       { class: "fun-book-place", "aria-label": "按地点筛选行程", "data-focus-key": "book-place" },
-      el3("option", { value: "", text: "所有地点" }),
-      [...placeOptions].map(([id, name]) => el3("option", { value: id, text: name }))
+      el("option", { value: "", text: "所有地点" }),
+      [...placeOptions].map(([id, name]) => el("option", { value: id, text: name }))
     );
     place.value = bookPlace;
     const days = [...new Set((data.trips ?? []).map((trip) => trip.day || "unknown"))];
-    const date2 = el3(
+    const date2 = el(
       "select",
       { class: "fun-book-date", "aria-label": "按日期筛选行程", "data-focus-key": "book-date" },
-      el3("option", { value: "", text: "所有日期" }),
-      days.map((day) => el3("option", { value: day, text: day === "unknown" ? "日期不详" : day }))
+      el("option", { value: "", text: "所有日期" }),
+      days.map((day) => el("option", { value: day, text: day === "unknown" ? "日期不详" : day }))
     );
     date2.value = bookDate;
-    main.appendChild(el3("div", { class: "fun-album-filters" }, search, place, date2));
-    const results = el3("div", { class: "fun-book-results" });
+    main.appendChild(el("div", { class: "fun-album-filters" }, search, place, date2));
+    const results = el("div", { class: "fun-book-results" });
     main.appendChild(results);
     const allTrips = data.trips ?? [];
     const textFor = (trip) => [
@@ -7718,7 +7714,7 @@ function mountBook(ctx) {
         const linkedText = route ? [(route.stops ?? []).map((stop) => stop.placeName).join(" "), ...linked.map(textFor)].join(" ").toLowerCase() : "";
         return textFor(trip).includes(keyword) || linkedText.includes(keyword);
       });
-      if (keyword || bookPlace || bookDate) results.appendChild(el3("div", { class: "fun-note", role: "status", text: "找到 " + trips.length + " 趟行程；联程同时检索相连的地点与记录。" }));
+      if (keyword || bookPlace || bookDate) results.appendChild(el("div", { class: "fun-note", role: "status", text: "找到 " + trips.length + " 趟行程；联程同时检索相连的地点与记录。" }));
       const appendTrip = (trip, parent) => {
         const open = expandedTrips.has(trip.id);
         const toggleKeep = async () => {
@@ -7737,40 +7733,40 @@ function mountBook(ctx) {
             render(currentData ?? data);
           }
         };
-        const card = el3(
+        const card = el(
           "article",
           { class: "fun-trip fun-ticket", "data-trip-id": trip.id },
-          el3(
+          el(
             "div",
             { class: "fun-ticket-date" },
-            el3("b", { text: String(Number(String(trip.day ?? "").slice(-2)) || "—") }),
-            el3("small", { text: (trip.day || "").slice(0, 7) || "日期不详" }),
-            el3("small", { text: trip.enteredHm || "时间不详" })
+            el("b", { text: String(Number(String(trip.day ?? "").slice(-2)) || "—") }),
+            el("small", { text: (trip.day || "").slice(0, 7) || "日期不详" }),
+            el("small", { text: trip.enteredHm || "时间不详" })
           ),
-          el3(
+          el(
             "div",
             { class: "fun-ticket-main" },
-            el3(
+            el(
               "div",
               { class: "fun-trip-head" },
-              el3("span", { class: "fun-trip-name", text: trip.placeName }),
-              trip.auto ? el3("span", { class: "fun-trip-auto", text: "自己出门" }) : null,
-              el3("span", { class: "fun-trip-when", text: (trip.enteredHm || "时间不详") + "–" + (trip.leftHm || "时间不详") + (trip.stayedMin ? " · " + trip.stayedMin + " 分钟" : "") })
+              el("span", { class: "fun-trip-name", text: trip.placeName }),
+              trip.auto ? el("span", { class: "fun-trip-auto", text: "自己出门" }) : null,
+              el("span", { class: "fun-trip-when", text: (trip.enteredHm || "时间不详") + "–" + (trip.leftHm || "时间不详") + (trip.stayedMin ? " · " + trip.stayedMin + " 分钟" : "") })
             ),
-            el3("div", { class: "fun-trip-sum", text: trip.summary }),
-            trip.company ? el3("div", { class: "fun-trip-extras", text: `同行 · ${trip.company}` }) : null,
-            trip.routeOrder ? el3("div", { class: "fun-note", text: "联程 · 第 " + trip.routeOrder + " 站" }) : null,
-            el3(
+            el("div", { class: "fun-trip-sum", text: trip.summary }),
+            trip.company ? el("div", { class: "fun-trip-extras", text: `同行 · ${trip.company}` }) : null,
+            trip.routeOrder ? el("div", { class: "fun-note", text: "联程 · 第 " + trip.routeOrder + " 站" }) : null,
+            el(
               "div",
               { class: "fun-trip-actions" },
-              el3("button", { type: "button", class: "fun-detail-toggle", "data-trip-id": trip.id, "aria-expanded": String(open), onclick: () => {
+              el("button", { type: "button", class: "fun-detail-toggle", "data-trip-id": trip.id, "aria-expanded": String(open), onclick: () => {
                 if (open) expandedTrips.delete(trip.id);
                 else expandedTrips.add(trip.id);
                 renderResults();
                 [...results.querySelectorAll(".fun-detail-toggle")].find((button2) => button2.getAttribute("data-trip-id") === trip.id)?.focus?.();
               } }, open ? "收起详情" : "查看详情"),
-              el3("button", { type: "button", disabled: pending.has(trip.id) ? "disabled" : null, onclick: toggleKeep }, pending.has(trip.id) ? "保存中…" : trip.kept ? "取消珍藏" : "珍藏"),
-              errors.has(trip.id) ? el3("span", { class: "fun-trip-error", role: "alert", text: errors.get(trip.id) }) : null
+              el("button", { type: "button", disabled: pending.has(trip.id) ? "disabled" : null, onclick: toggleKeep }, pending.has(trip.id) ? "保存中…" : trip.kept ? "取消珍藏" : "珍藏"),
+              errors.has(trip.id) ? el("span", { class: "fun-trip-error", role: "alert", text: errors.get(trip.id) }) : null
             )
           )
         );
@@ -7784,7 +7780,7 @@ function mountBook(ctx) {
         if (route) {
           if (drawnRoutes.has(route.id)) continue;
           drawnRoutes.add(route.id);
-          const group = el3("section", { class: "fun-route-group", "data-route-id": route.id });
+          const group = el("section", { class: "fun-route-group", "data-route-id": route.id });
           group.appendChild(routeSummary(route, allTrips, (selected) => {
             expandedTrips.add(selected.id);
             bookKeyword = "";
@@ -7796,20 +7792,20 @@ function mountBook(ctx) {
           }));
           const members = (route.tripIds ?? []).map((id) => trips.find((member) => member.id === id)).filter(Boolean);
           for (const member of members) {
-            group.appendChild(el3("div", { class: "fun-date", text: member.day || "日期不详" }));
+            group.appendChild(el("div", { class: "fun-date", text: member.day || "日期不详" }));
             appendTrip(member, group);
           }
           results.appendChild(group);
           previousDay = null;
         } else {
           if (trip.day !== previousDay) {
-            results.appendChild(el3("div", { class: "fun-date", text: trip.day || "日期不详" }));
+            results.appendChild(el("div", { class: "fun-date", text: trip.day || "日期不详" }));
             previousDay = trip.day;
           }
           appendTrip(trip, results);
         }
       }
-      if (!trips.length) results.appendChild(el3("div", { class: "fun-empty", text: bookKeyword || bookPlace || bookDate ? "没有匹配的行程，试试其他地点、日期或搜索词。" : bookTab === "kept" ? "还没有珍藏的行程。" : "还没有可回看的行程。" }));
+      if (!trips.length) results.appendChild(el("div", { class: "fun-empty", text: bookKeyword || bookPlace || bookDate ? "没有匹配的行程，试试其他地点、日期或搜索词。" : bookTab === "kept" ? "还没有珍藏的行程。" : "还没有可回看的行程。" }));
     };
     search.addEventListener("input", () => {
       bookKeyword = search.value;
@@ -7826,11 +7822,11 @@ function mountBook(ctx) {
     renderResults();
     restoreFocus();
   };
-  const stat = (n, label2) => el3(
+  const stat = (n, label2) => el(
     "div",
     { class: "fun-stat" },
-    el3("b", { text: String(n) }),
-    el3("span", { text: label2 })
+    el("b", { text: String(n) }),
+    el("span", { text: label2 })
   );
   const load = async (propagate = false) => {
     try {
@@ -7851,16 +7847,16 @@ function mountShelf(ctx) {
   const root = ctx.root;
   root.replaceChildren();
   const box = shell(root);
-  const body = el3("div");
+  const body = el("div");
   box.appendChild(body);
-  const status = feedback2(box);
+  const status = feedback(box);
   let currentData = null;
-  body.appendChild(el3("div", { class: "fun-loading", role: "status", text: "正在整理纪念品架…" }));
-  const stat = (n, label2) => el3(
+  body.appendChild(el("div", { class: "fun-loading", role: "status", text: "正在整理纪念品架…" }));
+  const stat = (n, label2) => el(
     "div",
     { class: "fun-stat" },
-    el3("b", { text: String(n) }),
-    el3("span", { text: label2 })
+    el("b", { text: String(n) }),
+    el("span", { text: label2 })
   );
   const pct = (part) => `${part.done}/${part.total}`;
   const memoryTrip = tripLookup(ctx, "trip", "id", "回看这趟行程");
@@ -7868,23 +7864,23 @@ function mountShelf(ctx) {
     if (Array.isArray(data.items) && data.items.length) return data.items;
     return (data.byPlace ?? []).flatMap((group) => (group.items ?? []).map((item) => ({ ...item, placeName: item.placeName || group.placeName })));
   };
-  const keepsakeCard = (it) => el3(
+  const keepsakeCard = (it) => el(
     "details",
     { class: "fun-keepsake" },
-    el3(
+    el(
       "summary",
       null,
       itemIcon(it.name),
-      el3("strong", { text: it.name }),
-      el3("span", { class: "fun-keepsake-place", text: `${it.placeName || "未记地点"}${it.firstDay ? ` · ${it.firstDay}` : ""}` }),
-      el3("span", { class: "fun-keepsake-count", text: it.times > 1 ? `收藏 ${it.times} 次` : "收藏 1 次" })
+      el("strong", { text: it.name }),
+      el("span", { class: "fun-keepsake-place", text: `${it.placeName || "未记地点"}${it.firstDay ? ` · ${it.firstDay}` : ""}` }),
+      el("span", { class: "fun-keepsake-count", text: it.times > 1 ? `收藏 ${it.times} 次` : "收藏 1 次" })
     ),
-    it.archivedCount ? el3("div", { class: "fun-note", text: `${it.archivedCount} 次收藏仅保留账本，详细行程已不在近期记录中。` }) : null,
-    ...(it.memories ?? []).map((m) => el3(
+    it.archivedCount ? el("div", { class: "fun-note", text: `${it.archivedCount} 次收藏仅保留账本，详细行程已不在近期记录中。` }) : null,
+    ...(it.memories ?? []).map((m) => el(
       "div",
       { class: "fun-trip-sum" },
-      el3("div", { text: `${m.day || "日期不详"} · ${m.summary}` }),
-      m.note ? el3("div", { text: `你记的：${m.note}` }) : null,
+      el("div", { text: `${m.day || "日期不详"} · ${m.summary}` }),
+      m.note ? el("div", { text: `你记的：${m.note}` }) : null,
       m.id ? memoryTrip(m.id) : null
     ))
   );
@@ -7892,9 +7888,9 @@ function mountShelf(ctx) {
     currentData = data;
     body.replaceChildren(heading("带回来的小东西。", "一件纪念品，连着一处地方，也连着那一天。"));
     if (!data.total) {
-      body.appendChild(el3("div", { class: "fun-empty", text: "架子上还什么都没有——她买过纪念品，这里就有了。" }));
+      body.appendChild(el("div", { class: "fun-empty", text: "架子上还什么都没有——她买过纪念品，这里就有了。" }));
     }
-    body.appendChild(el3(
+    body.appendChild(el(
       "div",
       { class: "fun-stats" },
       stat(data.total, "样东西"),
@@ -7902,41 +7898,41 @@ function mountShelf(ctx) {
       stat(data.places, "处地方"),
       stat(data.completePlaces, "处逛遍")
     ));
-    body.appendChild(el3("div", { class: "fun-note", text: "收藏账本长期保留；详细行程可查看最近 40 趟与珍藏行程。进度按当前场所清单统计，移除或改名不删除旧回忆。" }));
+    body.appendChild(el("div", { class: "fun-note", text: "收藏账本长期保留；详细行程可查看最近 40 趟与珍藏行程。进度按当前场所清单统计，移除或改名不删除旧回忆。" }));
     const keepsakes = shelfKeepsakes(data);
     const shelves = (data.byPlace ?? []).filter((group) => (group.items ?? []).length);
     if (keepsakes.length) {
-      body.appendChild(el3("div", { class: "fun-sec", text: "展示柜" }));
-      body.appendChild(el3("div", { class: "fun-shelf-cabinet" }, keepsakes.map(keepsakeCard)));
-      if (shelves.length) body.appendChild(el3(
+      body.appendChild(el("div", { class: "fun-sec", text: "展示柜" }));
+      body.appendChild(el("div", { class: "fun-shelf-cabinet" }, keepsakes.map(keepsakeCard)));
+      if (shelves.length) body.appendChild(el(
         "div",
         { class: "fun-chips fun-shelf-places" },
-        shelves.map((group) => el3("span", { class: "fun-chip", text: `${group.placeName} ${group.items.length} 样` }))
+        shelves.map((group) => el("span", { class: "fun-chip", text: `${group.placeName} ${group.items.length} 样` }))
       ));
     }
     const visited = (data.progress ?? []).filter((p) => p.visits > 0);
     if (visited.length) {
-      body.appendChild(el3(
+      body.appendChild(el(
         "div",
         { class: "fun-sec-row" },
-        el3("div", { class: "fun-sec", text: "快要逛遍的地方" }),
-        el3("span", { class: "fun-note", text: `逛过的 ${visited.length} 处 · 按当前地点内容统计` })
+        el("div", { class: "fun-sec", text: "快要逛遍的地方" }),
+        el("span", { class: "fun-note", text: `逛过的 ${visited.length} 处 · 按当前地点内容统计` })
       ));
-      body.appendChild(el3("div", { class: "fun-progress-grid" }, visited.map((p) => {
+      body.appendChild(el("div", { class: "fun-progress-grid" }, visited.map((p) => {
         const left = p.areas.left.length;
-        return el3(
+        return el(
           "div",
           { class: "fun-trip fun-progress-card" },
-          el3(
+          el(
             "div",
             { class: "fun-trip-head" },
-            el3("span", { class: "fun-trip-name", text: p.placeName }),
-            el3("span", { class: "fun-trip-when", text: `去过 ${p.visits} 次 · ${p.percent}%` })
+            el("span", { class: "fun-trip-name", text: p.placeName }),
+            el("span", { class: "fun-trip-when", text: `去过 ${p.visits} 次 · ${p.percent}%` })
           ),
-          el3("progress", { class: "fun-progress", max: "100", value: String(p.percent), "aria-label": `${p.placeName}探索进度 ${p.percent}%` }),
-          el3("div", { class: "fun-meta", text: `逛过 ${pct(p.areas)}${p.souvenirs.total ? ` · 纪念品 ${pct(p.souvenirs)}` : ""}${p.photos.total ? ` · 拍过 ${pct(p.photos)}` : ""}` }),
-          p.phases?.length ? el3("div", { class: "fun-note fun-visited-phases", text: `去过的时段：${p.phases.join("、")}` }) : null,
-          left ? el3("div", { class: "fun-trip-sum", text: `还差：${p.areas.left.slice(0, 6).join("、")}${left > 6 ? ` 等 ${left} 处` : ""}` }) : el3("div", { class: "fun-trip-sum", text: "这一处已经逛遍了。" })
+          el("progress", { class: "fun-progress", max: "100", value: String(p.percent), "aria-label": `${p.placeName}探索进度 ${p.percent}%` }),
+          el("div", { class: "fun-meta", text: `逛过 ${pct(p.areas)}${p.souvenirs.total ? ` · 纪念品 ${pct(p.souvenirs)}` : ""}${p.photos.total ? ` · 拍过 ${pct(p.photos)}` : ""}` }),
+          p.phases?.length ? el("div", { class: "fun-note fun-visited-phases", text: `去过的时段：${p.phases.join("、")}` }) : null,
+          left ? el("div", { class: "fun-trip-sum", text: `还差：${p.areas.left.slice(0, 6).join("、")}${left > 6 ? ` 等 ${left} 处` : ""}` }) : el("div", { class: "fun-trip-sum", text: "这一处已经逛遍了。" })
         );
       })));
     }

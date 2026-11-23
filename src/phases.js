@@ -15,17 +15,12 @@
  * 每处各算一遍时间迟早会算错。一处算、四处用。
  */
 
-const norm = (v, max) => (typeof v === 'string' ? v.replace(/\s+/g, ' ').trim().slice(0, max) : '');
+import { hmToMin } from './time.js';
 
-/** HH:MM → 当天第几分钟；坏值返回 null。 */
-export function hmToMin(hm) {
-  const m = /^(\d{1,2}):(\d{2})$/.exec(String(hm ?? '').trim());
-  if (!m) return null;
-  const h = Number(m[1]);
-  const mi = Number(m[2]);
-  if (h > 23 || mi > 59) return null;
-  return h * 60 + mi;
-}
+/** 旧入口保留：`phases.hmToMin` 一直有测试与 `story-library` 在用。 */
+export { hmToMin };
+
+const norm = (v, max) => (typeof v === 'string' ? v.replace(/\s+/g, ' ').trim().slice(0, max) : '');
 
 /**
  * 把一个阶段区间展开成「开放时段内的分钟集合」，用来判断某一刻落在哪一段。

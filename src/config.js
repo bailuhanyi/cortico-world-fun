@@ -58,8 +58,20 @@ export const DEFAULTS = Object.freeze({
   funStoryAutoImages: true,
   /** 可选文本主持；默认沿用宿主，面板可配置本机加密的独立接口。 */
   funStoryDM: false,
-  /** 文字通道（QQ/控制台聊天）能不能开局和推进故事；面板永远可玩。 */
-  funStoryTextOn: false,
+  /**
+   * 文字通道（QQ/控制台聊天）能不能开局和推进故事；面板永远可玩。
+   *
+   * 默认开：2026-11-23 群友反馈「聊天里玩不了故事」比省 schema 更重要。
+   * 关掉仍有效——关着时聊天里只留 candidates / detail，省 6 个工具的开销。
+   */
+  funStoryTextOn: true,
+  /**
+   * 聊天里也能用作者工具 `fun_story`。
+   *
+   * 默认关：它 1.1k 字符的 schema 是每轮固定开销，而写故事主要在面板里做
+   * （面板走 `#invoke`，不依赖这个工具）。要在聊天里让她建/停/导入故事再打开。
+   */
+  funStoryAuthorInChat: false,
   /** 自由模式（version 3 场景包）：作者写设定，DM 即兴演。 */
   funStoryFree: false,
   /** 自由模式单趟回合上限（1 回合 = 1 次模型调用）。 */
@@ -76,7 +88,7 @@ const ZH = {
   stopped: '未启动',
   badgeSession: '正在逛',
   badgePlaces: '能去哪儿',
-  prompt: '从0开始的肥鱼大冒险 World 的环境说明：她可以真去逛二十处地方——游乐场、海洋馆、庙会、漫展、电影院、动物园、公园、电玩城、KTV、博物馆、猫咖、爬山、咖啡店、奶茶店、餐厅、图书馆、夜市、澡堂、旧货市场、江边。还能在面板上自己加地方、改预设。进门、逛摊位、买纪念品、拍照、回家；回家回执把这一趟收成一句话，交给她记进自己的日程。不调别的 World 的工具、不读别人的状态。',
+  prompt: '从0开始的肥鱼大冒险 World 的环境说明：她可以真去逛二十处地方——游乐场、海洋馆、庙会、漫展、电影院、动物园、公园、电玩城、KTV、博物馆、猫咖、爬山、咖啡店、奶茶店、餐厅、图书馆、夜市、澡堂、旧货市场、江边。还能在面板上自己加地方、改预设。进门、逛摊位、买纪念品、拍照、回家；回家回执把这一趟收成一句话，交给她记进自己的日程。本插件自己不调用其他 World 的工具、也不读别人的私有状态；她要在家里点吃喝、查日程或配图，仍可以自己调 feast_* / imggen_draw。',
   config: {
     title: '从0开始的肥鱼大冒险',
     funOn: '开着',
@@ -94,7 +106,9 @@ const ZH = {
     funStoryDM: '可选文本主持',
     funStoryDMDesc: '默认关闭。去「出游」面板的设置区填写接口地址、API Key 和模型名（地址与 Key 是密码输入，不回显；模型名留空则由接口用自己的默认模型）。地址与 Key 都留空沿用宿主 cognition.request；都填写则由本插件直连 OpenAI 兼容 POST /chat/completions，密钥仅存在本机，不传给宿主或其他插件。Windows 使用 DPAPI 当前用户加密，其他平台禁用凭据保存；换机器或重装需重填。可立即清除。主持只提议合法选项，当前行动者明确提交才执行。每趟 6 次、每步 2 次（含重试、失败、取消），未知 token 不估算。',
     funStoryTextOn: '文字通道也能玩故事',
-    funStoryTextOnDesc: '默认关闭。开启后，QQ 或控制台聊天里也能开始和推进故事（fun_story_start / fun_story_act 才生效）；关掉时只能在从0开始的肥鱼大冒险面板里点，六个只读查询不受影响。\n\n注意：World 拿不到消息来源，所以这是「允许文字通道」的总开关，不能只对 QQ 生效。面板任何时候都能玩。',
+    funStoryTextOnDesc: '默认开启：QQ 或控制台聊天里也能开始和推进故事（fun_story_start / fun_story_act），六个只读查询也全部可用。关掉后聊天里只留 fun_story_candidates / fun_story_detail 两个查询应付「有什么故事」，其余故事工具不出现，每轮省下它们的 schema；面板任何时候都能玩。\n\n注意：World 拿不到消息来源，所以这是「允许文字通道」的总开关，不能只对 QQ 生效。',
+    funStoryAuthorInChat: '聊天里也能管故事',
+    funStoryAuthorInChatDesc: '默认关闭。开启后，聊天里会多一个作者工具 fun_story（模板、校验、预览、导入导出、启停、删除）；关着时它不出现——这能省下它每轮约 1.1k 字符的固定开销。面板里的「故事工坊」不靠这个工具，任何时候都能写、能管。',
     funStoryFree: '自由模式（场景包）',
     funStoryFreeDesc: '默认关闭。开启后可以使用 version 3「场景包」：作者只写大方向、正史、人物和结局条件，具体怎么演交给主持即兴。主持只能修改作者登记过的状态，结局由程序按条件判定；旧的选项式故事完全不受影响，两种模式可以同时存在。',
     funStoryFreeTurns: '自由模式一段走多少回合',
@@ -145,7 +159,9 @@ const EN = {
     funStoryDM: 'Optional text DM',
     funStoryDMDesc: 'Off by default. In Fish Story World settings enter the API URL, Key and model name (URL and Key are password fields, never echoed; leave the model blank to use the endpoint’s own default). Leave URL and Key blank for host cognition.request, or set both for this plugin to call OpenAI-compatible POST /chat/completions directly. Credentials stay on this machine, never sent to the host or other plugins. Windows DPAPI CurrentUser encryption only; saving is disabled elsewhere. Re-enter after changing machines or reinstalling; clear immediately at any time. The current actor must explicitly submit a valid proposal. Limits: 6 calls per run, 2 attempts per step, including retries, failures and cancellations; unknown tokens remain unknown.',
     funStoryTextOn: 'Play stories from text',
-    funStoryTextOnDesc: 'Off by default. On: stories can be started and advanced from QQ or console chat (fun_story_start / fun_story_act). Off: only the Adventures of Fat Fish from Scratch panel can play; the six read-only queries still work.\n\nA World cannot see which channel called it, so this is one switch for all text channels — it cannot be QQ-only. The panel always works.',
+    funStoryTextOnDesc: 'On by default: stories can be started and advanced from QQ or console chat (fun_story_start / fun_story_act), and all six read-only queries are available. Off: chat keeps only fun_story_candidates / fun_story_detail for "what stories are there", and the other story tools are not offered, saving their schema on every turn. The panel always works.\n\nA World cannot see which channel called it, so this is one switch for all text channels — it cannot be QQ-only.',
+    funStoryAuthorInChat: 'Manage stories from chat',
+    funStoryAuthorInChatDesc: 'Off by default. On: chat gains the author tool fun_story (template, validate, preview, import/export, enable/disable/remove). Off: it is not offered, saving about 1.1k characters of fixed schema on every turn. The Story Workshop panel does not use this tool and keeps working either way.',
     funStoryFree: 'Free mode (scene packs)',
     funStoryFreeDesc: 'Off by default. On: version 3 scene packs become playable. The author writes only the premise, canon, cast and ending conditions; the host DM improvises. The DM may change only registered state, and endings are decided by the program. Option-based stories are untouched; both modes can coexist.',
     funStoryFreeTurns: 'Free-mode turns per run',
@@ -278,6 +294,9 @@ export function configGroup(language = 'zh') {
         },
         [`${K}.funStoryTextOn`]: {
           type: 'boolean', title: t.funStoryTextOn, description: t.funStoryTextOnDesc, 'x-hot': true,
+        },
+        [`${K}.funStoryAuthorInChat`]: {
+          type: 'boolean', title: t.funStoryAuthorInChat, description: t.funStoryAuthorInChatDesc,
         },
         [`${K}.funStoryFree`]: {
           type: 'boolean', title: t.funStoryFree, description: t.funStoryFreeDesc, 'x-hot': true,

@@ -12,6 +12,7 @@
  *   3. 出门状态只读自本 World 的行程，切姿势不会改动行程。
  */
 import { pictureData } from '../places/helpers.js';
+import { elIn } from '../dom.js';
 import { HOME_LAYOUT, positionOf } from './layout.js';
 import { HOME_STYLES } from './styles.js';
 
@@ -67,23 +68,8 @@ export function classifyHomeFile(name) {
   return null;
 }
 
-function el(document, tag, attrs = {}, ...children) {
-  const element = document.createElement(tag);
-  for (const [name, value] of Object.entries(attrs)) {
-    if (value === null || value === undefined || value === false) continue;
-    if (name === 'class') element.className = value;
-    else if (name === 'text') element.textContent = String(value);
-    else if (name === 'style') element.setAttribute('style', value);
-    else if (name === 'hidden') element.hidden = Boolean(value);
-    else if (name.startsWith('on') && typeof value === 'function') element.addEventListener(name.slice(2), value);
-    else element.setAttribute(name, String(value));
-  }
-  for (const child of children.flat(Infinity)) {
-    if (child === null || child === undefined || child === false) continue;
-    element.append(typeof child === 'object' ? child : String(child));
-  }
-  return element;
-}
+/** 家面板的 `document` 是宿主注入的，所以走 `elIn`；实现见 `../dom.js`。 */
+const el = elIn;
 
 function relativeTime(minutes) {
   if (minutes === null || minutes === undefined) return '';

@@ -21,6 +21,18 @@
 - **出门时只读**：显示「出门中 · 某地（逛了 1/3）」，在房间里换姿势不会影响正在走的行程。
 - 素材规格、命名与十张贴图的对齐坐标见 [素材单](<E:/deep seek/素材单-鱼的家2D房间/素材单.md>)。
 
+## 版本：0.4.4 → 0.7.1
+
+下游文档（用户手册、市场描述）一度停在 0.4.4，这里补一条线，细节仍以 [CHANGELOG.md](CHANGELOG.md) 为准：
+
+- **0.4.4** 新增第七个面板「家」：一张 2D 房间、十个活动、可换背景与每个姿势的图；房间状态单独存在 `fun/home/`，不写行程、不读别的插件。
+- **0.7.0** 家从 P0 推到 P5：站位改成 `{x, y, scale}` 并按 Q 版实测落地板、脚下接触阴影、随时段变色、可点热点、快照、画架选图、导出/导入房间；家同时成了入口（最近纪念品、未逛完的行程、第一个心愿、「今天想做什么」）；新增只读 `fun_home_state` 与写 `fun_home_activity`，`describe.json` 的工具数到 24。自动出门当时是「10:00–20:00 自己走一趟」。
+- **0.7.1** 把「自己出门」改成方案 B：`funHomeAutoGo`（许可）+ `funHomeAutoSlots`（时段，默认 `10:30,15:30,19:30`）都开且时段非空时，到点只推一条 internal 事件 `fun.home.free` 叫她先看当天日程；**不读`鱼的每一天`的日程、不挑地方、不替她出门**。因此 `describe.json` 从 0 个事件变成 1 个。家里没上传角色图时改用随包内置的十张 Q 版立绘（约 1.2 MB），站位按 Q 版重新量过；修了画架选图不带 `kind` 必报 400 的问题；纪念品摆件因图标压字先不摆（`fun_home_state` 数据仍在，面板里把 `SHOW_KEEPSAKES` 改回 `true` 即恢复）。
+- **配置页现在 15 项**（`enabled` 由框架管）：`funOn` / `funSessionTTLMin` / `funAskReport` / `funTasteFromFeast` / `funHomeAutoGo` / `funHomeAutoSlots` / `funStoryDM` / `funStoryTextOn` / `funStoryAuthorInChat` / `funStoryFree` / `funStoryFreeTurns` / `funStoryImages` / `funStoryAutoImages` / `funAutoSteps` / `funAutoCalls`。主持密钥与图片来源仍在「出游 → 设置」，不进普通配置。
+- **工具面**：共 24 个；默认只挂 23 个——文字通道默认开着，作者工具 `fun_story` 要另开「聊天里也能管故事」。关掉文字通道则只剩 17 个。六个只读故事查询有 10 分钟记忆化，同一参数重复问只回 `{ok:true, unchanged:true}` 短回执，任何写操作立即失效，`full:true` 可强制重取。
+
+面板 id、同名函数与工具前缀的对照（`places` = 去哪儿、`locations` = 地点册）见 [docs/命名对照.md](docs/命名对照.md)——只做解释，不改 id。
+
 ## 装
 
 先把 Coo **完全退出**，然后：
@@ -33,7 +45,7 @@ powershell -ExecutionPolicy Bypass -File .\install.ps1 -CooRoot "E:\Coopanion" -
 powershell -ExecutionPolicy Bypass -File .\install.ps1 -CooRoot "E:\Coopanion"
 ```
 
-安装属于后续人工流程，本轮不执行。以后安装并重启 Coo，面板 → 世界 →「从0开始的肥鱼大冒险」应为 `active`，普通配置页有 6 项，接口与图片来源到故事面板设置区填写。
+安装属于后续人工流程，本轮不执行。以后安装并重启 Coo，面板 → 世界 →「从0开始的肥鱼大冒险」应为 `active`，普通配置页有 15 项，接口与图片来源到故事面板设置区填写。
 
 ## 故事工坊预览
 
@@ -400,7 +412,7 @@ fun_story_act      { tripId, stamp, intent: "close", confirm: true }
 面板可处理已有的未完行程，不提供「点一下让她去这儿」——新行程的进门和游逛是**她自己**的动作，
 替她按下去就等于代码替她做决定，那和这个插件的立意相反（见下面「刻意没做的」）。
 
-## 配置（`worlds.fun`，6 项，凭据不在普通配置中）
+## 配置（`worlds.fun`，15 项，凭据不在普通配置中）
 
 | 键 | 默认 | 管什么 |
 |---|---|---|
@@ -408,10 +420,19 @@ fun_story_act      { tripId, stamp, intent: "close", confirm: true }
 | `funSessionTTLMin` | `90` | 一趟挂多久就不再算「正在逛」；**不会催她回家，也不替她记** |
 | `funAskReport` | `true` | 回家回执要不要提醒她 `feast_life_play` 记一笔、跟主人说一句 |
 | `funTasteFromFeast` | `true` | 吃喝的味道去不去「鱼的每一天」拿（关掉就只说吃喝、一个字不提味道）。**不是自动探测**，装没装都要自己拨 |
+| `funHomeAutoGo` | `false` | 主人允许她自己出门；关着时连定时器都不注册 |
+| `funHomeAutoSlots` | `10:30,15:30,19:30` | 自己出门的时段（HH:MM，逗号分隔）；留空 = 只留许可、不叫醒 |
 | `funStoryDM` | `false` | 可选文本主持；接口地址与密钥在故事面板设置，Windows DPAPI 加密 |
-| `funStoryImages` | `false` | 剧情图片来源在故事面板设置；默认委派，显式本机 URL 才可选直连 |
+| `funStoryTextOn` | `true` | 文字通道能不能开局 / 推进；关掉后聊天里只留两个故事查询 |
+| `funStoryAuthorInChat` | `false` | 聊天里也能用作者工具 `fun_story`；默认不挂，省约 1.1k 字符/轮 |
+| `funStoryFree` | `false` | 自由模式（v3 场景包） |
+| `funStoryFreeTurns` | `40` | 自由模式一段最多几回合（1 回合 = 1 次模型调用） |
+| `funStoryImages` | `false` | 剧情图片总闸；来源在故事面板设置，默认委派，显式本机 URL 才可选直连 |
+| `funStoryAutoImages` | `true` | 不用点按钮，自动准备配图参数（只对委派型来源） |
+| `funAutoSteps` | `20` | 鱼自己玩：每段最多几步 |
+| `funAutoCalls` | `6` | 鱼自己玩：每段最多几次决定（每次都是真实模型请求） |
 
-**没有「叫醒档位」这类配置**，这个 World **不推任何事件**。她什么时候出门，由「鱼的每一天」的 `lifeFreeSlots` 叫醒时那一行 `lifeFreeMenu` 顺手一提，或者她自己 `fun_start`——两套叫醒会互相抢时间轴，那是方案 B 的事。
+**只有一个事件 `fun.home.free`**：`funHomeAutoGo` 与 `funHomeAutoSlots` 都有且时段非空时，到点推一条 internal 提醒叫她先看当天日程（`feast_life_now`）；**不读「鱼的每一天」的日程、不挑地方、不替她出门**。关掉任一项，这条路径不注册。0.4.4 之前那套「World 不推任何事件」的说法到此为止。
 
 ## 工具
 
@@ -423,9 +444,12 @@ fun_story_act      { tripId, stamp, intent: "close", confirm: true }
 | `fun_home` | 回家；结束未完行程时填 `draftId`，按已有记录结束 |
 | `fun_resume` | 用 `fun_view` 给出的未完行程 ID 继续逛 |
 | `fun_route` | 规划、查看、前往下一站、更改下一站或取消后续的两站路线 |
-| `fun_story` | 自填剧情的模板、校验、预览、导入导出和启停管理（`mode: free` 取自由模式模板） |
-| `fun_story_start` | 在聊天里开始一段故事（需开启文字通道），重新校验 `startStamp` / 版本 / 条件 |
-| `fun_story_act` | 在聊天里推进当前故事：选项式先给待确认提议，自由模式每句推进一回合 |
+| `fun_home_state` | 只读看房间：活动、备注、图片状态、可复制的「待记一条」；不写盘 |
+| `fun_home_activity` | 换十个固定活动之一，可附备注；`expectedRevision` 不一致时给原因，不自动重试 |
+| `fun_story` | 自填剧情的模板、校验、预览、导入导出和启停管理（`mode: free` 取自由模式模板）；默认不挂，需开「聊天里也能管故事」 |
+| `fun_story_start` | 在聊天里开始一段故事（需开启文字通道），重新校验 `startStamp` / 版本 / 条件；**开关关着时不出现** |
+| `fun_story_act` | 在聊天里推进当前故事：选项式先给待确认提议，自由模式每句推进一回合；**开关关着时不出现** |
+| `fun_story_places` 等六个只读 | 地点索引、候选、详情、当前进度、回忆、可复制短文本；关掉文字通道后只挂 `candidates` / `detail`。10 分钟记忆化，重复问只回「没变化」，写操作立即失效，`full:true` 重取 |
 | `fun_choice` | 按回执处理待选事件，`optionId: skip` 略过 |
 | `fun_wishes` / `fun_wish` | 查询或管理出游心愿 |
 | `fun_keepsake` | 珍藏或取消珍藏已结束行程 |

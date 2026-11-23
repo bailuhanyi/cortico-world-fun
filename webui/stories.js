@@ -1,6 +1,7 @@
 /** Venue story pack authoring for Coo WebUI. */
 import { storyText } from './ui-text.js';
 import { venueArtwork } from './artwork.js';
+import { el } from './dom.js';
 const CSS = `
 .fun-stories{--fs-line:var(--border,#e3e4e3);--fs-ink:var(--foreground,#1b1a1e);--fs-dim:var(--muted-foreground,#5c5c60);--fs-card:var(--surface,#fbfbfb);--fs-soft:color-mix(in srgb,var(--fs-card) 93%,var(--fs-ink));--fs-accent:var(--accent,#00a870);--fs-error:var(--destructive,#b23b35);font:14px/1.65 var(--sans,-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif);color:var(--fs-ink);padding:8px 4px 24px;overflow-wrap:anywhere}
 .fun-stories *{box-sizing:border-box}
@@ -79,16 +80,6 @@ const CSS = `
 .fun-story-required-dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--fs-error);flex:none}.fun-story-required-dot[hidden]{display:none!important}.fun-story-group-progress{white-space:nowrap}.fun-story-group-content{padding-top:2px}.fun-story-group-content .fun-story-grid{gap:12px 14px;margin:10px 0}.fun-story-group-content .fun-story-field{display:flex;flex-direction:column;gap:5px;font-size:12px}.fun-story-group-content :is(input,select){height:36px;border-radius:8px;padding:6px 10px}.fun-story-group-content textarea{border-radius:8px;padding:8px 10px}.fun-story-sticky-actions .fun-story-sticky-status{margin-left:auto;color:var(--fs-dim);font-size:11px}.fun-story-sticky-actions .fun-story-sticky-status:empty{display:none}
 @media(max-width:420px){.fun-stories{padding-inline:0}.fun-story-editor{padding:10px}.fun-story-body{padding:10px 11px}}
 `;
-
-function el(tag, attrs = {}, ...children) {
-  const node = document.createElement(tag);
-  for (const [key, value] of Object.entries(attrs)) node.setAttribute(key, value);
-  for (const child of children.flat()) {
-    if (child == null) continue;
-    node.appendChild(typeof child === 'string' ? document.createTextNode(child) : child);
-  }
-  return node;
-}
 
 function messageList(messages) {
   return messages?.length ? el('ul', {}, messages.map((message) => el('li', {}, String(message)))) : null;

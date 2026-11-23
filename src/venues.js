@@ -16,6 +16,8 @@
  * 素材库里没有对应场景，也就不提 scene——这是有意的，不是漏了。
  */
 
+import { hmToMin } from './time.js';
+
 /**
  * @typedef {object} Venue
  * @property {string} id       稳定 id（`fun_go` 的 `place` 也认它）
@@ -1154,15 +1156,8 @@ export function findVenue(places, name) {
   return contains.length === 1 ? contains[0] : null;
 }
 
-/** 把 HH:MM 变成分钟数；坏值返回 null。 */
-export function hmToMin(hm) {
-  const m = /^(\d{1,2}):(\d{2})$/.exec(String(hm ?? '').trim());
-  if (!m) return null;
-  const h = Number(m[1]);
-  const mi = Number(m[2]);
-  if (h > 23 || mi > 59) return null;
-  return h * 60 + mi;
-}
+/** 旧入口保留：`venues.hmToMin` 与 `index.js` 的再导出都在用。 */
+export { hmToMin };
 
 /**
  * 这个点去这儿合不合适：`open` / `closingSoon` / `closed`。

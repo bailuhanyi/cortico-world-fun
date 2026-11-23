@@ -9,7 +9,7 @@ const at=(text)=>Date.parse(text);
 async function boot(opts={}) {
  const dir=opts.dir ?? await mkdtemp(join(tmpdir(),'fun-story-'));
  let now=opts.now ?? at('2026-11-19T14:00:00+08:00');
- const world=new FunWorld({cfg:{enabled:true},dataDir:dir,timezone:'Asia/Shanghai',now:()=>now,random:()=>0});
+ const world=new FunWorld({cfg:{enabled:true,funStoryTextOn:true},dataDir:dir,timezone:'Asia/Shanghai',now:()=>now,random:()=>0});
  await world.start({log:{info(){},warn(){}}});
  return {dir,world,tool:(name,args={})=>world.tools().find((x)=>x.name===name).handler(args),panel:(method,args={})=>world.webUi().invoke('stories',method,[args]),invoke:(panel,method,args=[])=>world.webUi().invoke(panel,method,args)};
 }

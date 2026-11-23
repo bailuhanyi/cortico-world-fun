@@ -2,6 +2,7 @@ import { mountStories } from './stories.js';
 import { mountFishStory } from './story-mount.js';
 import { mountHome } from './home/webui.js';
 import { mountPlaces as mountLocations } from './places/webui.js';
+import { el, errorCard, feedback, heading } from './dom.js';
 /**
  * 从0开始的肥鱼大冒险面板的浏览器端（Coo WebUI 扩展面板）。
  *
@@ -347,28 +348,6 @@ const CSS = `
 }
 `;
 
-/** 小工具：建元素 + 设属性，省掉一屏 createElement。 */
-function el(tag, props, ...kids) {
-  const n = document.createElement(tag);
-  if (props) {
-    for (const [k, v] of Object.entries(props)) {
-      if (v === null || v === undefined || v === false) continue;
-      if (k === 'class') n.className = v;
-      else if (k === 'text') n.textContent = v;
-      else if (k === 'html') n.innerHTML = v;
-      else if (k.startsWith('on') && typeof v === 'function') n.addEventListener(k.slice(2), v);
-      else if (k === 'style') Object.assign(n.style, v);
-      else n.setAttribute(k, v);
-    }
-  }
-  for (const kid of kids.flat()) {
-    if (kid === null || kid === undefined || kid === false) continue;
-    n.appendChild(typeof kid === 'string' || typeof kid === 'number'
-      ? document.createTextNode(String(kid)) : kid);
-  }
-  return n;
-}
-
 /** 只注入一次样式（同一 root 反复 mount 时别叠 <style>）。 */
 function ensureStyle(root) {
   if (root.querySelector('style.fun-style')) return;
@@ -381,25 +360,6 @@ function shell(root) {
   const box = el('div', { class: 'fun' });
   root.appendChild(box);
   return box;
-}
-
-function errorCard(err, retry, retained = false) {
-  return el('div', { class: 'fun-err', role: 'alert' },
-    el('span', { text: retained ? `刷新失败，保留上次内容：${err?.message ?? String(err)}` : `面板加载失败：${err?.message ?? String(err)}` }),
-    retry ? el('button', { type: 'button', onclick: () => { void retry(); } }, '重试') : null);
-}
-
-function heading(title, subtitle) {
-  return el('header', { class: 'fun-heading' },
-    el('p', { class: 'fun-kicker', text: `从0开始的肥鱼大冒险 · ${title}` }),
-    el('h2', { text: title }),
-    subtitle ? el('p', { class: 'fun-heading-lead', text: subtitle }) : null);
-}
-
-function feedback(box) {
-  const node = el('div', { class: 'fun-feedback' });
-  box.appendChild(node);
-  return node;
 }
 
 function sceneArt(place, detail = false) {

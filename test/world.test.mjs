@@ -58,7 +58,7 @@ test('describe 里只声明一个事件：她自己出门时段的叫醒', () =>
 });
 
 test('故事公共查询工具已分离声明为只读', () => {
-  const w = funDefinition.create({ cfg: {}, dataDir: process.cwd(), timezone: TZ });
+  const w = funDefinition.create({ cfg: { funStoryTextOn: true }, dataDir: process.cwd(), timezone: TZ });
   const names = w.tools().map((t) => t.name);
   for (const name of ['fun_story_places', 'fun_story_candidates', 'fun_story_detail', 'fun_story_current', 'fun_story_recap', 'fun_story_schedule']) {
     assert.ok(names.includes(name), `${name} missing`);
@@ -67,10 +67,33 @@ test('故事公共查询工具已分离声明为只读', () => {
   }
 });
 
-test('二十四件工具都注册了', () => {
-  const w = funDefinition.create({ cfg: {}, dataDir: process.cwd(), timezone: TZ });
-  const names = w.tools().map((t) => t.name).sort();
-  assert.deepEqual(names, ['fun_choice', 'fun_go', 'fun_home', 'fun_home_activity', 'fun_home_state', 'fun_keepsake', 'fun_places', 'fun_resume', 'fun_route', 'fun_shelf', 'fun_start', 'fun_story', 'fun_story_act', 'fun_story_candidates', 'fun_story_current', 'fun_story_detail', 'fun_story_places', 'fun_story_recap', 'fun_story_schedule', 'fun_story_start', 'fun_view', 'fun_wander', 'fun_wish', 'fun_wishes']);
+test('默认 23 件（文字通道开、作者闸关）；两个开关各自生效', () => {
+  const noText = ['fun_choice', 'fun_go', 'fun_home', 'fun_home_activity', 'fun_home_state', 'fun_keepsake', 'fun_places', 'fun_resume', 'fun_route', 'fun_shelf', 'fun_start', 'fun_story_candidates', 'fun_story_detail', 'fun_view', 'fun_wander', 'fun_wish', 'fun_wishes'];
+
+  // 默认：文字通道开着（群友反馈聊天里要能玩），只藏作者工具。
+  const def = funDefinition.create({ cfg: {}, dataDir: process.cwd(), timezone: TZ });
+  const defNames = def.tools().map((t) => t.name);
+  assert.equal(defNames.length, 23);
+  for (const name of ['fun_story_start', 'fun_story_act', 'fun_story_places', 'fun_story_current', 'fun_story_recap', 'fun_story_schedule']) {
+    assert.ok(defNames.includes(name), `默认应该有 ${name}`);
+  }
+  assert.ok(!defNames.includes('fun_story'), '作者工具默认不挂');
+
+  // 关掉文字通道：只剩 candidates / detail 两个故事查询（17 件）。
+  const off = funDefinition.create({ cfg: { funStoryTextOn: false }, dataDir: process.cwd(), timezone: TZ });
+  assert.deepEqual(off.tools().map((t) => t.name).sort(), noText);
+  assert.ok(!off.tools().some((t) => t.name === 'fun_story'), '作者工具仍不挂');
+
+  // 关文字通道 + 开作者闸：18 件，作者工具回来、文字通道那批仍不在。
+  const authorOnly = funDefinition.create({ cfg: { funStoryTextOn: false, funStoryAuthorInChat: true }, dataDir: process.cwd(), timezone: TZ });
+  const authorNames = authorOnly.tools().map((t) => t.name);
+  assert.equal(authorNames.length, 18);
+  assert.ok(authorNames.includes('fun_story'));
+  assert.ok(!authorNames.includes('fun_story_start'));
+
+  // 作者闸也开：24 件全在。
+  const both = funDefinition.create({ cfg: { funStoryAuthorInChat: true }, dataDir: process.cwd(), timezone: TZ });
+  assert.equal(both.tools().length, 24);
 });
 
 test('envPromptVars 不常驻完整地点清单，关闭时同样为空', async () => {
@@ -94,7 +117,7 @@ test('配置段缺键会被补齐（宿主 /api/config 不合并 defaults）', a
   await world.start({ log: { info() {}, warn() {} } });
   assert.equal(persisted.length, 1);
   assert.deepEqual(Object.keys(persisted[0]).sort(),
-    ['funAskReport', 'funAutoCalls', 'funAutoSteps', 'funHomeAutoGo', 'funHomeAutoSlots', 'funSessionTTLMin', 'funStoryAutoImages', 'funStoryDM', 'funStoryFree', 'funStoryFreeTurns', 'funStoryImages', 'funStoryTextOn', 'funTasteFromFeast']);
+    ['funAskReport', 'funAutoCalls', 'funAutoSteps', 'funHomeAutoGo', 'funHomeAutoSlots', 'funSessionTTLMin', 'funStoryAuthorInChat', 'funStoryAutoImages', 'funStoryDM', 'funStoryFree', 'funStoryFreeTurns', 'funStoryImages', 'funStoryTextOn', 'funTasteFromFeast']);
   assert.equal(persisted[0].funAskReport, true);
   assert.equal(persisted[0].funSessionTTLMin, 90);
   assert.equal(persisted[0].funAutoSteps, 20);
@@ -113,14 +136,14 @@ test('缺键补齐：盘上已有的值一个都不覆盖', async () => {
       enabled: true, funOn: false, funSessionTTLMin: 30,
       funAskReport: false, funTasteFromFeast: false, funHomeAutoGo: false, funHomeAutoSlots: '10:30', funStoryImages: false, funStoryDM: true,
       funStoryTextOn: true, funStoryFree: false, funStoryFreeTurns: 40, funAutoSteps: 20, funAutoCalls: 6,
-      funStoryAutoImages: true,
+      funStoryAutoImages: true, funStoryAuthorInChat: false,
     },
     dataDir: dir,
     timezone: TZ,
     persist: (patch) => { persisted.push(patch); },
   });
   await world.start({ log: { info() {}, warn() {} } });
-  assert.deepEqual(persisted, [], '十三项都在，不该补任何东西');
+  assert.deepEqual(persisted, [], '十五项都在，不该补任何东西');
 });
 
 test('fun_places：按开放时段排，正文带开没开和人多少', async () => {

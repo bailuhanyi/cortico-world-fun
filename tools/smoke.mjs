@@ -82,7 +82,14 @@ const names = world.tools().map((t) => t.name).sort();
 const MUST_HAVE = ['fun_go', 'fun_home', 'fun_places', 'fun_shelf', 'fun_start', 'fun_view', 'fun_wander'];
 const missing = MUST_HAVE.filter((n) => !names.includes(n));
 ok(!missing.length, `工具都在：${names.join(',')}${missing.length ? `（缺 ${missing.join(',')}）` : ''}`);
-ok(FUN_TOOL_DECLS.length === names.length, `FUN_TOOL_DECLS 与 tools() 条数一致（${names.length} 条）`);
+const declared = FUN_TOOL_DECLS.map((t) => t.name);
+ok(names.every((n) => declared.includes(n)), 'tools() 里的每一项都在 FUN_TOOL_DECLS 里');
+// 默认：文字通道开着，只藏作者工具（23/24）。
+ok(names.length === declared.length - 1, `默认只差作者工具（${names.length}/${declared.length}）`);
+const storyOff = new FunWorld({ cfg: { enabled: true, funStoryTextOn: false }, dataDir: dir, timezone: TZ });
+await storyOff.start(host);
+ok(storyOff.tools().length === declared.length - 7, '关掉文字通道后收起 7 个故事工具（17/24）');
+await storyOff.stop();
 for (const t of world.tools()) {
   ok(typeof t.handler === 'function', `${t.name} 有 handler`);
   ok(typeof t.description === 'string' && t.description.length > 10, `${t.name} 有描述`);

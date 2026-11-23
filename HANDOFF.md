@@ -7,7 +7,7 @@
 > **2026-11-22 夜间更新**：0.7.0 已与当天的「两席同票 / 委派配图 / 设置分区」修复合并（HEAD `879a267`），并已装进本机 Coo（vendor 0.7.0，备份 `cortico-world-fun.bak-20261122-2325`）。
 > 这一轮的现状、待办与坑见 **`HANDOFF-2026-11-22-夜间-0.7.0-接手.md`**，本文 M1–M5 的描述仍然有效。
 
-## 这一版（0.7.0）：家面板 P1–P5
+## 这一版（0.7.1）：家面板 P1–P5
 
 - **M1 素材与活气**：十个站位带 `scale`，按素材实测表落地板；脚下接触阴影；`room.source` = `default`（按时段变）/ `panel`（点一下固定）；180ms 转场与减少动画分支；布置页可批量导入并按 `bg-* / ch-idle* / act-*` 分拣，认不出的进「未使用」。0.7.1 起没传角色图时用随包的 Q 版立绘（`assets/home/chibi-*.webp`），默认 `scale` 整体调小。
 - **M2 家作为入口**：最新 3–5 件纪念品按类别摆位、只读气泡；未逛完行程票笺 +「继续」（同一趟 id）；第一个未完成心愿只读；手写「今天想做什么」≤60 字，空则文件里没有这个键。
@@ -57,7 +57,7 @@
 ## 验证现状
 
 - `npm test` 全绿：面板 `panels` 68/68、故事面板 `story/webui` 41/41、`place-library` 10/10、`user-venues` 20/20、`world` 82/82，其余照旧。受限沙箱下 `story-config` 的 DPAPI 用例会假失败；完整权限下 7/7（已知问题，见旧交接 §6）。
-- `npm run verify` 全绿：单入口打包、提示词、隔离审计、冒烟、`describe.json` 一致性（22 工具 / 0 事件）。
+- `npm run verify` 全绿：单入口打包、提示词、隔离审计、冒烟、`describe.json` 一致性（当时是 22 工具 / 0 事件；0.7.1 起 24 工具 / 1 事件，默认只暴露 17 个）。
 - `npm pack` → `node tools/verify-published.mjs --file .tmp/release-0.4.3/cortico-world-fun-0.4.3.tgz` 通过：45 个文件、22 处预设场所、六个面板真在包里、单文件入口能加载。
 - 真实面板渲染（Edge 无头，真实 `FunWorld` 夹具）：`R1`–`R14`，含纪念册 / 纪念品架 / 故事工坊的**暗色**与 **412px 窄屏**；14 张都核对过 `document.documentElement.scrollWidth ≤ innerWidth`，无横向溢出。
 - **本机 Coo 装机核验**：`data\extensions\vendor\cortico-world-fun\package.json` = 0.4.3；`dist\webui.js` 与源码构建产物 SHA-256 一致（`F7C9AA40…A2444`）；宿主 `http://127.0.0.1:17788/assets/extensions/cortico-world-fun/0.4.3/webui.js` 返回同一份字节；日志 `worlds.fun: 从0开始的肥鱼大冒险已启动` / `World 已启动: fun`。

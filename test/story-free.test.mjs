@@ -169,16 +169,17 @@ test('每回合合并：回合 +1、日志有界、状态合并、摘要可更�
   assert.equal(effectiveMaxTurns({ metadata: { maxTurns: 30 } }, 10), 10);
 });
 
-test('文字通道开关关闭时两个写工具都明确报未开启', async (t) => {
+test('文字通道关闭时聊天里只留候选与详情两个查询', async (t) => {
   const b = await boot(t, { cfg: { funStoryTextOn: false } });
-  const card = await importFree(b);
-  const current = await b.json('fun_story_current');
-  const started = await b.tool('fun_story_start', { packId: card.id, revision: card.revision, startStamp: current.startStamp, confirm: true });
-  assert.equal(started.failed, true);
-  assert.match(started.text, /文字通道游玩没有开启/);
-  const acted = await b.tool('fun_story_act', { tripId: 'x', stamp: 'y', intent: 'say', say: '走吧' });
-  assert.equal(acted.failed, true);
-  assert.match(acted.text, /文字通道游玩没有开启/);
+  await importFree(b);
+  const names = b.world.tools().map((row) => row.name);
+  // 折中：聊天里问「有什么故事」还答得上，其余故事工具全部收起来省 schema。
+  assert.ok(names.includes('fun_story_candidates') && names.includes('fun_story_detail'), '两个查询要留着');
+  for (const name of ['fun_story', 'fun_story_start', 'fun_story_act', 'fun_story_places', 'fun_story_current', 'fun_story_recap', 'fun_story_schedule']) {
+    assert.ok(!names.includes(name), `${name} 关着时不该出现`);
+  }
+  const candidates = await b.json('fun_story_candidates', { full: true });
+  assert.ok(candidates.candidates.some((row) => row.id === 'rain-night'), '候选仍能查');
 });
 
 test('自由模式开关关闭时场景包不可开始', async (t) => {

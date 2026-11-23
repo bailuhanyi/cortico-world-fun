@@ -17,6 +17,8 @@ async function rig(t, options = {}) {
   const cognition = options.cognition || { request: async (payload) => { requests.push(payload); return { text: JSON.stringify({ optionId: answer, reason: '这是鱼自己的明确选择' }) }; } };
   let seeded = false;
   async function create(cfg = options.cfg || {}) {
+    // 这组用例要直接读六个故事查询；保持 cfg 的对象身份，live-config 用例还会改它。
+    if (cfg.funStoryTextOn === undefined) cfg.funStoryTextOn = true;
     const world = new FunWorld({ dataDir: dir, cfg, timezone: 'Asia/Shanghai', now: () => clock.now, random: () => 0 });
     await world.start({ cognition });
     const panel = (id, method, payload = {}) => world.webUi().invoke(id, method, [payload]);
@@ -78,7 +80,7 @@ test('all six public queries preserve persisted bytes and hide unplayed outcomes
   }
   assert.deepEqual(await readFile(r.world.stateFile()).catch(() => null), before);
   assert.deepEqual(await readFile(r.world.storiesFile()), stories);
-  assert.equal((await r.tool('fun_story_current')).state, 'none');
+  assert.equal((await r.tool('fun_story_current', { full: true })).state, 'none');
   const missing = await r.tool('fun_story_detail', { id: 'no-such-story' });
   assert.equal(missing.failed, true);
   assert.equal(JSON.parse(missing.text).code, 'NOT_FOUND');

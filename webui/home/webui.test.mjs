@@ -15,41 +15,10 @@ const NOON = Date.parse('2026-11-22T12:00:00+08:00');
 const PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
 const PNG_URL = `data:image/png;base64,${PNG}`;
 
+import { createShimDom } from '../../test/dom-shim.mjs';
+
 /** 极简 DOM：够挂载面板、点按钮、读文字；不做布局。 */
-class Node extends EventTarget {
-  constructor(tag, document) {
-    super();
-    this.tagName = String(tag).toUpperCase();
-    this.ownerDocument = document;
-    this.childNodes = [];
-    this.attributes = new Map();
-    this.className = '';
-    this.hidden = false;
-    this.disabled = false;
-    this._text = '';
-    this._value = '';
-  }
-  setAttribute(name, value) { this.attributes.set(name, String(value)); }
-  getAttribute(name) { return this.attributes.get(name) ?? null; }
-  get textContent() { return this._text + this.childNodes.map((child) => child.textContent).join(''); }
-  set textContent(value) { this._text = String(value); this.childNodes = []; }
-  get value() { return this._value || this.textContent; }
-  set value(value) { this._value = String(value); }
-  append(...children) {
-    for (let child of children) {
-      if (typeof child !== 'object') { const text = this.ownerDocument.createElement('#text'); text.textContent = child; child = text; }
-      this.childNodes.push(child); child.parentNode = this;
-    }
-  }
-  replaceChildren(...children) { for (const child of this.childNodes) child.parentNode = null; this.childNodes = []; this._text = ''; this.append(...children); }
-  remove() { if (this.parentNode) { const list = this.parentNode.childNodes; list.splice(list.indexOf(this), 1); this.parentNode = null; } }
-  click() { this.dispatchEvent(new Event('click')); }
-  querySelectorAll(selector) {
-    const tags = selector.split(',').map((tag) => tag.trim().toUpperCase());
-    return this.childNodes.flatMap((child) => [...(tags.includes(child.tagName) ? [child] : []), ...child.querySelectorAll(selector)]);
-  }
-  querySelector(selector) { return this.querySelectorAll(selector)[0] ?? null; }
-}
+const { createDocument } = createShimDom({ textValueFallback: true });
 
 async function mountHomePanel(t, prepare, options = {}) {
   const dir = await mkdtemp(join(tmpdir(), 'fun-home-ui-'));
@@ -65,7 +34,7 @@ async function mountHomePanel(t, prepare, options = {}) {
   const call = (method, payload) => world.webUi().invoke('home', method, payload === undefined ? [] : [payload]);
   if (prepare) await prepare({ dir, world, call, clock });
 
-  const document = { createElement(tag) { return new Node(tag, this); } };
+  const document = createDocument();
   const root = document.createElement('div');
   const calls = [];
   let pending = 0;
