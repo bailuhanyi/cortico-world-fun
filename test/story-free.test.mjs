@@ -6,7 +6,7 @@ import { FunWorld } from '../src/world.js';
 import { validateStoryPack } from '../src/story-packs.js';
 import {
   applyFreeDelta, checkEnd, continueFreeSegment, effectiveMaxTurns, evaluateWhen, freeCanContinue, freeLinePayload, freeSegmentsLeft, freeTurn,
-  freeTurnsLeft, freeSummaryText, newFreeState, normalizeFreeActions, normalizeFreeState, normalizeStoryParty, parseFreeLine, parseFreeOutput, freePromptPayload,
+  freeTurnsLeft, freeSummaryText, newFreeState, normalizeFreeActions, normalizeFreeState, normalizeStoryParty, parseFreeLine, parseFreeOutput, freePromptPayload, requestFreeLine,
 } from '../src/story-free.js';
 import { cleanup } from './tmp.mjs';
 
@@ -505,6 +505,43 @@ test('自演的一句只收 say / reason；给她的资料里没有结局、节�
   assert.equal(payload.locations.length, setting.locations.length);
   assert.equal(typeof payload.locations[0].name, 'string');
   assert.equal(payload.turn, 1);
+});
+
+test('自演请求要过宿主那道闸门：以「在虚构故事里，」开头、2500 字以内、不带 tools', async () => {
+  const seen = [];
+  const cognition = { request: async (payload) => {
+    seen.push(payload);
+    return { text: JSON.stringify({ say: '我把灯杆接过来。', reason: '她不想再等' }) };
+  } };
+  const setting = freePack().setting;
+  const free = newFreeState(setting);
+  const first = await requestFreeLine(cognition, freeLinePayload(setting, free));
+  assert.equal(first.ok, true, first.error);
+  assert.equal(seen[0].brief.startsWith('在虚构故事里，'), true, '宿主按这个前缀认请求');
+  assert.ok(seen[0].brief.length <= 2500, `brief ${seen[0].brief.length}`);
+  assert.deepEqual(seen[0].tools, []);
+  assert.equal(seen[0].hint.rounds, 1);
+
+  const heavy = {
+    ...freeLinePayload(setting, free),
+    canon: Array.from({ length: 10 }, (_, index) => `正史第${index}条` + '字'.repeat(180)),
+    recent: Array.from({ length: 5 }, () => ({ from: '鱼', say: '字'.repeat(900), narration: '字'.repeat(900) })),
+    summary: '字'.repeat(200),
+  };
+  const second = await requestFreeLine(cognition, heavy);
+  assert.equal(second.ok, true, second.error);
+  const brief = seen[1].brief;
+  assert.ok(brief.length <= 2500, `brief ${brief.length} 超过了宿主上限`);
+  assert.ok(brief.includes('正史第0条'), 'canon 不能被整段丢掉');
+  assert.equal(brief.includes(setting.forbidden[0]), false, '超长时先丢 forbidden');
+});
+
+test('宿主拒绝时把它的原话带回来，不再笼统地说超时', async () => {
+  const cognition = { request: async () => ({ error: 'Unsupported story decision request' }) };
+  const out = await requestFreeLine(cognition, { premise: 'x', canon: [], forbidden: [], locations: [], party: [],
+    summary: '', turn: 1, state: { facts: {}, flags: {}, counters: {} }, recent: [] });
+  assert.equal(out.ok, false);
+  assert.match(out.error, /Unsupported story decision request/);
 });
 
 test('自由模式自演：签票的一句走正常主持通道，回执记在鱼名下', async (t) => {
