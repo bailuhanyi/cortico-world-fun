@@ -4,59 +4,40 @@
 
 ## 0.8.0
 
-减法版：**页签从 7 收成 4、工具从 24 收成 15（默认 14）**，群聊里推进故事有了明确节奏，顺手修掉故事包「地点编号对不上就永久失效」的死包问题。**没有数据迁移**：`state.json`、`venues.json`、`stories.json`、`config.json` 的字段与语义都没动。
+一次原地收拢：四个面板、15 个声明工具（默认可用 14 个），自由故事默认开启。新增字段只补充能力；旧存档的心愿、路线和时间线数据继续读取并写回。仅对已下线的普通游逛旧岔路做清理并提示；选项式故事自己的待选项仍可继续。
 
-### 页签：7 → 4
+### 面板：7 → 4
 
-- 世界页签变成 **家 · 自己去逛 · 故事手账 · 回忆手账**。原来七件事各占一个页签，其实是「出去玩」的四个阶段，这次按大类收拢：
-  - **自己去逛** = 「此刻去逛」（原去哪儿）+「地点册」，页内两个页签；
-  - **故事手账** = 故事玩家（原出游）+「更多故事」折叠里的故事工坊；
-  - **回忆手账** = 「行程手账」（原纪念册）+「珍藏柜」（原纪念品架）；
-  - **家** 不变。
-- 面板 id 变成 `home` / `outing` / `story` / `journal`；旧的 `places` / `locations` / `book` / `shelf` / `stories` 不再对外声明——宿主里指向旧 id 的书签、深链要改到新页签（服务端仍认旧方法名做转发，但页签本身只有四个）。
-- 客户端一个 bundle 挂四个页签：内嵌页签用 `mergedPanel`，故事工坊收进「更多故事」的 `<details>`，默认不展开，首屏是故事玩家。
+- 面板为「家」「自己去逛」「故事手账」「回忆手账」。story 的面板 ID 保持不变，标题为「故事手账 / Story Journal」。
+- 「自己去逛」合并此刻推荐与地点册；「回忆手账」合并行程与珍藏柜；故事手账首屏优先展示四张自由故事卡，选项式故事与作者工具收在「更多故事」里。
+- 宿主不再打开旧面板深链：`places` / `locations` 改用 `outing`，`book` / `shelf` 改用 `journal`，`stories` 改用 `story`。
+- 心愿管理与路线管理界面下线；历史行程仍能逐趟检索，旧联程数据保留。已有联程可用 fun_go 前往下一站；改去别处会停止后续联程，但不会删除原记录。
 
 ### 工具：24 → 15（默认 14）
 
-重复的查询/管理入口并进一个工具，能力不丢（路线、心愿、珍藏这些仍然在面板与状态里，只是不再各占一个工具位）：
+- 保留 13 个跨插件契约名；fun_story 仍保留声明、默认隐藏；describe.json 展示全部 15 个。
+- fun_go 只进门，也可用 tripId 续逛；fun_wander 不再处理普通游逛的旧分支选项。选项式故事仍通过正式故事流程推进。
+- fun_journal 接住行程、纪念品与珍藏查询；外接 DM 与 ComfyUI 直连保留为可选来源。
+- fun_route、fun_wish、fun_wishes 不再声明；心愿不再新增、更新、参与地点推荐，旧 wishes 字段不丢。
 
-| 0.8.0 工具 | 接住了原来的 |
-|---|---|
-| `fun_journal`（`view` = trips / shelf / keepsake，`id` + `keep`） | `fun_view`、`fun_shelf`、`fun_keepsake` |
-| `fun_home_room`（`activity` / `note` / `pose`） | `fun_home_state`、`fun_home_activity` |
-| `fun_go`（`tripId`） | `fun_resume` |
-| `fun_wander`（`choiceId` + `optionId`） | `fun_choice` |
-| `fun_places`（`now: true`） | `fun_start` 的「此刻能去哪儿」 |
-| `fun_story`（`rebind` / `bindPlaceId`） | 故事包改绑与导入改绑 |
+### 配置与故事
 
-- 另有 `fun_route`、`fun_wish`、`fun_wishes` 不再声明为工具：路线仍在行程与面板里（联程照常显示、可继续），心愿也仍在地点与行程数据里，只是不再给模型单独的写入口。
-- `fun_story` 仍然默认不挂（要开「聊天里也能管故事」），所以运行时是 **14 个**；关掉「聊天里也能玩故事」后剩 8 个（6 个非故事工具 + 2 个只读故事查询）。
-- 新增 `test/tools-contract.test.mjs` 精确钉住：15 条声明、13 个跨插件契约名、运行时 14、`fun_story` 默认不在、`describe.json` 与声明逐个对齐。
+- 配置页有 3 项常用设置；宿主没有可用的高级分组，另外 15 项仍在宿主配置页，标题加「高级 ·」区分。宿主默认/外接 DM 与关闭/委派/ComfyUI 直连分别由选择器控制。
+- DPAPI 密钥改为按需加载；不开启外接 DM 时不读取密钥。外接失败仍回退宿主主持并在回执说明，不擅自改配置。
+- 自由故事默认开启，单段默认 200 回合软上限；四张内置自由故事卡置顶。多人 actions 汇总一轮一次推进，纯文本兜底上限 1500 字，redo 与故事检查点、幂等保护保留。
+- 故事包绑定的地点不存在时会在导入前报出，可当场改绑到现有地点；已入库的作品也可以从作者区改绑，不需要手改 JSON。
 
-### 群聊里的故事推进
+### 旧存档兼容
 
-- `fun_story_act` 的 `intent` 明确为 `say` / `close` / `redo`，并支持 `actions: [{ who, say }]` 一次提交多人的话；`fun_story_start` 支持 `party`。
-- `ENV_PROMPT.md` 写死一条群聊守则：**不要每看到一句就调 `fun_story_act`**；等大家表态完或主人说「好了 / 就这么办 / 推进」，再一次性提交，一次只推进一回合；过早提交可以用 `intent: "redo"` 带补充内容重跑。
+- 启动时清除没有对应选项式故事进度的旧 pendingChoice，并记录「这一趟的岔路已跳过」；与故事包版本和进度匹配的正式故事待选项继续保留。
+- wishes、route/routes、timeline 继续归一化、读写；移除路线与心愿入口不等于删除这些字段。place-transfer.js、wishes.js、journeys.js 和 story-venue-migration.js 保留。
+- 仅删除 aquarium.js、branches.js、choices.js 三个模块及其对应测试；story-reliability、#rewindFreeTurn 与 #forkStory 保留。
 
-### 故事包地点绑定：不再有「导入成功、永远不触发」
+### 验收
 
-- **原因**：包里 `placeId` 允许下划线，地点册的新建编号却只认小写字母/数字/连字符、且一律补 `user-`。所以 `winter_onsen_inn` 这类编号**永远造不出来**，旧导入只写一条英文警告就入库，作品卡「暂不可用」，故事永远不触发。
-- **导入当场说清楚**：地点不存在直接拒收，并给出两条路——先建这处，或导入时改绑；校验/预览返回 `placeMissing`，面板就地给「绑定到现有地点」下拉，选好再点一次导入即带 `bindPlaceId` 完成改绑（重算 revision，旧进度按既有规则暂停）。
-- **已入库的旧死包**：作品卡写明包里写的是哪个编号，并给下拉 + 「绑定到此处」（`stories/rebind`）就地改绑；内置故事不能改绑，先导出 JSON 再作为自己的作品导入。`fun_story` 同步加 `rebind` / `bindPlaceId`。
-- **警告改中文**：`Place … is not available` / `Missing areas` / `Unsupported phases` 换成中文并点名缺哪个区域、去哪补，另给 `placeMissing` / `missingAreas` 结构化字段。
-
-### 兼容与回滚
-
-- 无数据迁移、无新存储文件；升级不会动地点、故事、行程、回忆。
-- 旧工具名不再声明：外部提示词、脚本或别的插件如果写了 `fun_view` / `fun_shelf` / `fun_keepsake` / `fun_home_state` / `fun_home_activity` / `fun_resume` / `fun_choice` / `fun_start`，按上面的对照表换新入口。
-- 面板 id 变化同上；`describe.json` 已按 15 个工具重新生成。
-
-### 测试
-
-- `tools-contract` 新增（15 声明 / 14 运行时 / 13 契约 / describe 对齐）；`panels` 按四个页签重写，并保留旧方法名的转发用例；`story-packs` 与 `panels` 各加一条地点绑定用例（拒收 `winter_onsen_inn` → 校验报缺 → `bindPlaceId` 一次改绑 → 改绑缺区域警告 → 改绑到不存在地点被拒；作品卡一键改绑、导入失败就地绑定重试）。
-- `npm run verify` 覆盖单文件 bundle、提示词、隔离审计、冒烟与 describe 一致性。
-
-- 版本号升到 0.8.0（原定 0.7.8 的地点绑定修复没有单独发布，一并进这一版）。
+- 新增旧存档兼容回归：升级后清理旧普通岔路、继续旧联程并保留 wishes/timeline；再由历史 World 读取、续玩和收尾。
+- 运行 npm test、npm run verify、npm run build:webui、npm run describe（15 个工具）及 npm run check:publish。
+- 未发布或推送本版本。
 
 ## 0.7.7
 

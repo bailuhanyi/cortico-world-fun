@@ -19,6 +19,20 @@ async function custom(b) {
  assert.equal(saved.ok,true,saved.error);
  return (await b.invoke('places','list')).places.find((p)=>p.name==='自己的书屋');
 }
+async function startStory(b,id) {
+ const current=JSON.parse((await b.tool('fun_story_current')).text);
+ const {candidates}=await b.tool('fun_story_candidates',{full:true});
+ const card=candidates.find((row)=>row.id===id);
+ assert.ok(card,id);
+ const result=await b.tool('fun_story_start',{packId:id,revision:card.revision,startStamp:current.startStamp,confirm:true});
+ assert.equal(result.failed,undefined,result.text);
+ return JSON.parse(result.text);
+}
+async function sayStory(b,tripId,stamp,say) {
+ const result=await b.tool('fun_story_act',{tripId,stamp,intent:'say',say});
+ assert.equal(result.failed,undefined,result.text);
+ return JSON.parse(result.text);
+}
 function pack(venue,id='user-window') {
  return {version:1,id,title:'窗边的一页',placeId:venue.id,start:'start',nodes:[
   {id:'start',area:'窗边',event:'窗边有一页翻开的书',prompt:'想停一会儿还是去门口看看？',choices:[{id:'stay',label:'停一会儿',result:'决定在窗边停一会儿',next:'end-a'},{id:'walk',label:'去门口',result:'决定去门口看看',next:'end-b'}]},
@@ -102,15 +116,20 @@ test('公共故事查询返回稳定公开字段且不泄露未来分支或写�
 test('自填剧情可导入、选分支、重启续接，完成后不重复触发',async()=>{
  const b=await boot(); const venue=await custom(b);
  assert.equal((await b.panel('import',{json:JSON.stringify(pack(venue))})).ok,true);
- await b.tool('fun_go',{place:venue.id});
- assert.match((await b.tool('fun_wander',{area:'窗边'})).text,/窗边有一页翻开的书/);
- const pending=(await b.invoke('places','list')).session.pendingChoice;
- assert.ok(pending.id.startsWith('story:'));
+ const started=await startStory(b,'user-window');
+ const moved=await sayStory(b,started.tripId,started.stamp,'走到窗边');
+ assert.ok(moved.pending,'走到故事节点后应给出包内选项');
+ await b.world.stop();
  const again=await boot({dir:b.dir});
- assert.match((await again.tool('fun_wander',{choiceId:pending.id,optionId:'walk'})).text,/决定去门口/);
- assert.match((await again.tool('fun_wander',{area:'门口'})).text,/回头看了一眼书屋/);
- assert.doesNotMatch((await again.tool('fun_wander',{area:'窗边'})).text,/窗边有一页翻开的书/);
- await again.tool('fun_home');
+ const resumed=JSON.parse((await again.tool('fun_story_current')).text).trip;
+ const chosen=await sayStory(again,resumed.id,resumed.stamp,'去门口');
+ assert.match(chosen.result,/决定去门口/);
+ const current=JSON.parse((await again.tool('fun_story_current')).text).trip;
+ const ended=await sayStory(again,current.id,current.stamp,'走到门口');
+ assert.match(ended.narration,/回头看了一眼书屋/);
+ const final=JSON.parse((await again.tool('fun_story_current')).text).trip;
+ const closed=await again.tool('fun_story_act',{tripId:final.id,stamp:final.stamp,intent:'close',confirm:true});
+ assert.equal(closed.failed,undefined,closed.text);
  const {trips:[trip]}=await again.invoke('book','list');
  assert.ok(trip.choices.some((c)=>c.option==='walk'));
  assert.ok(trip.timeline.some((p)=>p.kind==='event'&&p.text.includes('书屋')));
@@ -166,18 +185,27 @@ test('清空出游记录不删除用户写的剧情和故事启停设置',async(
 
 test('替换或删除包不破坏已给出的选择，旧版本本趟不重启',async()=>{
  const b=await boot();const venue=await custom(b);let value=pack(venue);
- await b.panel('import',{json:JSON.stringify(value)});await b.tool('fun_go',{place:venue.id});await b.tool('fun_wander',{area:'窗边'});
- const choice=(await b.invoke('places','list')).session.pendingChoice;
+ await b.panel('import',{json:JSON.stringify(value)});
+ const started=await startStory(b,'user-window');
+ const moved=await sayStory(b,started.tripId,started.stamp,'走到窗边');
+ assert.ok(moved.pending);
  value=pack(venue);value.nodes[0].event='改版后的新开场';
  await b.panel('import',{json:JSON.stringify(value),replace:true});
- assert.equal((await b.tool('fun_wander',{choiceId:choice.id,optionId:'stay'})).failed,undefined);
- assert.doesNotMatch((await b.tool('fun_wander',{area:'窗边'})).text,/改版后的新开场/);
- await b.tool('fun_home');await b.tool('fun_go',{place:venue.id});
- assert.match((await b.tool('fun_wander',{area:'窗边'})).text,/改版后的新开场/);
- const current=(await b.invoke('places','list')).session.pendingChoice;
- await b.panel('remove',{id:value.id});
- assert.equal((await b.tool('fun_wander',{choiceId:current.id,optionId:'walk'})).failed,undefined);
- assert.equal((await b.tool('fun_wander',{area:'门口'})).failed,undefined);
+ let current=JSON.parse((await b.tool('fun_story_current')).text).trip;
+ assert.match((await sayStory(b,current.id,current.stamp,'停一会儿')).result,/决定在窗边停一会儿/);
+ current=JSON.parse((await b.tool('fun_story_current')).text).trip;
+ assert.equal(current.step,'blocked');
+ assert.ok(current.events.every((event)=>!event.includes('改版后的新开场')));
+ const closed=await b.tool('fun_story_act',{tripId:current.id,stamp:current.stamp,intent:'close',confirm:true});
+ assert.equal(closed.failed,undefined,closed.text);
+ const fresh=await startStory(b,'user-window');
+ const newOpen=await sayStory(b,fresh.tripId,fresh.stamp,'走到窗边');
+ assert.match(newOpen.narration,/改版后的新开场/);
+ current=JSON.parse((await b.tool('fun_story_current')).text).trip;
+ assert.equal((await b.panel('remove',{id:value.id})).ok,true);
+ current=JSON.parse((await b.tool('fun_story_current')).text).trip;
+ assert.ok(current.pending,'已发出的包内选项仍可提交');
+ assert.match((await sayStory(b,current.id,current.stamp,'去门口')).result,/决定去门口/);
 });
 
 test('地点或项目被删除时剧情暂停，已有包和普通出游保持可用',async()=>{

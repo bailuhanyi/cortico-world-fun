@@ -825,11 +825,16 @@ test('挂太久会提醒回家，但不替她收', async () => {
   assert.ok(b.world.webUi().badges.some((x) => x.label === '正在逛'), '仍算在逛');
 });
 
-test('未完行程重启后可续逛，待选事件可重读和略过', async () => {
+test('未完行程重启后可续逛，旧普通岔路自动跳过且不再锁住行程', async () => {
   const b = await boot();
   await b.tool('fun_go')({ place: '海洋馆' });
   b.setNow(at('2026-11-15T14:10:00+08:00'));
   await b.tool('fun_wander')({ area: '海底隧道' });
+  const statePath = join(b.dir, 'fun', 'state.json');
+  const legacy = JSON.parse(await readFile(statePath, 'utf8'));
+  legacy.session.pendingChoice = { id: 'legacy-branch', event: '旧岔路', area: '海底隧道', prompt: '旧问题',
+    options: [{ id: 'keep', label: '继续', result: '继续' }] };
+  await writeFile(statePath, JSON.stringify(legacy, null, 2));
   const again = await boot({ dir: b.dir, now: at('2026-11-16T10:00:00+08:00') });
   const view = await again.tool('fun_journal')({ view: 'trips' });
   const data = await again.world.webUi().invoke('places', 'list', []);
@@ -842,18 +847,15 @@ test('未完行程重启后可续逛，待选事件可重读和略过', async ()
   assert.equal((await again.tool('fun_go')({ tripId: '旧行程' })).failed, true);
   const resumed = await again.tool('fun_go')({ tripId: data.draft.id });
   assert.match(resumed.text, /接着逛/);
-  const choice = data.draft.pendingChoice;
-  assert.ok(resumed.text.includes(choice.options[0].label));
-  assert.ok((await again.tool('fun_wander')({})).text.includes(choice.options[0].label));
-  assert.match((await again.tool('fun_wander')({ choiceId: choice.id, optionId: 'skip' })).text, /略过/);
-  assert.equal((await again.tool('fun_wander')({ choiceId: choice.id, optionId: 'skip' })).failed, true);
+  assert.equal(Object.hasOwn(data.draft, 'pendingChoice'), false);
+  assert.equal(JSON.parse(await readFile(statePath, 'utf8')).notices.choiceDropped, '这一趟的岔路已跳过');
   again.setNow(at('2026-11-16T10:03:00+08:00'));
-  await again.tool('fun_wander')({ area: '水母缸' });
+  assert.equal((await again.tool('fun_wander')({ area: '水母缸' })).failed, undefined);
   const home = await again.tool('fun_home')({});
   assert.match(home.text, /待了大约 13 分钟/);
   const trip = (await again.world.webUi().invoke('book', 'list', [])).trips[0];
   assert.deepEqual(trip.visited, ['海底隧道', '水母缸']);
-  assert.equal(trip.choices[0].result, '略过了这次选择');
+  assert.deepEqual(trip.choices, []);
 });
 
 test('面板只读识别草稿，显式回家按原行程日期记入纪念册且不会重复', async () => {
@@ -879,7 +881,7 @@ test('面板只读识别草稿，显式回家按原行程日期记入纪念册�
   assert.equal((await invoke('places', 'list', [])).draft, null);
 });
 
-test('旧心愿字段仍可读取，时段推荐与面板保持一致', async () => {
+test('旧心愿字段仍可读取并原样保留，但不再进入推荐或管理界面', async () => {
   const initial = await boot({ now: at('2026-11-15T17:30:00+08:00') });
   const venue = VENUES.find((v) => v.name === '夜市');
   const phase = venue.phases[0];
@@ -899,11 +901,16 @@ test('旧心愿字段仍可读取，时段推荐与面板保持一致', async ()
   const data = await b.world.webUi().invoke('places', 'list', []);
   const card = data.places.find((p) => p.id === venue.id);
   assert.deepEqual(card.areas, phase.areas);
-  assert.ok(data.upcomingWish.includes(later.from));
-  assert.ok((await b.tool('fun_places')({ now: true })).text.includes(data.upcomingWish));
-  b.setNow(at(`2026-11-15T${later.from}:00+08:00`));
-  assert.match((await b.tool('fun_places')({ kind: '夜市' })).text, /有个心愿/);
-  assert.equal(JSON.parse(await readFile(statePath, 'utf8')).wishes[0].id, 'legacy-phase-wish');
+  assert.equal(Object.hasOwn(data, 'upcomingWish'), false);
+  assert.equal(Object.hasOwn(card, 'wishReason'), false);
+  assert.doesNotMatch(list.text, /心愿/);
+  const book = await b.world.webUi().invoke('book', 'list', []);
+  assert.equal(Object.hasOwn(book, 'wishes'), false);
+  assert.equal((await b.world.webUi().invoke('book', 'wish', [{ action: 'add' }])).ok, false);
+  await b.tool('fun_go')({ place: '夜市' });
+  await b.tool('fun_wander')({ area: phase.areas[0] });
+  await b.tool('fun_home')({});
+  assert.deepEqual(JSON.parse(await readFile(statePath, 'utf8')).wishes, legacy.wishes);
 });
 
 test('跨午夜：夜市逛着过零点，这一趟不能丢', async () => {
@@ -1138,25 +1145,19 @@ test('心愿管理入口已收起，但旧 wishes 数据仍留在存档', async 
   assert.equal(saved.wishes[0].reason, '想看看晚上的航灯');
 });
 
-test('结构化事件选择：逛到事件给选项，选择后解锁下一处并写入行程', async () => {
+test('普通游逛的随机事件不生成旧待选项，也不再阻止继续游逛', async () => {
   const b = await boot({ random: () => 0 });
   await b.tool('fun_go')({ place: '海洋馆' });
   const first = await b.tool('fun_wander')({ area: '海底隧道' });
-  assert.match(first.text, /choiceId/);
-  assert.match(first.text, /optionId/);
+  assert.doesNotMatch(first.text, /choiceId|optionId|fun_choice/);
   const saved = JSON.parse(await readFile(join(b.dir, 'fun', 'state.json'), 'utf8'));
-  const pending = saved.session.pendingChoice;
-  assert.ok(pending);
-  const blocked = await b.tool('fun_wander')({});
-  assert.match(blocked.text, /待选择事件/);
-  const picked = await b.tool('fun_wander')({ choiceId: pending.id, optionId: pending.options[0].id });
-  assert.match(picked.text, /选择已确认：/);
+  assert.equal(saved.session.pendingChoice, null);
+  assert.equal((await b.tool('fun_wander')({ area: '水母缸' })).failed, undefined);
   const after = JSON.parse(await readFile(join(b.dir, 'fun', 'state.json'), 'utf8'));
   assert.equal(after.session.pendingChoice, null);
-  assert.equal(after.session.choices.length, 1);
   await b.tool('fun_home')({});
   const trip = JSON.parse(await readFile(join(b.dir, 'fun', 'state.json'), 'utf8')).trips[0];
-  assert.equal(trip.choices.length, 1);
+  assert.deepEqual(trip.choices, []);
 });
 
 test('工具内部抛错也兜住：返回 failed 而不是炸掉整个世界', async () => {

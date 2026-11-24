@@ -86,7 +86,7 @@ export async function readStoryQuery(ctx) {
     // 共同决定只从 joint.js 取一份：阶段、该谁投、谁能投、文案全在里面。
     const joint = pending?.actor === 'joint' ? jointView(pending, labelOf, ctx.language) : null;
     return { ok: true, queryAt, state: trip ? trip.state : 'none', startStamp: status.startStamp, party: trip?.party ?? ctx.party ?? [], trip: trip ? {
-      id: trip.id, runId: ctx.runId,
+      id: trip.id, stamp: trip.stamp, runId: ctx.runId,
       title: trip.title, packId: trip.packId, revision: trip.revision, placeId: trip.placeId, placeName: trip.placeName,
       step: trip.step, actor: trip.actor ?? null, complete: trip.complete, blocked: trip.blocked || null, nextArea: trip.nextArea || null,
       mode: trip.mode ?? 'static', maxTurns: trip.maxTurns ?? null, free: trip.free ?? null, participation: trip.participation ?? 'solo', party: trip.party ?? [],

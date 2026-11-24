@@ -43,23 +43,19 @@ test('检索可组合条件，地点和收藏链接只读真实保留的行程',
   assert.equal(trip.timeline[0].kind,'enter'); assert.equal(trip.timeline.at(-1).kind,'close');
 });
 
-test('事件选择重启后仍会影响后续项目，并写入沿途时间线',async()=>{
+test('普通游逛事件不再生成分支待选，行程和时间线仍持续记录',async()=>{
   const b=await boot();
-  // 江边现在带一篇内置 v1 故事，会在「步道」自动开场；这条测试验证的是普通分支后续，
-  // 所以先停用内置故事，避免故事抢走同一处区域。
-  assert.equal((await b.data('stories','disable',[{id:'bridge-echo-solo'}])).ok,true);
   await b.tool('fun_go',{place:'江边'});
-  await b.tool('fun_wander',{area:'栏杆边'});
-  const {session}=await b.data(); const choice=session.pendingChoice;
-  assert.ok(choice);
-  await b.tool('fun_wander',{choiceId:choice.id,optionId:'lights'});
+  const first=await b.tool('fun_wander',{area:'栏杆边'});
+  assert.doesNotMatch(first.text,/choiceId|optionId|fun_choice/);
+  const {session}=await b.data(); assert.equal(Object.hasOwn(session,'pendingChoice'),false);
   const again=await boot({dir:b.dir,now:Date.parse('2026-11-19T18:10:00+08:00')});
   const next=await again.tool('fun_wander',{area:'步道'});
-  assert.match(next.text,/沿岸的灯亮/);
+  assert.equal(next.failed,undefined,'普通出游不再被旧分支待选卡住');
   await again.tool('fun_home');
   const {trips:[trip]}=await again.data('book');
-  assert.ok(trip.timeline.some((point)=>point.kind==='choice'&&point.event===choice.event));
-  assert.ok(trip.timeline.some((point)=>point.kind==='event'&&point.text.includes('灯亮')));
+  assert.deepEqual(trip.visited,['栏杆边','步道']);
+  assert.ok(trip.timeline.some((point)=>point.kind==='area'&&point.text.includes('栏杆边')));
 });
 
 test('长期探索不随40趟裁剪倒退，重启仍保留早期项目和拍照点',async()=>{

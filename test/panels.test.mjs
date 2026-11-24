@@ -1336,22 +1336,17 @@ test('book 面板：空册子给一句话；逛完一趟之后能查回来', asy
   assert.ok(stats.textContent.includes('1'), '趟数应当是 1');
 });
 
-test('book 面板：行程卡可展开完整事件、路线、选择和回家备注，再收起', async () => {
-  const { mount, decl, tool, dataDir } = await mountPanels({ random: () => 0 });
+test('book 面板：行程卡可展开完整事件和回家备注，再收起', async () => {
+  const { mount, decl, tool } = await mountPanels({ random: () => 0 });
   await tool('fun_go')({ place: '海洋馆' });
   await tool('fun_wander')({ area: '海底隧道' });
-  const { session } = JSON.parse(await readFile(join(dataDir, 'fun', 'state.json'), 'utf8'));
-  const pending = session.pendingChoice;
-  assert.ok(pending, '海底隧道触发真实的待选择事件');
-  const picked = await tool('fun_wander')({ choiceId: pending.id, optionId: pending.options[0].id });
-  assert.match(picked.text, /选择已确认：|你选择了/);
   await tool('fun_wander')({ area: '触摸池' });
   await tool('fun_wander')({ area: '纪念品店', buy: '鲸鱼挂件' });
   await tool('fun_home')({ note: '穿过最后一段蓝光再回家' });
 
   const { trips: [trip] } = await decl.invoke('book', 'list', []);
   assert.ok(trip.events.length > 2, '夹具需要超过摘要截取的两条事件');
-  assert.equal(trip.choices.length, 1);
+  assert.deepEqual(trip.choices, []);
   const root = await mount('book');
   const card = () => root.querySelector('.fun-trip');
   const open = await waitFor(() => card()?.findByText('查看详情'), '查看详情按钮');
@@ -1363,7 +1358,7 @@ test('book 面板：行程卡可展开完整事件、路线、选择和回家备
 
   const close = await waitFor(() => card()?.findByText('收起详情'), '收起详情按钮');
   assert.equal(close.getAttribute('aria-expanded'), 'true');
-  for (const text of [...trip.events, ...trip.visited, ...trip.souvenirs, trip.choices[0].result, trip.note]) {
+  for (const text of [...trip.events, ...trip.visited, ...trip.souvenirs, trip.note]) {
     assert.ok(card().textContent.includes(text), `行程详情缺少 ${text}`);
   }
   close.fire();
@@ -1559,38 +1554,6 @@ test('shelf 面板：英文界面也有标题', async () => {
   assert.equal(decl.panels.find((p) => p.id === 'journal').title, 'Memory Journal');
 });
 
-async function mountWishPanel(invokeWish = async () => ({ ok: true }), invokeList = (data) => structuredClone(data)) {
-  const bundle = await loadPanelClient();
-  const root = new Node('div');
-  const calls = [];
-  const data = { ok: true, total: 0, session: null, wishes: [], places: [
-    { id: 'river', name: '江边', areas: ['步道'], phaseNames: ['清早', '夜里'], souvenirs: ['明信片'] },
-    { id: 'yard', name: '小院', areas: ['藤椅'], phaseNames: [], souvenirs: [] },
-  ] };
-  const mounted = bundle.testMounts.book({ root, async invoke(method, args) {
-    calls.push({ method, args });
-    if (method === 'list') return invokeList(data);
-    return invokeWish(args[0], data);
-  } });
-  const wishesTab = await waitFor(() => root.findByText('心愿'), '心愿入口');
-  assert.ok(root.findByText('全部行程'));
-  assert.match(root.textContent, /纪念册还是空的/);
-  assert.equal(root.querySelector('.fun-wishes'), null, '默认全部行程不显示心愿区');
-  wishesTab.fire();
-  const openForm = await waitFor(() => root.findByText('记个心愿'), '记个心愿按钮');
-  assert.ok(root.querySelector('.fun-wishes'));
-  assert.equal(root.querySelector('.fun-wish-form'), null, '新增表单默认折叠');
-  openForm.fire();
-  await waitFor(() => root.querySelector('.fun-wish-form'), '心愿表单');
-  const choose = (cls, value) => {
-    const select = root.querySelector(cls);
-    select.value = value;
-    assert.equal(select.value, value, '桩必须能选中真实 option');
-    select.fire('change');
-  };
-  return { root, calls, data, mounted, choose };
-}
-
 test('DOM 桩 select/value 读取真实选项，替换选项不会留下旧值', () => {
   const select = new Node('select');
   const option = (value) => { const n = new Node('option'); n.setAttribute('value', value); return n; };
@@ -1605,144 +1568,16 @@ test('DOM 桩 select/value 读取真实选项，替换选项不会留下旧值',
   assert.equal(select.value, 'phase');
 });
 
-test('book 心愿：空册仍可填写，不默认选择；四类目标联动且切换清空目标', async () => {
-  const { root, calls, choose } = await mountWishPanel();
-  for (const cls of ['.fun-wish-place', '.fun-wish-type', '.fun-wish-target']) assert.equal(root.querySelector(cls).value, '');
-  assert.equal(calls.filter((c) => c.method === 'wish').length, 0);
-  root.findByText('保存心愿').fire();
-  assert.match(root.querySelector('.fun-form-error').textContent, /请选择/);
-  assert.equal(calls.filter((c) => c.method === 'wish').length, 0);
-  choose('.fun-wish-place', 'river');
-  const expected = { area: ['步道'], phase: ['清早', '夜里'], souvenir: ['明信片'], visit: [] };
-  for (const [type, targets] of Object.entries(expected)) {
-    choose('.fun-wish-type', type);
-    const target = root.querySelector('.fun-wish-target');
-    assert.equal(target.value, '');
-    assert.deepEqual(target.querySelectorAll('option').slice(1).map((n) => n.value), targets);
-    if (targets.length) choose('.fun-wish-target', targets[0]);
-    else assert.equal(target.disabled, true);
-  }
-  choose('.fun-wish-type', 'area');
-  choose('.fun-wish-target', '步道');
-  choose('.fun-wish-place', 'yard');
-  assert.equal(root.querySelector('.fun-wish-target').value, '');
-  assert.deepEqual(root.querySelector('.fun-wish-target').querySelectorAll('option').slice(1).map((n) => n.value), ['藤椅']);
-  choose('.fun-wish-type', 'phase');
-  assert.equal(root.querySelector('.fun-wish-target').disabled, true);
-  assert.match(root.querySelector('.fun-wish-target').textContent, /没有可选目标/);
-  assert.equal(calls.filter((c) => c.method === 'wish').length, 0);
+test('book 面板隐藏已下线的心愿入口，旧字段不展示也不发起写入', async () => {
+  const data = albumFixture([]);
+  data.wishes = [{ id: 'legacy-wish', placeId: 'river', placeName: '江边', type: 'visit', target: '', status: 'active' }];
+  const { root, calls } = await mountView('book', data);
+  assert.deepEqual(root.querySelector('.fun-tabs').querySelectorAll('button').map((button) => button.textContent), ['全部行程', '珍藏']);
+  assert.equal(root.findByText('记个心愿'), null);
+  assert.equal(root.querySelector('.fun-wishes'), null);
+  assert.equal(calls.filter((call) => call.method === 'wish').length, 0);
 });
-
-test('book 心愿：保存必须点击，进行中拦重复提交；失败保留选择和缘由并可重试', async () => {
-  let resolve;
-  let count = 0;
-  const { root, calls, choose } = await mountWishPanel(async (payload, data) => {
-    count += 1;
-    if (count === 1) return new Promise((r) => { resolve = r; });
-    data.wishes.push({ ...payload, id: 'w1', status: 'active' });
-    return { ok: true };
-  });
-  choose('.fun-wish-place', 'river');
-  choose('.fun-wish-type', 'phase');
-  choose('.fun-wish-target', '夜里');
-  const reason = root.querySelector('.fun-wish-reason');
-  reason.value = '  想看看航灯  ';
-  reason.fire('input');
-  assert.equal(count, 0);
-  const save = root.findByText('保存心愿');
-  save.fire(); save.fire();
-  root.findByText('保存中…').fire();
-  assert.equal(count, 1);
-  assert.equal(root.findByText('保存中…').disabled, true);
-  assert.deepEqual(calls.find((c) => c.method === 'wish').args, [{ action: 'add', placeId: 'river', type: 'phase', target: '夜里', reason: '想看看航灯' }]);
-  resolve({ ok: false, error: '暂时存不下来' });
-  await waitFor(() => root.querySelector('.fun-form-error').textContent.includes('暂时存不下来'), '保存错误');
-  assert.equal(root.querySelector('.fun-wish-target').value, '夜里');
-  assert.equal(root.querySelector('.fun-wish-reason').value, '  想看看航灯  ');
-  root.findByText('保存心愿').fire();
-  await waitFor(() => root.querySelector('.fun-wish'), '保存成功');
-  assert.match(root.querySelector('.fun-wish').textContent, /待实现.*在某个时段去.*夜里.*想看看航灯/);
-  assert.equal(root.querySelector('.fun-wish-form'), null, '保存成功后折叠表单');
-  root.findByText('记个心愿').fire();
-  assert.equal(root.querySelector('.fun-wish-place').value, '');
-  assert.equal(root.querySelector('.fun-wish-type').value, '');
-});
-
-test('book 心愿：保存成功但列表刷新失败时，表单显示已保存提示', async () => {
-  let failList = false;
-  const { root, choose, data, calls, mounted } = await mountWishPanel((payload, data) => {
-    data.wishes.push({ ...payload, id: 'w1', status: 'active' });
-    failList = true;
-    return { ok: true };
-  }, (data) => {
-    if (failList) throw new Error('列表暂不可用');
-    return structuredClone(data);
-  });
-  choose('.fun-wish-place', 'river');
-  choose('.fun-wish-type', 'visit');
-  root.findByText('保存心愿').fire();
-
-  const message = await waitFor(() => root.querySelector('.fun-wish-form')
-    ?.querySelector('.fun-form-error')?.textContent, '表单显示刷新错误');
-  assert.match(message, /已保存，但列表刷新失败：列表暂不可用/);
-  assert.equal(data.wishes.length, 1);
-  failList = false;
-  await mounted.refresh();
-  assert.match(root.querySelector('.fun-wish').textContent, /江边.*待实现/);
-  assert.equal(calls.filter((call) => call.method === 'wish').length, 1);
-});
-
-test('book 心愿：visit 发送空目标，暂缓/恢复/取消含状态与错误，已实现没有操作', async () => {
-  let resolve;
-  let fail = true;
-  const { root, data, mounted, choose } = await mountWishPanel(async (payload, data) => {
-    if (payload.action === 'add') {
-      data.wishes.push({ ...payload, id: 'w1', status: 'active', reason: '想散步' });
-      return { ok: true };
-    }
-    if (fail) return new Promise((r) => { resolve = r; });
-    data.wishes[0].status = { pause: 'paused', resume: 'active', cancel: 'cancelled' }[payload.action];
-    return { ok: true };
-  });
-  choose('.fun-wish-place', 'river'); choose('.fun-wish-type', 'visit');
-  root.findByText('保存心愿').fire();
-  await waitFor(() => root.findByText('暂缓'), '待实现操作');
-  assert.equal(data.wishes[0].target, '');
-  const pause = root.findByText('暂缓'); pause.fire(); pause.fire();
-  assert.equal(root.findByText('暂缓').disabled, true);
-  resolve({ ok: false, error: '操作被拒绝' });
-  await waitFor(() => root.querySelector('.fun-trip-error'), '列表错误');
-  assert.match(root.querySelector('.fun-trip-error').textContent, /操作被拒绝/);
-  fail = false;
-  root.findByText('暂缓').fire();
-  await waitFor(() => root.findByText('恢复'), '暂缓完成');
-  const paused = root.querySelector('.fun-wish');
-  assert.match(paused.textContent, /已暂缓/);
-  const past = root.querySelector('details');
-  assert.ok(past?.findByText('恢复'), '已暂缓心愿保留在折叠组里');
-  assert.equal(past.getAttribute('open'), undefined, '非活动心愿默认折叠');
-  past.setAttribute('open', '');
-  fail = true;
-  past.findByText('恢复').fire();
-  assert.notEqual(root.querySelector('details').getAttribute('open'), undefined, '恢复进行中保持展开');
-  resolve({ ok: false, error: '暂时无法恢复' });
-  await waitFor(() => root.querySelector('details')?.querySelector('.fun-trip-error'), '折叠组内出现恢复错误');
-  const failedHistory = root.querySelector('details');
-  assert.notEqual(failedHistory.getAttribute('open'), undefined, '恢复失败后错误仍可见');
-  assert.match(failedHistory.querySelector('.fun-trip-error').textContent, /暂时无法恢复/);
-  fail = false;
-  failedHistory.findByText('恢复').fire();
-  await waitFor(() => root.findByText('暂缓'), '恢复完成');
-  root.findByText('取消').fire();
-  await waitFor(() => root.querySelector('.fun-wish-status').textContent === '已取消', '取消完成');
-  assert.equal(root.querySelector('.fun-wish').querySelectorAll('button').length, 0);
-  data.wishes[0].status = 'completed';
-  await mounted.refresh();
-  assert.match(root.querySelector('.fun-wish').textContent, /已实现/);
-  assert.equal(root.querySelector('.fun-wish').querySelectorAll('button').length, 0);
-});
-
-test('places 面板：未完行程可续逛，待选事件展示选项且不替她选', async () => {
+test('places 面板：未完行程可续逛，不显示下线的普通岔路', async () => {
   const b = await mountPanels({ random: () => 0 });
   await b.tool('fun_go')({ place: '海洋馆' });
   await b.tool('fun_wander')({ area: '海底隧道' });
@@ -1750,12 +1585,12 @@ test('places 面板：未完行程可续逛，待选事件展示选项且不替�
   const root = await b.mount('places');
   await waitFor(() => root.querySelector('.fun-draft'), '未完行程出现');
   assert.match(root.querySelector('.fun-draft').textContent, /海底隧道/);
-  assert.equal(root.querySelector('.fun-choice').querySelectorAll('button').length, 0);
+  assert.equal(root.querySelector('.fun-choice'), null);
   const button = root.findByText('继续逛');
   button.fire(); button.fire();
   await waitFor(() => root.querySelector('.fun-live')?.textContent.includes('正在海洋馆逛'), '恢复成功');
   assert.equal(root.querySelector('.fun-draft'), null);
-  assert.match(root.querySelector('.fun-choice').textContent, /等它再游回来/);
+  assert.equal(root.querySelector('.fun-choice'), null);
   assert.equal(b.invocations.filter((x) => x.method === 'resume').length, 1);
   assert.equal(b.invocations.filter((x) => x.method === 'choice').length, 0);
 });
@@ -1773,7 +1608,7 @@ test('places 面板：按已有记录回家后更新画面和纪念册', async (
   assert.equal((await b.decl.invoke('book', 'list', [])).trips.length, 1);
 });
 
-test('places 面板：展示可实现心愿、重游理由和下一合适时段', async () => {
+test('places 面板：照常展示重游理由，不再展示旧心愿', async () => {
   const b = await mountPanels({ nowMs: Date.parse('2026-11-15T17:30:00+08:00') });
   await b.tool('fun_go')({ place: '夜市' });
   await b.tool('fun_wander')({});
@@ -1791,9 +1626,9 @@ test('places 面板：展示可实现心愿、重游理由和下一合适时段'
   await writeFile(statePath, JSON.stringify(state, null, 2));
   const restarted = await mountPanels({ nowMs: Date.parse('2026-11-15T17:30:00+08:00'), dataDir: b.dataDir });
   const root = await restarted.mount('places');
-  await waitFor(() => root.querySelector('.fun-upcoming-wish'), '下一合适时段');
-  assert.ok(root.querySelector('.fun-upcoming-wish').textContent.includes(night.phases[1].from));
-  assert.match(root.textContent, /有个心愿：想去公园/);
+  await waitFor(() => root.querySelector('.fun-card'), '地点列表');
+  assert.equal(root.querySelector('.fun-upcoming-wish'), null);
+  assert.ok(root.querySelectorAll('.fun-card').every((card) => !card.textContent.includes('心愿')));
   assert.match(root.textContent, /还没去过/);
 });
 
@@ -1860,14 +1695,14 @@ test('places 推荐：只用服务端开放 ID，当前行程在前、推荐其�
   const closed = data.places.find((place) => place.state === 'closed');
   data.recommendationIds = [open[0].id, 'missing-id', closed.id, open[1].id, open[0].id];
   data.route = { id: 'route-live', status: 'between', stops: open.slice(0, 2).map((place) => ({ placeId: place.id, placeName: place.name })), tripIds: [] };
-  const { root, calls, mounted } = await mountView('places', data);
+  const { root, calls } = await mountView('places', data);
   assert.equal(root.querySelectorAll('.fun-card').length, VENUES.length, '完整地点列表仍在');
   assert.deepEqual(root.querySelectorAll('.fun-recommend-name').map((node) => node.textContent), open.slice(0, 2).map((place) => place.name));
   const walk = [...root.walk()];
   assert.ok(walk.indexOf(root.querySelector('.fun-live')) < walk.indexOf(root.querySelector('.fun-recommendations')));
   assert.ok(walk.indexOf(root.querySelector('.fun-recommendations')) < walk.indexOf(root.querySelector('.fun-search')));
   assert.ok(walk.indexOf(root.querySelector('.fun-grid')) < walk.indexOf(root.querySelector('.fun-management')));
-  assert.match(root.querySelector('.fun-route').textContent, /站间歇脚/);
+  assert.equal(root.querySelector('.fun-route'), null, '路线入口已下线');
   assert.equal(root.querySelector('.fun-management').getAttribute('open'), undefined);
   assert.equal(root.findByText('＋ 添加地点'), null, '去哪儿不再有添加入口');
   assert.ok(root.querySelector('.fun-management').textContent.includes('地点册'), '管理说明指向地点册');
@@ -1877,8 +1712,6 @@ test('places 推荐：只用服务端开放 ID，当前行程在前、推荐其�
   assert.equal(root.querySelectorAll('.fun-detail').length, 1);
   assert.equal(calls.filter((call) => call.method !== 'list').length, 0, '看推荐不会替她出发或选择');
   assert.ok(root.querySelectorAll('.fun-art').every((node) => node.getAttribute('aria-hidden') === 'true'));
-  data.route.status = 'planned'; await mounted.refresh();
-  assert.match(root.querySelector('.fun-route').textContent, /待出发/);
 });
 
 test('places 搜索与自动刷新保留输入焦点；没有推荐数据时不自行挑选', async () => {
@@ -1970,19 +1803,20 @@ test('旧行程没有 timeline 时保留所有事件和选择，并且不把进�
   assert.doesNotMatch(detail.textContent, /14:00/);
 });
 
-test('联程按给定 ID 连接两站，搜索相连地点或同行人仍呈现联程，并可展开对应一站', async () => {
+test('旧联程中的两趟仍可独立回看和搜索，不再显示联程分组', async () => {
   const a = tripFixture({ id: 'route-a', routeId: 'route-1', routeOrder: 1, company: '同行小鱼' });
   const b = tripFixture({ id: 'route-b', placeId: 'cafe', placeName: '咖啡店', routeId: 'route-1', routeOrder: 2, summary: '坐在窗边', company: '' });
   const route = { id: 'route-1', status: 'completed', stops: [{ placeId: 'park', placeName: '公园' }, { placeId: 'cafe', placeName: '咖啡店' }], tripIds: [a.id, b.id] };
   const { root, calls } = await mountView('book', albumFixture([b, a], [route]));
+  assert.equal(root.querySelector('.fun-route-group'), null);
+  assert.equal(root.querySelectorAll('.fun-ticket').length, 2);
   const search = root.querySelector('.fun-book-search'); search.value = '同行小鱼'; search.fire('input');
-  const group = root.querySelector('.fun-route-group');
-  assert.equal(group.getAttribute('data-route-id'), route.id);
-  assert.match(group.textContent, /公园 → 咖啡店/);
-  assert.equal(group.querySelectorAll('.fun-ticket').length, 2);
-  const link = group.querySelectorAll('.fun-link').find((node) => node.getAttribute('data-trip-id') === a.id); link.fire();
-  assert.ok(root.querySelectorAll('.fun-ticket').find((node) => node.getAttribute('data-trip-id') === a.id).querySelector('.fun-trip-detail'));
-  assert.equal(calls.length, 1, '站间浏览只在当前面板展示，不调用未知导航或出发 API');
+  const [ticket] = root.querySelectorAll('.fun-ticket');
+  assert.equal(root.querySelectorAll('.fun-ticket').length, 1);
+  assert.equal(ticket.getAttribute('data-trip-id'), a.id);
+  ticket.querySelector('.fun-detail-toggle').fire();
+  assert.ok(root.querySelector('.fun-trip-detail'));
+  assert.equal(calls.length, 1, '回看详情不会触发写入');
 });
 
 test('地点历史只读链接支持 pending、失败与重试，并在原详情内回看且不动搜索焦点', async () => {

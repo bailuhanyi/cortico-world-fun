@@ -279,6 +279,13 @@ function normalizePendingChoice(v) {
     ...(actor ? { actor } : {}), ...(jointResolution ? { jointResolution } : {}), ...(Object.keys(votes).length ? { votes } : {}) };
 }
 
+function isStoryPendingChoice(outing) {
+  const run = outing?.storyRun;
+  const choiceId = text(outing?.pendingChoice?.id, 100);
+  return Boolean(run?.packId && run?.revision && choiceId && normalizeStoryProgress(outing?.storyProgress).some((entry) =>
+    entry.waitingChoiceId === choiceId && entry.packId === run.packId && entry.revision === run.revision));
+}
+
 function normalizeTrip(raw, fallbackId = '') {
   if (!raw || typeof raw !== 'object') return null;
   const placeId = text(raw.placeId, 40);
@@ -333,7 +340,8 @@ function normalizeSession(raw) {
     ...trip,
     id: text(raw.id, 100) || `${trip.placeId}-${trip.enteredAt}`,
     lastAt: Number.isFinite(Number(raw.lastAt)) ? Number(raw.lastAt) : trip.enteredAt,
-    pendingChoice: normalizePendingChoice(raw.pendingChoice),
+    // 仅选项式故事的真实待选由 storyProgress.waitingChoiceId 锚定；普通出游的旧岔路已下线。
+    pendingChoice: isStoryPendingChoice(raw) ? normalizePendingChoice(raw.pendingChoice) : null,
   };
 }
 
@@ -374,6 +382,7 @@ function normalizeTrash(raw) {
 
 export function normalizeState(raw, day, nowMs = 0, ttlMin = DEFAULT_TTL_MIN, timezone = 'Asia/Shanghai') {
   if (!raw || typeof raw !== 'object') return newState(day);
+  const choiceDropped = [raw.session, raw.draft].some((outing) => outing?.pendingChoice && !isStoryPendingChoice(outing));
   const { session, draft } = outingStatus({
     day: raw.day, session: normalizeSession(raw.session), draft: normalizeSession(raw.draft),
   }, day, nowMs, ttlMin, timezone);
@@ -407,12 +416,17 @@ export function normalizeState(raw, day, nowMs = 0, ttlMin = DEFAULT_TTL_MIN, ti
     tripSeq: nextTripSeq,
     routeSeq: Math.max(0, Math.floor(Number(raw.routeSeq) || 0)),
     route,
-    routes: routes.filter((r) => r.id === route?.id || r.id === session?.routeId || r.id === draft?.routeId || [...trips, ...mergeKeptTrips(raw.keepsakeTrips, trips)].some((t) => t.routeId === r.id)),
+    routes,
     exploration,
     storyCanon: normalizeStoryCanon(raw.storyCanon, [...trips, ...mergeKeptTrips(raw.keepsakeTrips, trips)]),
     wishes: normalizeWishes(raw.wishes),
     party: normalizeStoryParty(raw.party),
-    ...(raw.notices?.freeDefaultOn === true ? { notices: { freeDefaultOn: true } } : {}),
+    ...((raw.notices?.freeDefaultOn === true || choiceDropped || raw.notices?.choiceDropped)
+      ? { notices: {
+        ...(raw.notices?.freeDefaultOn === true ? { freeDefaultOn: true } : {}),
+        ...(choiceDropped ? { choiceDropped: '这一趟的岔路已跳过' }
+          : typeof raw.notices?.choiceDropped === 'string' ? { choiceDropped: text(raw.notices.choiceDropped, 80) } : {}),
+      } } : {}),
     trash: normalizeTrash(raw.trash),
     ...(raw.storyReceipts ? { storyReceipts: normalizeStoryReceipts(raw.storyReceipts, nowMs) } : {}),
   };

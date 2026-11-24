@@ -935,13 +935,6 @@ export function mountHome(ctx) {
         }),
         el(document, 'span', { class: 'fhm-fine', text: '只接着逛；回不回家由你决定' })));
     }
-    if (snapshot.wish) {
-      const w = snapshot.wish;
-      nodes.push(el(document, 'p', {
-        class: 'fhm-wish',
-        text: `心愿 · ${w.placeName}${w.target ? ` · ${w.target}` : ''}${w.reason ? `：${w.reason}` : ''}`,
-      }));
-    }
     return nodes;
   }
 

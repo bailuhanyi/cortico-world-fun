@@ -42,12 +42,8 @@ import {
 import { collectSouvenirs, progressFor, progressLine } from './keepsakes.js';
 import { resolveName } from './names.js';
 import { filterEventsForArea } from './events.js';
-import { aquariumDetail, aquariumEventDetail } from './aquarium.js';
-import { applyChoice, choiceForEvent } from './choices.js';
-import { addWish, changeWish, fulfillWishes } from './wishes.js';
 import { explorationFor } from './exploration.js';
-import { branchChoiceFor, branchFollowup } from './branches.js';
-import { addMoment, timelineFor, normalizeRoute, storeRoute, routeText } from './journeys.js';
+import { addMoment, timelineFor, storeRoute, routeText } from './journeys.js';
 import { recommendVenue } from './recommendations.js';
 import { StoryLibrary, storyResultText } from './story-library.js';
 import { readStoryQuery } from './story-read.js';
@@ -113,7 +109,7 @@ export const FUN_TOOL_DECLS = [
 {
     name: 'fun_places',
     tags: ['read', 'snapshot'],
-    description: '查询地点、当前可逛项目及心愿的合适时段。',
+    description: '查询地点、当前开放状态与可逛项目。',
     parameters: {
       type: 'object',
       properties: {
@@ -145,12 +141,10 @@ export const FUN_TOOL_DECLS = [
 {
     name: 'fun_wander',
     tags: ['write'],
-    description: '在当前地点逛一处；可记录本次真实收获。遇到待选小事件时按回执中的选项处理。',
+    description: '在当前地点逛一处；可记录本次真实收获。选项式故事的待选项请在故事手账里处理。',
     parameters: {
       type: 'object',
       properties: {
-        choiceId: { type: 'string', description: '待选回执中的 choiceId。' },
-        optionId: { type: 'string', description: '待选回执中的 optionId，或 skip。' },
         area: { type: 'string', description: '逛哪儿，如「过山车」；不填自动挑一处没逛过的。' },
         note: { type: 'string', description: '一句话，可选。' },
         buy: { type: 'string', description: '买了什么，填 souvenir 名。' },
@@ -168,7 +162,7 @@ export const FUN_TOOL_DECLS = [
       type: 'object',
       properties: {
         note: { type: 'string', description: '一句话，可选。' },
-        draftId: { type: 'string', description: '按已有记录结束未完行程时填 fun_view 的 ID；结束正在逛的不填。' },
+        draftId: { type: 'string', description: '按已有记录结束未完行程时填 fun_journal 返回的行程 ID；结束正在逛的不填。' },
       },
       additionalProperties: false,
     },
@@ -754,7 +748,7 @@ export class FunWorld {
     switch (name) {
       case 'fun_places': return args?.now === true ? this.#startTool() : this.#placesTool(args);
       case 'fun_go': return args?.tripId ? await this.#resumeTool(args.tripId) : await this.#goTool(args);
-      case 'fun_wander': return args?.choiceId ? await this.#choiceTool({ choiceId: args.choiceId, optionId: args.optionId }, this.#state.session?.storyRun?.participation === 'duo' ? 'fish' : undefined) : await this.#wanderTool(args, this.#state.session?.storyRun?.participation === 'duo' ? 'fish' : undefined);
+      case 'fun_wander': return await this.#wanderTool(args, this.#state.session?.storyRun?.participation === 'duo' ? 'fish' : undefined);
       case 'fun_home': {
         if ((this.#state.session ?? this.#state.draft)?.storyRun?.participation === 'duo') return { failed: true, text: '双人故事由用户在故事面板明确结束，鱼不能代替用户回家。' };
         return await this.#homeTool(args);
@@ -787,48 +781,6 @@ export class FunWorld {
     }
   }
 
-  async #routeTool(args) {
-    const next = this.#normalizeState();
-    const action = args?.action;
-    if (action === 'status') return { text: next.route ? routeText(next.route) : '当前没有待继续的路线。' };
-    if (action === 'plan') {
-      if (next.route || next.session || next.draft) return { text: '请先处理当前行程或路线，再规划新的两站出门。', failed: true };
-      if (!Array.isArray(args.places) || args.places.length !== 2) return { text: '请指定两个不同地点。', failed: true };
-      const venues = args.places.map((p) => findVenue(this.#places(), p));
-      if (venues.some((v) => !v) || venues[0].id === venues[1].id) return { text: '两个地点须存在且不同；用 fun_places 查看清单。', failed: true };
-      next.routeSeq += 1;
-      const route = { id: 'route-' + this.#now() + '-' + next.routeSeq, stops: venues.map((v) => ({ placeId: v.id, placeName: v.name })), company: typeof args.company === 'string' ? args.company.trim().slice(0, 40) : '', nextIndex: 0, status: 'planned', tripIds: [], startedAt: this.#now() };
-      storeRoute(next, route);
-      await this.#commitState(next);
-      return { text: routeText(route) + '。准备好后用 fun_route 的 next 并填 id 前往第一站。' };
-    }
-    const route = next.route;
-    if (!route || args.id !== route.id) return { text: '找不到当前这条路线，请用 fun_route status 查看。', failed: true };
-    if (action === 'cancel') {
-      route.status = 'cancelled';
-      storeRoute(next, route);
-      await this.#commitState(next);
-      return { text: '已取消后续路线；正在逛的行程和已经保存的记录保留。' };
-    }
-    if (action === 'change') {
-      const index = next.session?.routeId === route.id || next.draft?.routeId === route.id ? route.nextIndex + 1 : route.nextIndex;
-      if (index > 1) return { text: '已经没有尚未去的下一站。', failed: true };
-      const venue = findVenue(this.#places(), args.place);
-      if (!venue || route.stops.some((stop, i) => i !== index && stop.placeId === venue.id)) return { text: '新下一站须是另一处现有地点。', failed: true };
-      route.stops[index] = { placeId: venue.id, placeName: venue.name };
-      storeRoute(next, route);
-      await this.#commitState(next);
-      return { text: routeText(route) + '。没有自动出发。' };
-    }
-    if (action === 'next') {
-      if (next.session || next.draft) return { text: '这一站还没有回家，请先完成或处理未完行程。', failed: true };
-      const stop = route.stops[route.nextIndex];
-      if (!stop || !this.#places().some((v) => v.id === stop.placeId)) return { text: '下一站已不在地点清单，可 change 换一站或 cancel 取消后续。', failed: true };
-      return this.#goTool({ place: stop.placeId, company: route.company });
-    }
-    return { text: '可用 plan/status/next/change/cancel。', failed: true };
-  }
-
   #queryTrips(args = {}) {
     const value = (v) => typeof v === 'string' ? v.trim().toLocaleLowerCase() : '';
     const query = value(args.query), company = value(args.company), place = value(args.place);
@@ -853,26 +805,19 @@ export class FunWorld {
     return { ok: true, trips };
   }
 
-  #wishesText() {
-    const labels = { active: '想去', paused: '暂缓', completed: '已完成', cancelled: '已取消' };
-    const wishes = this.#state.wishes ?? [];
-    if (!wishes.length) return '还没有出游心愿。只有明确想去或想做时才记录，不需要凑任务。';
-    return ['出游心愿（不会催促）：', ...wishes.map((w) => `- [${labels[w.status]}] ${w.placeName}${w.target ? ` · ${w.target}` : ''}${w.reason ? `：${w.reason}` : ''}（ID：${w.id}）`)].join('\n');
-  }
-
   #outings(now = this.#now()) {
     return outingStatus(this.#state, dayIn(this.timezone, now), now, this.#ttlMin(), this.timezone);
   }
 
   #draftHint(draft) {
-    return `「${draft.placeName}」还有一趟未逛完（ID：${draft.id}）。用 fun_resume 填 id 继续，或用 fun_home 填 draftId 按已有记录回家。`;
+    return `「${draft.placeName}」还有一趟未逛完（ID：${draft.id}）。用 fun_go 填 tripId 继续，或用 fun_home 填 draftId 按已有记录回家。`;
   }
 
-  #choiceHint(choice) {
+  #storyChoiceHint(choice) {
     return [
-      `待选择事件（choiceId：${choice.id}）：${choice.prompt}`,
+      `选项式故事待选（${choice.event}）：${choice.prompt}`,
       [...choice.options.map((o) => `${o.id}：${o.label}`), 'skip：略过'].join(' / '),
-      '用 fun_choice 填 choiceId 和 optionId，再继续下一处。',
+      '请在故事手账里选择；聊天里用 fun_story_act 按当前故事进度提交。',
     ].join('\n');
   }
 
@@ -880,7 +825,7 @@ export class FunWorld {
     const next = this.#normalizeState();
     const draft = next.draft;
     if (!draft || id !== draft.id || next.session) {
-      return { text: '找不到可继续的这趟行程，请用 fun_view 查看当前状态。', failed: true };
+      return { text: '找不到可继续的这趟行程，请用 fun_journal 查看近期行程。', failed: true };
     }
     if (!this.#places().some((v) => v.id === draft.placeId)) {
       return { text: `「${draft.placeName}」已不在地点清单。可用 fun_home 填 draftId 按已有记录回家。`, failed: true };
@@ -892,17 +837,20 @@ export class FunWorld {
     next.draft = null;
     await this.#commitState(next);
     return { text: [`接着逛「${draft.placeName}」。${visitedText(draft)}。`,
-      draft.pendingChoice ? this.#choiceHint(draft.pendingChoice) : '接着用 fun_wander 逛下一处。',
+      draft.pendingChoice ? this.#storyChoiceHint(draft.pendingChoice) : '接着用 fun_wander 逛下一处。',
     ].join('\n') };
   }
 
-  async #choiceTool(args, actor, reason) {
+  async #storyChoiceTool(args, actor, reason) {
     const next = this.#normalizeState();
     if (next.draft) return { text: this.#draftHint(next.draft), failed: true };
     const session = next.session;
-    if (!session?.pendingChoice) return { text: '现在没有待选择的事件。', failed: true };
+    if (!session?.storyRun || !session.pendingChoice) return { text: '当前没有选项式故事待选项。', failed: true };
     const choice = session.pendingChoice;
-    if (args?.choiceId !== choice.id) return { text: this.#choiceHint(choice), failed: true };
+    const waiting = session.storyProgress.find((entry) => entry.waitingChoiceId === choice.id
+      && entry.packId === session.storyRun.packId && entry.revision === session.storyRun.revision);
+    if (!waiting) return { text: '当前待选项不属于正在进行的故事，已停止提交以保护存档。', failed: true };
+    if (args?.choiceId !== choice.id) return { text: this.#storyChoiceHint(choice), failed: true };
     let submitter = actor ?? 'owner';
     let optionId = args?.optionId;
     let jointVotes;
@@ -925,7 +873,7 @@ export class FunWorld {
       if (args?.substitute === true) return { text: before.substituteText, failed: true };
       if (!jointCanVote(choice, submitter)) return { text: before.blocked[submitter] ?? before.invalidText, failed: true };
       if (optionId === 'skip') return { text: before.skipText, failed: true };
-      if (!choice.options.some(({ id }) => id === optionId)) return { text: this.#choiceHint(choice), failed: true };
+      if (!choice.options.some(({ id }) => id === optionId)) return { text: this.#storyChoiceHint(choice), failed: true };
       const votes = { ...(choice.votes ?? {}), [submitter]: optionId };
       const after = jointView({ ...choice, votes }, optionLabel, this.language);
       const decision = jointDecision({ ...choice, votes });
@@ -942,13 +890,14 @@ export class FunWorld {
       submitter = 'joint';
     }
     const skip = optionId === 'skip';
-    const result = skip ? null : applyChoice(choice, optionId);
-    if (result && !result.ok) return { text: `${result.error}\n${this.#choiceHint(choice)}`, failed: true };
+    const option = skip ? null : choice.options.find((item) => item.id === optionId);
+    if (!skip && !option) return { text: `没有这个选项。\n${this.#storyChoiceHint(choice)}`, failed: true };
     const now = this.#now();
-    const source = submitter ? { actor: submitter, label: result?.option.label ?? '略过', ...(reason ? { reason } : {}), ...(jointVotes ? { votes: jointVotes } : {}), ...(substituted ? { substituted: true } : {}) } : {};
-    session.choices.push({ event: choice.event, option: optionId, result: skip ? '略过了这次选择' : result.option.result, at: now, ...source });
-    addMoment(session, 'choice', skip ? '略过了这次选择' : result.option.result, now, choice.area, choice.event);
-    const before = session.storyProgress.find((entry) => entry.waitingChoiceId === choice.id);
+    const resultText = skip ? '略过了这次选择' : option.result;
+    const source = submitter ? { actor: submitter, label: option?.label ?? '略过', ...(reason ? { reason } : {}), ...(jointVotes ? { votes: jointVotes } : {}), ...(substituted ? { substituted: true } : {}) } : {};
+    session.choices.push({ event: choice.event, option: optionId, result: resultText, at: now, ...source });
+    addMoment(session, 'choice', resultText, now, choice.area, choice.event);
+    const before = waiting;
     session.storyProgress = advanceStoryChoice(session.storyProgress, choice.id, optionId);
     if (!skip && before?.packId === session.storyRun?.packId && before && !before.options.find(({ id }) => id === optionId)?.next) {
       session.storyRun.endingNodeId = before.nodeId;
@@ -956,7 +905,7 @@ export class FunWorld {
     session.pendingChoice = null;
     session.lastAt = now;
     await this.#commitState(next);
-    return { text: skip ? '略过了这次选择，可以接着逛。' : `${substituted ? '你替鱼选了' : '选择已确认：'}${result.option.label}。${result.option.result}。` };
+    return { text: skip ? '略过了这次选择，可以接着逛。' : `${substituted ? '你替鱼选了' : '选择已确认：'}${option.label}。${option.result}。` };
   }
 
   /** 鱼在这一步还有没有可能自己决定：接口不可用、决定次数用满、或本步两次尝试都失败。 */
@@ -964,35 +913,6 @@ export class FunWorld {
     if (typeof this.#host?.cognition?.request !== 'function') return true;
     const budget = storyBudget(this.#state?.session?.storyRun?.budget);
     return budgetStop(budget, this.#autoLimits(), { step: 'choose', stamp }) !== null;
-  }
-
-  async #manageWish(args) {
-    const action = args?.action;
-    const now = this.#now();
-    let result;
-    if (action === 'add') {
-      const venue = this.#places().find((v) => v.id === args?.placeId) ?? findVenue(this.#places(), args?.place);
-      if (!venue) return { ok: false, error: '请先选择一个现有地点；fun_places 可以查看地点清单。' };
-      const type = args?.type;
-      const rawTarget = typeof args?.target === 'string' ? args.target.trim() : '';
-      const lists = { area: venue.areas, phase: (venue.phases ?? []).map((p) => p.label), souvenir: venue.souvenirs };
-      if (!['visit', 'area', 'phase', 'souvenir'].includes(type)) return { ok: false, error: '心愿类型请选择 visit、area、phase 或 souvenir。' };
-      if (type !== 'visit' && !lists[type]?.includes(rawTarget)) return { ok: false, error: `这处没有这个目标；可填：${(lists[type] ?? []).join('、') || '暂无此类目标'}。` };
-      result = addWish(this.#state.wishes, { placeId: venue.id, placeName: venue.name, type, target: type === 'visit' ? '' : rawTarget, reason: args.reason }, now);
-    } else {
-      result = changeWish(this.#state.wishes, args?.id, action, now);
-    }
-    if (result.error) return { ok: false, error: result.error };
-    const previous = this.#state.wishes;
-    this.#state.wishes = result.wishes;
-    try { await this.#save(); } catch (err) { this.#state.wishes = previous; throw err; }
-    return { ok: true, wish: result.wish, duplicate: result.duplicate ?? false };
-  }
-
-  #completeWishes(facts) {
-    const result = fulfillWishes(this.#state.wishes, facts, this.#now());
-    this.#state.wishes = result.wishes;
-    return result.completed;
   }
 
   #history(placeId, today = dayIn(this.timezone, this.#now())) {
@@ -1011,31 +931,17 @@ export class FunWorld {
 
   #recommendations(picks, nowMin, now) {
     const day = dayIn(this.timezone, now);
-    const memories = this.#savedTrips();
-    const wishes = this.#state.wishes;
     return picks.map((p) => ({
       ...p,
-      ...recommendVenue(p.venue, nowMin, wishes, this.#history(p.venue.id, day)),
-    })).sort((a, b) => rankOf(a.state) - rankOf(b.state)
-      || Number(Boolean(b.wishReason)) - Number(Boolean(a.wishReason)));
-  }
-
-  #upcomingWish(recommendations) {
-    let next = null;
-    for (const { venue, upcomingWish } of recommendations) {
-      if (upcomingWish && (!next || upcomingWish.minutesAway < next.minutesAway)) {
-        next = { ...upcomingWish, placeName: venue.name };
-      }
-    }
-    return next ? `下个适合实现心愿的时段 · ${next.placeName} · ${next.text}` : '';
+      ...recommendVenue(p.venue, nowMin, [], this.#history(p.venue.id, day)),
+    })).sort((a, b) => rankOf(a.state) - rankOf(b.state));
   }
 
   #recommendationLine(pick, detailed = false) {
-    const { venue, state, phase, areas, wishReason, revisitReason } = pick;
+    const { venue, state, phase, areas, revisitReason } = pick;
     const bits = [`${venue.name}（${[STATE_LABEL[state], phase, CROWD_LABEL[venue.crowd] || '人不少'].filter(Boolean).join('，')}）`];
     if (detailed) bits.push(`${venue.hours.open}–${venue.hours.close}`);
     if (areas.length && detailed) bits.push(`现在能逛：${areas.slice(0, 5).join('、')}`);
-    if (wishReason) bits.push(wishReason);
     if (revisitReason) bits.push(revisitReason);
     return `- ${bits.join('；')}`;
   }
@@ -1076,12 +982,10 @@ export class FunWorld {
       picks = allPlaces(nowMin, avoid, places);
     }
     picks = this.#recommendations(picks, nowMin, now);
-    const upcomingWish = this.#upcomingWish(picks);
     if (!all && !kindFilter) picks = picks.slice(0, count);
 
     const lines = [`这会儿 ${hmIn(this.timezone, now)}，能去逛的：`];
     lines.push(...picks.map((p) => this.#recommendationLine(p, true)));
-    if (upcomingWish) lines.push(upcomingWish);
     const { session, draft } = this.#outings(now);
     if (session) lines.push(`（你正在「${session.placeName}」逛着，${visitedText(session)}；要换地方先 fun_home 收个摊。）`);
     if (draft) lines.push(this.#draftHint(draft));
@@ -1105,10 +1009,11 @@ export class FunWorld {
       return { text: `没听说过「${args?.place ?? ''}」这处。现在能去的是：${names}。\n（拿不准就 fun_places 看看，或者 all 填 true 列全部。）`, failed: true };
     }
 
-    const route = this.#state.route;
-    if (route && venue.id !== route.stops[route.nextIndex]?.placeId && !this.#state.session) {
-      return { text: routeText(route) + '。要换目的地可先 fun_route change，或 cancel 取消后续。', failed: true };
-    }
+    const savedRoute = this.#state.route;
+    const route = savedRoute && ['planned', 'between'].includes(savedRoute.status) ? savedRoute : null;
+    const expectedStop = route?.stops?.[route.nextIndex];
+    const routeMatches = Boolean(route && expectedStop?.placeId === venue.id);
+    const routeAbandoned = Boolean(route && !routeMatches);
     const state = hoursState(venue, minutesIn(this.timezone, now));
     const company = typeof args?.company === 'string' ? args.company.trim() : '';
     const { session, already } = enterVenue(this.#state, venue, now, this.#random, company);
@@ -1133,13 +1038,16 @@ export class FunWorld {
     const enteredPhase = phaseLabelAt(venue, minutesIn(this.timezone, now));
     session.phases = enteredPhase ? [enteredPhase] : [];
     addMoment(session, 'enter', '进了' + venue.name, now);
-    if (route) {
+    if (routeMatches) {
       session.routeId = route.id;
       session.routeOrder = route.nextIndex + 1;
       route.status = 'active';
       storeRoute(this.#state, route);
     }
-    const completedWishes = session.storyRun?.canonical === false ? [] : this.#completeWishes({ placeId: venue.id, phase: enteredPhase });
+    if (routeAbandoned) {
+      route.status = 'cancelled';
+      storeRoute(this.#state, route);
+    }
     await this.#save();
 
     // 时段气氛：江边清早和夜里不是一回事，所以描写和可逛的项目都按此刻取。
@@ -1147,8 +1055,8 @@ export class FunWorld {
     const label = phaseLabelAt(venue, nowMin);
 
     const lines = [`进了${venue.name}${label ? `（${label}）` : ''}。`, descNow(venue, nowMin)];
-    if (route) lines.push(routeText(route) + ' · 第' + session.routeOrder + '站。');
-    if (completedWishes.length) lines.push(`完成了心愿：${completedWishes.map((w) => w.target || `去${w.placeName}`).join('、')}。`);
+    if (routeMatches) lines.push(routeText(route) + ' · 第' + session.routeOrder + '站。');
+    if (routeAbandoned) lines.push('这次改去另一处，旧联程已停止继续，原记录保留。');
     if (args?.company) lines.push(`跟${String(args.company).slice(0, 40)}一起。`);
     if (state === 'closingSoon') lines.push(`（快到打烊时间了，${venue.hours.close} 就关，别排太长的队。）`);
     if (state === 'closed') lines.push(`（其实这会儿已经过了开放时段（${venue.hours.open}–${venue.hours.close}），当它开着逛也行，只是别写外头太亮。）`);
@@ -1184,7 +1092,7 @@ export class FunWorld {
     }
 
     lines.push('把这一趟落进你今天的日程：feast_life_adjust 把这一段改成出门（已经写在计划里就不用改）；回来再用 feast_life_play 记一笔。没有这些工具就跳过这句。');
-    lines.push('一处一处来：fun_wander 逛一处（不填 area 就自动挑一个没逛过的），看到纪念品/拍照点会用得了；遇到需要决定的事件，先用 fun_choice 选完再继续。');
+    lines.push('一处一处来：用 fun_wander 逛一处（不填 area 就自动挑一个没逛过的），也可以记下纪念品、拍照点或吃喝；选项式故事在故事手账里继续。');
     return { text: lines.join('\n') };
   }
 
@@ -1194,7 +1102,7 @@ export class FunWorld {
     this.#state = this.#normalizeState();
     const session = this.#state.session;
     if (this.#state.draft) return { text: this.#draftHint(this.#state.draft), failed: true };
-    if (session?.pendingChoice) return { text: this.#choiceHint(session.pendingChoice) };
+    if (session?.pendingChoice) return { text: this.#storyChoiceHint(session.pendingChoice) };
     if (!session) {
       return { text: '你还没进门呢。先用 fun_places 选地点，再用 fun_go 进门。' };
     }
@@ -1315,35 +1223,19 @@ export class FunWorld {
     }
     // 项目和已验证的收获确定后才抽事件，避免串项目或凭空获得东西。
     if (picked) {
-      let story = pinnedStory;
-      if (!session.storyRun) {
-        try {
-          const legacyRows = this.#storyLibrary.catalog().filter(({ pack }) => pack.version === 1);
-          story = pickStory(legacyRows, venue, picked.area, nowMin, session, visitsBefore);
-        } catch (error) { this.#host?.log?.warn?.('剧情包未能触发，继续普通游逛', { error: msg(error) }); }
-      }
-      let choice = null;
-      if (story) {
-        picked.event = story.event;
-        session.storyProgress = story.progress;
-        choice = story.choice;
-        const completed = session.storyRun && story.progress.find(({ packId, done }) => done && packId === session.storyRun.packId);
+      if (pinnedStory) {
+        picked.event = pinnedStory.event;
+        session.storyProgress = pinnedStory.progress;
+        if (pinnedStory.choice && !session.pendingChoice) session.pendingChoice = pinnedStory.choice;
+        const completed = session.storyRun && pinnedStory.progress.find(({ packId, done }) => done && packId === session.storyRun.packId);
         if (completed) session.storyRun.endingNodeId = completed.nodeId;
       } else {
-      const common = filterEventsForArea(liveEvents, picked.area, venue, session);
-      const rare = filterEventsForArea(rarePool, picked.area, venue, session);
-      const chosenPool = eventPool(common, rare, visitsBefore, this.#random);
-      const followup = branchFollowup(venue.id, picked.area, session, nowMin);
-      picked.event = followup?.event ?? pickEvent(chosenPool, session.events, this.#random);
-      if (followup) session.branchSeen.push(followup.id);
-      choice = followup ? null : choiceForEvent(picked.event, { area: picked.area });
-      if (!choice && !followup) {
-        choice = branchChoiceFor(venue.id, picked.area, session, nowMin);
-        if (choice) picked.event = choice.event;
-      }
+        const common = filterEventsForArea(liveEvents, picked.area, venue, session);
+        const rare = filterEventsForArea(rarePool, picked.area, venue, session);
+        const chosenPool = eventPool(common, rare, visitsBefore, this.#random);
+        picked.event = pickEvent(chosenPool, session.events, this.#random);
       }
       if (picked.event) session.events.push(picked.event);
-      if (choice && !session.pendingChoice) session.pendingChoice = choice;
     }
     if (picked) {
       if (phaseName && !session.phases.includes(phaseName)) session.phases.push(phaseName);
@@ -1354,15 +1246,12 @@ export class FunWorld {
     if (shot && !shot.duplicate) addMoment(session, 'photo', '在' + shot.spot + '拍了照', now, picked?.area);
     if (ate && !ate.duplicate) addMoment(session, 'consume', ate.verb + '了' + ate.item, now, picked?.area);
 
-    const completedWishes = session.storyRun?.canonical === false ? []
-      : this.#completeWishes({ placeId: venue.id, area: picked?.area ?? '', phase: phaseName, souvenirs: bought && !bought.duplicate ? [bought.item] : [] });
     await this.#save();
 
     // 点的那处不存在：不编一个「逛了」，把能逛的如实递给她，买/拍照/吃喝照常结算
     // （她可能就是想在那儿买点东西，没必要连这个也拦掉）。
     if (areaMiss) {
       const lines = [`（${areaMiss}）`];
-      if (completedWishes.length) lines.push(`完成了心愿：${completedWishes.map((w) => w.target || `去${w.placeName}`).join('、')}。`);
       if (bought) lines.push(bought.duplicate ? `（${bought.item} 你之前已经买过了。）` : `买了：${bought.item}。`);
       if (shot) lines.push(shot.duplicate ? `（${shot.spot} 已经拍过了。）` : `拍了张照：${shot.spot}。`);
       if (ate) lines.push(ate.duplicate ? `（${ate.item} 你这一趟已经${ate.verb}过了。）` : `${ate.verb}了：${ate.item}。`);
@@ -1372,13 +1261,10 @@ export class FunWorld {
     }
 
     const lines = [`${venue.name}${phaseName ? `（${phaseName}）` : ''} · ${picked.area}`, this.#areaLine(venue, picked.area, nowMin)];
-    if (completedWishes.length) lines.push(`完成了心愿：${completedWishes.map((w) => w.target || `去${w.placeName}`).join('、')}。`);
     if (picked.event) {
       lines.push(`——${picked.event}`);
-      const detail = aquariumEventDetail(picked.event, picked.area);
-      if (detail) lines.push(detail);
       if (session.pendingChoice?.event === picked.event) {
-        lines.push(this.#choiceHint(session.pendingChoice));
+        lines.push(this.#storyChoiceHint(session.pendingChoice));
       }
     }
     const last = session.visited[session.visited.length - 1];
@@ -1404,7 +1290,7 @@ export class FunWorld {
     const now = this.#now();
     const next = this.#normalizeState();
     if (args?.draftId !== undefined && (!next.draft || args.draftId !== next.draft.id || next.session)) {
-      return { text: '找不到要回家的未完行程，请用 fun_view 查看当前状态。', failed: true };
+      return { text: '找不到要回家的未完行程，请用 fun_journal 查看近期行程。', failed: true };
     }
     if (next.draft && args?.draftId === undefined) return { text: this.#draftHint(next.draft), failed: true };
     const outing = next.session ?? next.draft;
@@ -1439,7 +1325,15 @@ export class FunWorld {
     const { trip, stayedMin, note } = closed;
     const summary = tripSummary(trip);
     const lines = [`回家：这一趟在${summary}。`];
-    if (route) lines.push(routeText(route) + (route.status === 'between' ? '。想继续时用 fun_route next 并填路线 id；也可 change 换下一站或 cancel 提前结束。' : '。'));
+    if (route) {
+      const nextStop = route.stops?.[route.nextIndex];
+      if (route.status === 'between' && nextStop) {
+        const available = this.#places().some((place) => place.id === nextStop.placeId);
+        lines.push(routeText(route) + (available
+          ? `。想继续这条旧联程，请用 fun_go 的 place 前往「${nextStop.placeName}」；也可以直接选择别处，旧联程会保留为已停止。`
+          : `。下一站「${nextStop.placeName}」已不在地点清单；直接选择别处出发即可，旧联程会保留为已停止。`));
+      } else lines.push(routeText(route) + '。');
+    }
     if (stayedMin >= 5) lines.push(`待了大约 ${stayedMin} 分钟。`);
     if (note) lines.push(`（你记的：${note}）`);
 
@@ -1479,8 +1373,6 @@ export class FunWorld {
     const picks = this.#recommendations(allPlaces(nowMin, recentPlaceIds(this.#state, 2), places), nowMin, now);
     const lines = [`这会儿 ${hmIn(this.timezone, now)}。想现在就出门的话，能去：`];
     lines.push(...picks.slice(0, 5).map((p) => this.#recommendationLine(p)));
-    const upcomingWish = this.#upcomingWish(picks);
-    if (upcomingWish) lines.push(upcomingWish);
     lines.push(`（一共 ${places.length} 处，fun_places all 填 true 能看全，kind 填「室内」「户外」「夜」能只看一类。）`);
     const { draft } = this.#outings(now);
     lines.push(draft ? this.#draftHint(draft) : '选好后用 fun_go 进门；逛完用 fun_home 回家。');
@@ -1588,15 +1480,14 @@ export class FunWorld {
     const trips = this.#queryTrips(args).slice(0, count);
     const { session, draft } = this.#outings();
     if (!trips.length && !session && !draft) {
-      return { text: this.#savedTrips().length ? '没有找到符合条件的行程。' : '纪念册还是空的——还没收过摊。想出门就 fun_start 或 fun_places 看看。' };
+      return { text: this.#savedTrips().length ? '没有找到符合条件的行程。' : '纪念册还是空的——还没收过摊。想出门就用 fun_places 看看。' };
     }
     const lines = [];
     if (session) {
       lines.push(`正在逛：${tripSummary(session)}。`);
-      if (session.pendingChoice) lines.push(this.#choiceHint(session.pendingChoice));
+      if (session.pendingChoice) lines.push(this.#storyChoiceHint(session.pendingChoice));
     }
-    if (draft) { lines.push(this.#draftHint(draft), `已有记录：${tripSummary(draft)}。`); if (draft.pendingChoice) lines.push(this.#choiceHint(draft.pendingChoice)); }
-    if (this.#state.route) lines.push(routeText(this.#state.route));
+    if (draft) { lines.push(this.#draftHint(draft), `已有记录：${tripSummary(draft)}。`); if (draft.pendingChoice) lines.push(this.#storyChoiceHint(draft.pendingChoice)); }
     if (trips.length) {
       lines.push('去过的地方：');
       for (const t of trips) {
@@ -1605,7 +1496,6 @@ export class FunWorld {
         const archived = !(this.#state.trips ?? []).some((x) => x.id === t.id);
         lines.push(`- ${when} ${tripSummary(t)}${kept ? '（已珍藏）' : ''}${archived && !kept ? '（近期行程已归档）' : ''}`);
         lines.push(`  行程 ID：${t.id}`);
-        if (t.routeId) lines.push('  同次出门：' + t.routeId + ' · 第' + t.routeOrder + '站');
         if (t.note) lines.push(`  （你记的：${t.note}）`);
       }
     }
@@ -1624,7 +1514,7 @@ export class FunWorld {
   async #keepsakeTool(args) {
     this.#state = this.#normalizeState();
     const id = typeof args?.id === 'string' ? args.id.trim() : '';
-    if (!id) return { text: '要珍藏哪一趟？用 fun_view 找行程 ID。', failed: true };
+    if (!id) return { text: '要珍藏哪一趟？用 fun_journal 查看行程 ID。', failed: true };
     const result = favoriteTrip(this.#state, id, args?.keep !== false);
     if (!result.ok) return { text: result.error, failed: true };
     await this.#save();
@@ -1684,7 +1574,7 @@ export class FunWorld {
     }
 
     if (!rack.items.length) {
-      return { text: '架子上还什么都没有——还没买过纪念品。想逛就 fun_start 或 fun_places 看看。' };
+      return { text: '架子上还什么都没有——还没买过纪念品。想逛就用 fun_places 看看。' };
     }
 
     lines.push(`长期收藏账本里一共 ${rack.items.length} 样东西（${rack.total} 件），来自 ${rack.uniquePlaces} 处地方；详细行程保留最近 40 趟及已珍藏的行程：`);
@@ -1724,8 +1614,7 @@ export class FunWorld {
     const idx = (venue.areas || []).indexOf(area);
     const n = idx >= 0 ? idx + 1 : null;
     // desc 的第一段（到第一个分号）通常就是空间本身，够用且不啰嗦。
-    let scenery = venue.id === 'aquarium' ? aquariumDetail(area) : '';
-    if (!scenery) scenery = descNow(venue, nowMin).split('；')[0].replace(/^[^：]*：/, '');
+    let scenery = descNow(venue, nowMin).split('；')[0].replace(/^[^：]*：/, '');
     // 自填地点的描述是用户手写的，可能本来就有句号；别再补一个变成「。。」。
     scenery = scenery.replace(/[。！？.!?]+$/, '');
     const where = n ? `（第 ${n} 处，共 ${venue.areas.length} 处）` : '';
@@ -1972,13 +1861,17 @@ export class FunWorld {
     if (trip) trip.dmBudget = dmBudget(outing.storyRun.dmBudget);
     // 新的一屏 = 一次「要不要配图」的机会；同一个进度戳只准备一次，不会反复刷。
     this.#maybeAutoImageRequest(trip, outing);
+    const pendingRoute = state.route && !['completed', 'cancelled'].includes(state.route.status) ? state.route : null;
+    const nextStop = pendingRoute?.stops?.[pendingRoute.nextIndex];
     const conflict = outing && !trip ? `「${outing.placeName}」还有一趟普通出游，请在从0开始的肥鱼大冒险继续或结束。`
-      : !outing && state.route ? '从0开始的肥鱼大冒险还有一条未结束的联程，请先处理这条路线。' : undefined;
+      : !outing && pendingRoute ? (nextStop
+        ? `还有一条旧联程未结束；可用 fun_go 的 place 前往「${nextStop.placeName}」，或选择别处出发以停止旧联程。`
+        : '还有一条旧联程未结束；用 fun_go 选择地点继续，旧联程会保留为已停止。') : undefined;
     return {
       ok: true, trip, conflict, party: normalizeStoryParty(party), savedParty: state.party,
       showFreeDefault: this.cfg?.funStoryFree === true && state.notices?.freeDefaultOn !== true,
       ...(this.#venueMigrationError ? { migrationWarning: this.#venueMigrationError } : {}),
-      startStamp: storyStamp([this.#storyEpoch, state.tripSeq, outing?.id, state.route?.id]),
+      startStamp: storyStamp([this.#storyEpoch, state.tripSeq, outing?.id, pendingRoute?.id]),
       catalog: catalog.filter(({ enabled }) => enabled)
         .map((row) => describePack(row, place(row.pack.placeId), nowMin, visits(row.pack.placeId), completed, { freeEnabled: this.cfg?.funStoryFree === true })),
       memories: this.#savedTrips().filter((saved) => saved.storyRun).map(describeMemory),
@@ -2185,7 +2078,7 @@ export class FunWorld {
     let run;
     if (method === 'move' && trip.step === 'move') run = () => this.#wanderTool({ area: trip.nextArea }, actor);
     else if (method === 'choose' && trip.step === 'choose' && choiceId === trip.pending.id && trip.pending.options.some(({ id }) => id === optionId)) {
-      run = () => this.#choiceTool({ choiceId, optionId, substitute: payload.substitute === true, stamp: trip.stamp }, actor, reason);
+      run = () => this.#storyChoiceTool({ choiceId, optionId, substitute: payload.substitute === true, stamp: trip.stamp }, actor, reason);
     } else if (method === 'resume' && trip.step === 'resume') run = () => this.#resumeTool(trip.id);
     else if (method === 'close') run = () => this.#homeTool(trip.state === 'draft' ? { draftId: trip.id } : {});
     else return storyFailure('当前行程没有这项操作或该选项已失效。');
@@ -2308,7 +2201,7 @@ export class FunWorld {
     const pending = trip.pending;
     if (!pending) return { text: '现在没有待选择的节点，这一步不需要 say。', failed: true };
     // 空票面时两席都能先投，两票不同时两席都能改自己那一票：这两种状态允许调用方显式声明
-    // `as`。只剩一席没投时，声明成另一席会被 #choiceTool 的 jointCanVote 明确拒绝。
+    // `as`。只剩一席没投时，声明成另一席会被 #storyChoiceTool 的 jointCanVote 明确拒绝。
     const declared = args.as === 'fish' ? 'fish' : args.as === 'owner' ? 'owner' : null;
     const voter = declared ?? this.#textVoter(pending);
     const say = typeof args.say === 'string' ? args.say.replace(/\s+/g, ' ').trim().slice(0, 200) : '';
@@ -3169,8 +3062,6 @@ export class FunWorld {
     const resume = draft
       ? { id: draft.id, placeName: draft.placeName ?? '', visited: trip.visited, total: trip.total }
       : null;
-    // 心愿便签：第一个还没完成的，只读；管理仍在「纪念册」。
-    const activeWish = (this.#state?.wishes ?? []).find((wish) => wish.status === 'active') ?? null;
     // 纪念品：本 World 收藏里最新 3–5 件，按类别落固定位置；没有就不摆。
     const keepsakes = collectSouvenirs(this.#savedTrips(), this.timezone, this.#state?.collection)
       .items.slice(0, 5)
@@ -3210,9 +3101,6 @@ export class FunWorld {
         : null,
       trip,
       resume,
-      wish: activeWish
-        ? { id: activeWish.id, placeName: activeWish.placeName, target: activeWish.target ?? '', reason: activeWish.reason ?? '' }
-        : null,
       keepsakes,
       pendingLine,
       phase,
@@ -3417,7 +3305,6 @@ export class FunWorld {
         switch (method) {
           case 'list': return this.#bookData();
           case 'favorite': return await this.#favorite(args?.[0]?.id, args?.[0]?.keep !== false);
-          case 'wish': return await this.#serial(() => this.#manageWish(args?.[0] ?? {}));
           default: throw new Error(`book 没有 ${method} 这个方法`);
         }
       }
@@ -3558,7 +3445,7 @@ export class FunWorld {
     const recent = recentPlaceIds(st, 3);
     const { session, draft } = this.#outings(now);
     const recommendations = this.#recommendations(allPlaces(nowMin, recent, this.#places()), nowMin, now);
-    const places = recommendations.map(({ venue: v, state, phase, areas, wishReason, revisitReason }) => {
+    const places = recommendations.map(({ venue: v, state, phase, areas, revisitReason }) => {
       return {
         id: v.id,
         name: v.name,
@@ -3589,7 +3476,6 @@ export class FunWorld {
         recommendedOutfit: v.recommendedOutfit,
         food: v.food ? { label: v.food.label, items: v.food.items, verb: v.food.verb } : null,
         areas: state === 'closed' ? areasNow(v, nowMin) : areas,
-        wishReason,
         revisitReason,
         areaCount: v.areas.length,
         souvenirs: v.souvenirs,
@@ -3626,9 +3512,7 @@ export class FunWorld {
       places,
       session: this.#outingData(session, places, now),
       draft: this.#outingData(draft, places, now, true),
-      upcomingWish: this.#upcomingWish(recommendations),
       recommendationIds: recommendations.filter((p) => p.state !== 'closed').slice(0, 3).map((p) => p.venue.id),
-      route: this.#state.route ? structuredClone(this.#state.route) : null,
     };
   }
 
@@ -3653,7 +3537,6 @@ export class FunWorld {
       photos: outing.photos,
       ate: (outing.ate ?? []).map((x) => ({ item: x.item, verb: x.verb, hm: hmIn(tz, x.at) })),
       events: outing.events,
-      pendingChoice: outing.pendingChoice ?? null,
       choices: outing.choices ?? [],
       venueAreaCount: venue?.areas.length ?? null,
       canResume: Boolean(venue),
@@ -3681,8 +3564,6 @@ export class FunWorld {
       .map((t) => ({
       id: t.id,
       kept: keptIds.has(t.id) || t.favorite === true,
-      routeId: t.routeId || '',
-      routeOrder: t.routeOrder || 0,
       timeline: timelineFor(t, tz),
       timelineTruncated: t.timelineTruncated === true,
       archived: !recentIds.has(t.id),
@@ -3718,8 +3599,6 @@ export class FunWorld {
     return {
       ok: true,
       total: trips.length,
-      wishes: structuredClone(st.wishes ?? []),
-      places: this.#places().map((v) => ({ id: v.id, name: v.name, areas: v.areas, souvenirs: v.souvenirs, phaseNames: (v.phases ?? []).map((p) => p.label) })),
       totalRecent: st.trips?.length ?? 0,
       totalKept: keptIds.size,
       keepsakeCount: keptIds.size,
@@ -3727,7 +3606,6 @@ export class FunWorld {
       photoCount: trips.reduce((n, t) => n + t.photos.length, 0),
       visitedAreaCount: trips.reduce((n, t) => n + t.visited.length, 0),
       mostVisited,
-      routes: structuredClone(st.routes ?? []),
       trips,
       session: session ? { placeName: session.placeName, summary: tripSummary(session) } : null,
       draft: draft ? { placeName: draft.placeName, summary: tripSummary(draft) } : null,

@@ -1,5 +1,5 @@
 /**
- * M2「家作为入口」的服务端验收：纪念品、未完行程、心愿便签、手写计划。
+ * M2「家作为入口」的服务端验收：纪念品、未完行程、手写计划。
  *
  * 只读断言之外，重点守两条边界：
  *   · 房间展示/切活动/写 plan **不动 `state.json`**；
@@ -56,7 +56,7 @@ test('空数据：不硬摆纪念品、没有未完行程、没有心愿；房�
   assert.equal(state.ok, true, state.error);
   assert.deepEqual(state.keepsakes, []);
   assert.equal(state.resume, null);
-  assert.equal(state.wish, null);
+  assert.equal(Object.hasOwn(state, 'wish'), false);
   assert.equal(state.activities.length, 10);
 });
 
@@ -92,21 +92,17 @@ test('未完行程：票笺列出地点与进度；继续后同一趟 id、runId
   assert.equal(stored.session.visited.length, 1, '进度没有丢');
 });
 
-test('心愿便签：只读第一个未完成的；管理仍在纪念册（不提供新写入口）', async (t) => {
-  const { call } = await mount(t, {
-    seed: {
-      day: '2026-11-22', session: null, draft: null, trips: [],
-      wishes: [
-        { id: 'w-done', placeId: 'aquarium', placeName: '海洋馆', type: 'visit', status: 'completed' },
-        { id: 'w-active', placeId: 'cafe', placeName: '咖啡店', type: 'souvenir', target: '一杯特调', status: 'active', reason: '想再喝一次' },
-      ],
-    },
+test('旧心愿保留在存档，但不再进入家面板状态', async (t) => {
+  const wishes = [
+    { id: 'w-done', placeId: 'aquarium', placeName: '海洋馆', type: 'visit', status: 'completed' },
+    { id: 'w-active', placeId: 'cafe', placeName: '咖啡店', type: 'souvenir', target: '一杯特调', status: 'active', reason: '想再喝一次' },
+  ];
+  const { call, stateFile } = await mount(t, {
+    seed: { day: '2026-11-22', session: null, draft: null, trips: [], wishes },
   });
   const state = await call('state');
-  assert.equal(state.wish.id, 'w-active');
-  assert.equal(state.wish.placeName, '咖啡店');
-  assert.equal(state.wish.target, '一杯特调');
-  assert.equal(state.wish.reason, '想再喝一次');
+  assert.equal(Object.hasOwn(state, 'wish'), false);
+  assert.deepEqual(JSON.parse(await readFile(stateFile, 'utf8')).wishes, wishes);
 });
 
 test('手写计划：非空才写进 room.json；空串整条省略；≤60 字；不动 state.json', async (t) => {
