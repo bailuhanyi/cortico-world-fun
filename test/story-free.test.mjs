@@ -201,6 +201,9 @@ test('自由模式在聊天里走一回合：落盘、旧 stamp 拒绝、不重�
   assert.equal(first.ok, true, first.error);
   assert.equal(first.turn, 1);
   assert.match(first.narration, /看灯人没有回答/);
+  assert.equal(typeof first.report, 'string');
+  assert.ok(first.report.length <= 400);
+  assert.doesNotMatch(first.report, /[{}]|(?:report|narration|turn):/i, '播报字段只含可直接转述的纯文本');
 
   const state = JSON.parse(await readFile(b.world.stateFile(), 'utf8'));
   assert.equal(state.session.storyRun.free.turn, 1);

@@ -107,7 +107,7 @@ test('自填剧情可导入、选分支、重启续接，完成后不重复触�
  const pending=(await b.invoke('places','list')).session.pendingChoice;
  assert.ok(pending.id.startsWith('story:'));
  const again=await boot({dir:b.dir});
- assert.match((await again.tool('fun_choice',{choiceId:pending.id,optionId:'walk'})).text,/决定去门口/);
+ assert.match((await again.tool('fun_wander',{choiceId:pending.id,optionId:'walk'})).text,/决定去门口/);
  assert.match((await again.tool('fun_wander',{area:'门口'})).text,/回头看了一眼书屋/);
  assert.doesNotMatch((await again.tool('fun_wander',{area:'窗边'})).text,/窗边有一页翻开的书/);
  await again.tool('fun_home');
@@ -170,13 +170,13 @@ test('替换或删除包不破坏已给出的选择，旧版本本趟不重启',
  const choice=(await b.invoke('places','list')).session.pendingChoice;
  value=pack(venue);value.nodes[0].event='改版后的新开场';
  await b.panel('import',{json:JSON.stringify(value),replace:true});
- assert.equal((await b.tool('fun_choice',{choiceId:choice.id,optionId:'stay'})).failed,undefined);
+ assert.equal((await b.tool('fun_wander',{choiceId:choice.id,optionId:'stay'})).failed,undefined);
  assert.doesNotMatch((await b.tool('fun_wander',{area:'窗边'})).text,/改版后的新开场/);
  await b.tool('fun_home');await b.tool('fun_go',{place:venue.id});
  assert.match((await b.tool('fun_wander',{area:'窗边'})).text,/改版后的新开场/);
  const current=(await b.invoke('places','list')).session.pendingChoice;
  await b.panel('remove',{id:value.id});
- assert.equal((await b.tool('fun_choice',{choiceId:current.id,optionId:'walk'})).failed,undefined);
+ assert.equal((await b.tool('fun_wander',{choiceId:current.id,optionId:'walk'})).failed,undefined);
  assert.equal((await b.tool('fun_wander',{area:'门口'})).failed,undefined);
 });
 

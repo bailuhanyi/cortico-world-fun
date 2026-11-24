@@ -15,6 +15,9 @@ test('0.8.0 工具声明、跨插件契约、运行时 handler 与 describe 数�
   const actSchema = FUN_TOOL_DECLS.find(x => x.name === 'fun_story_act').parameters.properties;
   assert.deepEqual(actSchema.intent.enum, ['say', 'close', 'redo']);
   assert.ok(actSchema.actions && FUN_TOOL_DECLS.find(x => x.name === 'fun_story_start').parameters.properties.party);
+  const goSchema = FUN_TOOL_DECLS.find(x => x.name === 'fun_go').parameters;
+  assert.ok(goSchema.properties.tripId);
+  assert.ok(!goSchema.required?.includes('place'), 'tripId 可独立用于续走旧行程');
   const prompt = await readFile(new URL('../src/ENV_PROMPT.md', import.meta.url), 'utf8');
   assert.match(prompt, /不要每看到一句就调用/);
   assert.match(prompt, /actions:\[\{who,say\}\]/);

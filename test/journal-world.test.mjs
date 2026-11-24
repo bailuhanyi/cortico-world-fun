@@ -12,37 +12,21 @@ async function boot(opts={}) {
   return {dir,world,tool:(name,args={})=>world.tools().find((x)=>x.name===name).handler(args),setNow:(n)=>{now=n;},data:(panel='places',method='list',args=[])=>world.webUi().invoke(panel,method,args)};
 }
 
-test('两站出门不自动移动，可重启续接、换站并归为同一次出门',async()=>{
+test('合并后的 fun_journal 只提供行程、展示柜与珍藏，旧入口已收起',async()=>{
   const b=await boot();
-  assert.equal((await b.tool('fun_route',{action:'plan',places:['夜市','江边'],company:'阿岚'})).failed,undefined);
-  let data=await b.data(); const id=data.route.id;
-  assert.equal(data.session,null);
-  assert.equal((await b.tool('fun_route',{action:'next',id:'stale'})).failed,true);
-  await b.tool('fun_route',{action:'next',id});
-  await b.tool('fun_wander'); await b.tool('fun_home',{note:'第一站很热闹'});
-  data=await b.data(); assert.equal(data.session,null); assert.equal(data.route.status,'between');
-  const again=await boot({dir:b.dir});
-  await again.tool('fun_route',{action:'change',id,place:'公园'});
-  await again.tool('fun_route',{action:'next',id});
-  await again.tool('fun_wander'); await again.tool('fun_home',{note:'第二站很安静'});
-  const book=await again.data('book');
-  assert.equal(book.trips.length,2);
-  assert.ok(book.trips.every((t)=>t.routeId===id&&t.company==='阿岚'));
-  assert.deepEqual(book.trips.map((t)=>t.routeOrder).sort(),[1,2]);
-  assert.equal(book.routes.find((r)=>r.id===id).status,'completed');
-  assert.equal(book.routes.find((r)=>r.id===id).stops[1].placeName,'公园');
-  assert.equal((await again.data()).route,null);
-});
-
-test('路线可提前结束，重复地点和未收摊的下一站不会隐式移动',async()=>{
-  const b=await boot();
-  assert.equal((await b.tool('fun_route',{action:'plan',places:['公园','公园']})).failed,true);
-  await b.tool('fun_route',{action:'plan',places:['公园','江边']}); const {route}=await b.data();
-  await b.tool('fun_route',{action:'next',id:route.id});
-  assert.equal((await b.tool('fun_route',{action:'next',id:route.id})).failed,true);
-  await b.tool('fun_route',{action:'cancel',id:route.id}); await b.tool('fun_home');
-  const book=await b.data('book'); assert.equal(book.trips.length,1); assert.equal(book.routes[0].status,'cancelled');
-  assert.equal((await b.tool('fun_route',{action:'next',id:route.id})).failed,true);
+  const names=b.world.tools().map((x)=>x.name);
+  assert.ok(!names.includes('fun_route'));
+  assert.ok(!names.includes('fun_view'));
+  assert.ok(!names.includes('fun_shelf'));
+  await b.tool('fun_go',{place:'漫展',company:'阿岚'});
+  await b.tool('fun_wander',{area:'同人展台',buy:'吧唧'});
+  await b.tool('fun_home',{note:'逛得很开心'});
+  const {trips:[trip]}=await b.data('book');
+  assert.ok((await b.tool('fun_journal',{view:'trips'})).text.includes(trip.id));
+  assert.match((await b.tool('fun_journal',{view:'shelf'})).text,/吧唧/);
+  assert.equal((await b.tool('fun_journal',{view:'keepsake',id:trip.id,keep:true})).failed,undefined);
+  assert.ok((await b.tool('fun_journal',{view:'keepsake'})).text.includes(trip.id));
+  assert.equal((await b.tool('fun_journal',{view:'keepsake',id:trip.id,keep:false})).failed,undefined);
 });
 
 test('检索可组合条件，地点和收藏链接只读真实保留的行程',async()=>{
@@ -50,8 +34,7 @@ test('检索可组合条件，地点和收藏链接只读真实保留的行程',
   await b.tool('fun_wander',{area:'同人展台',buy:'吧唧'}); await b.tool('fun_home',{note:'遇到喜欢的航灯图'});
   const {trips:[trip]}=await b.data('book');
   const before=await readFile(b.world.stateFile(),'utf8');
-  assert.ok((await b.tool('fun_view',{query:'航灯',company:'阿岚',from:'2026-11-19',to:'2026-11-19'})).text.includes(trip.id));
-  assert.match((await b.tool('fun_view',{company:'别人'})).text,/没有找到/);
+  assert.ok((await b.tool('fun_journal',{view:'trips'})).text.includes(trip.id));
   assert.equal((await b.data('places','history',[{placeId:trip.placeId}])).trips[0].id,trip.id);
   assert.equal((await b.data('shelf','trip',[{id:trip.id}])).trips[0].id,trip.id);
   assert.equal((await b.data('shelf','trip',[{id:'missing'}])).ok,false);
@@ -69,7 +52,7 @@ test('事件选择重启后仍会影响后续项目，并写入沿途时间线',
   await b.tool('fun_wander',{area:'栏杆边'});
   const {session}=await b.data(); const choice=session.pendingChoice;
   assert.ok(choice);
-  await b.tool('fun_choice',{choiceId:choice.id,optionId:'lights'});
+  await b.tool('fun_wander',{choiceId:choice.id,optionId:'lights'});
   const again=await boot({dir:b.dir,now:Date.parse('2026-11-19T18:10:00+08:00')});
   const next=await again.tool('fun_wander',{area:'步道'});
   assert.match(next.text,/沿岸的灯亮/);

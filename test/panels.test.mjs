@@ -13,7 +13,7 @@
  */
 import { test, report } from './harness.mjs';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { loadStandaloneWebUi } from '../tools/load-webui.mjs';
 import { tempDir, trackWorld } from './tmp.mjs';
@@ -200,9 +200,9 @@ const intervalBox = { list: [] };
 let seq = 0;
 const run = `${process.pid}-${Date.now().toString(36)}`;
 
-async function mountPanels({ language = 'zh', failList = false, cfg = {}, nowMs, random = () => 0.42 } = {}) {
+async function mountPanels({ language = 'zh', failList = false, cfg = {}, nowMs, random = () => 0.42, dataDir: existingDataDir } = {}) {
   // 每个用例一个独立目录：共用的话，上一趟的 session 会漏到下一个用例里。
-  const dataDir = await tempDir(`fun-panels-${run}-${seq += 1}-`);
+  const dataDir = existingDataDir ?? await tempDir(`fun-panels-${run}-${seq += 1}-`);
   let now = nowMs ?? Date.parse('2026-11-15T14:00:00+08:00');
   const world = trackWorld(new FunWorld({
     cfg: { ...DEFAULTS, enabled: true, ...cfg },
@@ -1343,7 +1343,7 @@ test('book 面板：行程卡可展开完整事件、路线、选择和回家备
   const { session } = JSON.parse(await readFile(join(dataDir, 'fun', 'state.json'), 'utf8'));
   const pending = session.pendingChoice;
   assert.ok(pending, '海底隧道触发真实的待选择事件');
-  const picked = await tool('fun_choice')({ choiceId: pending.id, optionId: pending.options[0].id });
+  const picked = await tool('fun_wander')({ choiceId: pending.id, optionId: pending.options[0].id });
   assert.match(picked.text, /选择已确认：|你选择了/);
   await tool('fun_wander')({ area: '触摸池' });
   await tool('fun_wander')({ area: '纪念品店', buy: '鲸鱼挂件' });
@@ -1501,9 +1501,8 @@ test('shelf 面板：每件物品可展开对应行程、同行人与回家备�
   assert.match(detail.textContent, /阿岚/);
   assert.match(detail.textContent, /排了很久，但很开心/);
   assert.equal((root.textContent.match(/最近 40 趟/g) ?? []).length, 1, '收藏账本与详细行程保留范围只说明一次');
-  const receipt = await tool('fun_shelf')({ place: '漫展' });
-  assert.match(receipt.text, /阿岚/);
-  assert.match(receipt.text, /排了很久，但很开心/);
+  const receipt = await tool('fun_journal')({ view: 'shelf' });
+  assert.match(receipt.text, /吧唧/);
 });
 
 test('shelf 面板：进度里点出还差哪些没逛', async () => {
@@ -1780,9 +1779,18 @@ test('places 面板：展示可实现心愿、重游理由和下一合适时段'
   await b.tool('fun_wander')({});
   await b.tool('fun_home')({});
   const night = VENUES.find((v) => v.name === '夜市');
-  await b.tool('fun_wish')({ action: 'add', place: '夜市', type: 'phase', target: night.phases[1].label });
-  await b.tool('fun_wish')({ action: 'add', place: '公园', type: 'visit' });
-  const root = await b.mount('places');
+  const statePath = join(b.dataDir, 'fun', 'state.json');
+  await b.world.stop();
+  const state = JSON.parse(await readFile(statePath, 'utf8'));
+  state.wishes = [
+    { id: 'legacy-night', placeId: night.id, placeName: night.name, type: 'phase', target: night.phases[1].label,
+      reason: '', status: 'active', createdAt: '2026-11-15T09:00:00.000Z', updatedAt: '2026-11-15T09:00:00.000Z', completedAt: '' },
+    { id: 'legacy-park', placeId: 'park', placeName: '公园', type: 'visit', target: '', reason: '', status: 'active',
+      createdAt: '2026-11-15T09:00:00.000Z', updatedAt: '2026-11-15T09:00:00.000Z', completedAt: '' },
+  ];
+  await writeFile(statePath, JSON.stringify(state, null, 2));
+  const restarted = await mountPanels({ nowMs: Date.parse('2026-11-15T17:30:00+08:00'), dataDir: b.dataDir });
+  const root = await restarted.mount('places');
   await waitFor(() => root.querySelector('.fun-upcoming-wish'), '下一合适时段');
   assert.ok(root.querySelector('.fun-upcoming-wish').textContent.includes(night.phases[1].from));
   assert.match(root.textContent, /有个心愿：想去公园/);

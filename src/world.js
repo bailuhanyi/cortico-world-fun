@@ -128,7 +128,7 @@ export const FUN_TOOL_DECLS = [
 {
     name: 'fun_go',
     tags: ['write'],
-    description: '开始一趟出游，返回当下描写与可逛项目。place 用 fun_places 给的地点名或别名。',
+    description: '开始一趟出游，返回当下描写与可逛项目；续走未完行程时改填 tripId。place 用 fun_places 给的地点名或别名。',
     parameters: {
       type: 'object',
       properties: {
@@ -136,7 +136,6 @@ export const FUN_TOOL_DECLS = [
         company: { type: 'string', description: '同行人，可选；一个人不填。' },
         tripId: { type: 'string', description: '继续这趟未完行程时填 fun_journal 返回的行程 ID。' },
       },
-      required: ['place'],
       additionalProperties: false,
     },
   },
