@@ -212,9 +212,17 @@ test('availability reports missing venue areas or supported phase keys without c
   const unavailable = storyAvailability(pack, [{ ...customVenue, areas: ['quiet-corner', 'window'], phases: [{ key: 'early' }] }]);
   assert.equal(unavailable.available, false);
   assert.equal(unavailable.placeName, 'Custom Place');
+  assert.equal(unavailable.placeMissing, false);
+  assert.deepEqual(unavailable.missingAreas, ['doorway'], '缺哪个区域要能单独取出来，面板据此提示补齐');
   assert.ok(unavailable.warnings.some((warning) => warning.includes('doorway')));
-  assert.equal(storyAvailability(pack, []).available, false);
+  // 地点根本不存在和「地点在、区域不对」是两回事：前者只能新建或改绑，后者补区域即可。
+  const noVenue = storyAvailability(pack, []);
+  assert.equal(noVenue.available, false);
+  assert.equal(noVenue.placeMissing, true);
+  assert.equal(noVenue.placeId, 'custom-place');
+  assert.match(noVenue.warnings[0], /custom-place/);
   assert.equal(storyAvailability(pack, [customVenue]).available, true);
+  assert.equal(storyAvailability(pack, [customVenue]).placeMissing, false);
 });
 
 test('release ships the four approved built-in stories including the supplied v1 packs', () => {

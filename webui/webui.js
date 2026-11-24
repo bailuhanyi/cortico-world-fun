@@ -1299,14 +1299,67 @@ function mountShelf(ctx) {
   return { refresh: load };
 }
 
+function mergedPanel(ctx, sections, initial = 0) {
+  const doc = ctx.root.ownerDocument;
+  const nav = doc.createElement('div');
+  nav.className = 'fun-panel-tabs';
+  nav.setAttribute('role', 'tablist');
+  const panes = sections.map((section, index) => {
+    const pane = doc.createElement('section');
+    pane.hidden = index !== initial;
+    pane.setAttribute('role', 'tabpanel');
+    const button = doc.createElement('button');
+    button.type = 'button';
+    button.textContent = section.title;
+    button.setAttribute('role', 'tab');
+    button.setAttribute('aria-selected', index === initial ? 'true' : 'false');
+    button.addEventListener('click', () => {
+      sections.forEach((_, i) => { panes[i].hidden = i !== index; nav.children[i].setAttribute('aria-selected', i === index ? 'true' : 'false'); });
+    });
+    nav.appendChild(button);
+    ctx.root.appendChild(pane);
+    const childCtx = { ...ctx, root: pane, invoke: (method, args = []) => ctx.invoke(method, [...args, { __panelSource: section.source }]) };
+    section.mount(childCtx);
+    return pane;
+  });
+  ctx.root.prepend(nav);
+}
+
+function mountOuting(ctx) {
+  mergedPanel(ctx, [
+    { title: '此刻去逛', source: 'places', mount: mountPlaces },
+    { title: '地点册', source: 'locations', mount: mountLocations },
+  ]);
+}
+
+function mountJournal(ctx) {
+  mergedPanel(ctx, [
+    { title: '行程手账', source: 'book', mount: mountBook },
+    { title: '珍藏柜', source: 'shelf', mount: mountShelf },
+  ]);
+}
+
+function mountStoryJournal(ctx) {
+  const doc = ctx.root.ownerDocument;
+  const main = doc.createElement('section');
+  const more = doc.createElement('details');
+  more.className = 'fun-more-stories';
+  const summary = doc.createElement('summary');
+  summary.textContent = '更多故事';
+  const authors = doc.createElement('div');
+  more.append(summary, authors);
+  ctx.root.replaceChildren(main, more);
+  mountFishStory({ ...ctx, root: main });
+  mountStories({ ...ctx, root: authors });
+}
+
+export const testMounts = { home: mountHome, places: mountPlaces, locations: mountLocations, story: mountFishStory, stories: mountStories, book: mountBook, shelf: mountShelf };
+
 export default {
   panels: {
     home: { mount: mountHome },
-    places: { mount: mountPlaces },
-    book: { mount: mountBook },
-    shelf: { mount: mountShelf },
-    locations: { mount: mountLocations },
-    story: { mount: mountFishStory },
-    stories: { mount: mountStories },
+    outing: { mount: mountOuting },
+    story: { mount: mountStoryJournal },
+    journal: { mount: mountJournal },
   },
 };

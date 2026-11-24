@@ -195,11 +195,23 @@ export class StoryLibrary {
     if (action === 'validate' || action === 'preview' || action === 'playtest' || action === 'import') {
       const result = args.json !== undefined ? this.parse(args.json) : row ? { ok: true, pack: row.pack } : failure('请先提供剧情包 JSON 或已有剧情包 ID。');
       if (!result.ok) return { ...result, error: result.errors?.join('；') || result.error || '剧情包校验失败。' };
-      const pack = result.pack;
+      let pack = result.pack;
+      // 包里写的地点本地没有时，允许在同一步里把它绑到已有地点：玩家不用手改 JSON，
+      // 也不会再出现「导入成功、永远不触发」的死包。
+      const bindPlaceId = typeof args.bindPlaceId === 'string' ? args.bindPlaceId.trim() : '';
+      if (bindPlaceId) {
+        const target = this.venues().find((v) => v.id === bindPlaceId);
+        if (!target) return failure('要绑定的地点已经不在地点册里，请刷新后再选。');
+        if (!this.venues().some((v) => v.id === pack.placeId)) {
+          const rebound = validateStoryPack({ ...plain(pack), placeId: target.id }, { maxNodes: 0 });
+          if (!rebound.ok) return { ...failure(rebound.errors?.[0] || '绑定地点后校验失败。'), errors: rebound.errors };
+          pack = rebound.pack;
+        }
+      }
       const availability = storyAvailability(pack, this.venues());
-      if (action === 'validate') return { ok: true, pack: plain(pack), warnings: availability.warnings, available: availability.available, errors: [] };
+      if (action === 'validate') return { ok: true, pack: plain(pack), warnings: availability.warnings, available: availability.available, placeMissing: availability.placeMissing, errors: [] };
       if (action === 'preview') {
-        if (pack.version === 3) return { ok: true, free: true, title: pack.title, eligible: availability.available, warnings: availability.warnings,
+        if (pack.version === 3) return { ok: true, free: true, title: pack.title, eligible: availability.available, placeMissing: availability.placeMissing, warnings: availability.warnings,
           setting: { premise: pack.setting.premise, canon: [...pack.setting.canon], opening: pack.setting.opening,
             cast: pack.setting.cast.map(({ name }) => name), locations: pack.setting.locations.map(({ name }) => name),
             ends: pack.setting.ends.map(({ text }) => text) } };
@@ -208,7 +220,7 @@ export class StoryLibrary {
         const venue = this.venues().find((v) => v.id === pack.placeId);
         const area = args.area || pack.nodes.find((n) => n.id === pack.start)?.area;
         const pick = venue ? pickStory([{ pack, enabled: true }], venue, area, nowMin, { storyProgress: [] }, this.visits(pack.placeId)) : null;
-        return { ok: true, title: pack.title, eligible: Boolean(pick), warnings: availability.warnings, nodes: pack.nodes.map((n) => ({ id: n.id, area: n.area, event: n.event, when: n.when || {}, next: n.next || '', choices: (n.choices || []).map((c) => ({ id: c.id, label: c.label, next: c.next || '' })) })) };
+        return { ok: true, title: pack.title, eligible: Boolean(pick), placeMissing: availability.placeMissing, warnings: availability.warnings, nodes: pack.nodes.map((n) => ({ id: n.id, area: n.area, event: n.event, when: n.when || {}, next: n.next || '', choices: (n.choices || []).map((c) => ({ id: c.id, label: c.label, next: c.next || '' })) })) };
       }
       if (action === 'playtest') {
         if (pack.version === 3) return { ok: true, playtest: true, title: pack.title, sideEffects: false,
@@ -249,10 +261,37 @@ export class StoryLibrary {
       }
       if (existing && args.replace !== true) return failure('已有同 ID 剧情包；勾选明确覆盖后再导入。');
       if (!existing && this.data.packs.length >= MAX_PACKS) return failure('最多保存 20 个自定义剧情包，请先移除一个不用的包。');
+      // 地点不存在的包收进来只会「一直判定失效」：当场拒收，并给出两条可走的路。
+      if (availability.placeMissing) {
+        return {
+          ok: false, placeMissing: true, placeId: availability.placeId,
+          error: `这个包绑定的地点「${availability.placeId}」在地点册里没有。先在地点册新建这处，或导入时把它绑到已有地点。`,
+          errors: [availability.warnings[0]],
+        };
+      }
       await this.save({ ...this.data, packs: [...this.data.packs.filter((p) => p.id !== pack.id), pack] });
-      return { ok: true, id: pack.id, warnings: availability.warnings, message: '剧情包已导入。' };
+      return { ok: true, id: pack.id, placeId: pack.placeId, warnings: availability.warnings, message: '剧情包已导入。' };
     }
     if (!row) return failure('没有找到这个剧情包，请刷新清单。');
+    if (action === 'rebind') {
+      if (row.builtin) return failure('内置故事不能改绑；想换地点可以先「导出 JSON」，改好再作为自己的作品导入。');
+      const target = typeof args.placeId === 'string' ? args.placeId.trim() : '';
+      if (!target) return failure('请选择要绑定到哪处地点。');
+      const venue = this.venues().find((v) => v.id === target);
+      if (!venue) return failure('这处地点已经不在地点册里，请刷新后再选。');
+      if (row.pack.placeId === target) {
+        return { ok: true, id: row.pack.id, placeId: target, unchanged: true, available: storyAvailability(row.pack, this.venues()).available, message: `「${row.pack.title}」本来就绑在「${venue.name}」上，没有改动。` };
+      }
+      const rebound = validateStoryPack({ ...plain(row.pack), placeId: target }, { maxNodes: 0 });
+      if (!rebound.ok) return { ...failure(rebound.errors?.[0] || '绑定地点后校验失败。'), errors: rebound.errors };
+      await this.save({ ...this.data, packs: [...this.data.packs.filter((p) => p.id !== row.pack.id), rebound.pack] });
+      const availability = storyAvailability(rebound.pack, this.venues());
+      return {
+        ok: true, id: rebound.pack.id, placeId: target, revision: rebound.pack.revision,
+        available: availability.available, warnings: availability.warnings,
+        message: `已把「${row.pack.title}」绑到「${venue.name}」。`,
+      };
+    }
     if (action === 'export') return { ok: true, json: JSON.stringify(plain(row.pack), null, 2) };
     if (action === 'enable' || action === 'disable') {
       const disabled = new Set(this.data.disabledIds);

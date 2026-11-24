@@ -79,6 +79,8 @@ test('story node limit reads configuration, zero means unlimited, and lowering i
   assert.equal(success(await r.call('storySettings')).nodeLimit, 0, '坏值回落到不限而不是抛错');
 
   r.cfg.funStoryNodeLimit = 0;
+  // 故事包必须绑在一处真实地点上（0.7.8 起地点不存在的包会被导入拒收）。
+  success(await r.panel('places', 'save', VENUE));
   success(await r.call('authorImport', { json: JSON.stringify(long) }));
   await r.world.stop();
   await r.world.start(r.host);

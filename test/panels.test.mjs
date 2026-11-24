@@ -177,6 +177,8 @@ globalThis.document = {
   createElement: (tag) => new Node(tag),
   createTextNode: (t) => Object.assign(new Node('#text'), { _text: String(t) }),
   activeElement: null,
+  addEventListener() {},
+  removeEventListener() {},
 };
 
 /** 等条件成立，而不是「等 0 毫秒若干次」——固定次数是竞态。 */
@@ -211,7 +213,12 @@ async function mountPanels({ language = 'zh', failList = false, cfg = {}, nowMs,
     persist: () => {},
   }));
   await world.start({ log: { info() {}, warn() {} } });
-  const decl = world.webUi(language);
+  const rawDecl = world.webUi(language);
+  const legacyPanel = { places: ['outing', 'places'], locations: ['outing', 'locations'], book: ['journal', 'book'], shelf: ['journal', 'shelf'], stories: ['story', null] };
+  const decl = { ...rawDecl, raw: rawDecl, async invoke(panel, method, args = []) {
+    const [target, source] = legacyPanel[panel] ?? [panel, null];
+    return rawDecl.invoke(target, method, source ? [...args, { __panelSource: source }] : args);
+  } };
 
   const bundle = await loadPanelClient();
   const root = new Node('div');
@@ -241,10 +248,13 @@ async function mountPanels({ language = 'zh', failList = false, cfg = {}, nowMs,
 
   let mounted;
   async function mount(id) {
-    ctx.panelId = id;
+    const merged = { 'merged-outing': 'outing', 'merged-story': 'story', 'merged-journal': 'journal' };
+    const panelId = merged[id] ?? id;
+    ctx.panelId = panelId;
     root.replaceChildren();
     invocations.length = 0;
-    mounted = await bundle.default.panels[id].mount(ctx);
+    const mount = merged[id] ? bundle.default.panels[panelId].mount : bundle.testMounts[id] ?? bundle.default.panels[id].mount;
+    mounted = await mount(ctx);
     return root;
   }
 
@@ -291,21 +301,21 @@ test('服务端面板声明带 getMethods，且声明的方法真的能调', asy
   assert.equal((await decl.invoke('stories', 'import', [{ json: JSON.stringify(authored) }])).ok, true);
   const builtin = authored;
   // 页签顺序：家 → 去哪儿 → 地点册 → 出游 → 纪念册 → 纪念品架 → 故事工坊。
-  assert.deepEqual(decl.panels.map((p) => p.id), ['home', 'places', 'locations', 'story', 'book', 'shelf', 'stories']);
+  assert.deepEqual(decl.panels.map((p) => p.id), ['home', 'outing', 'story', 'journal']);
   for (const p of decl.panels) {
     assert.ok(p.title && p.description, `${p.id} 缺标题或说明`);
     assert.ok(Array.isArray(p.getMethods) && p.getMethods.length, `${p.id} 没声明 getMethods`);
     if (p.id === 'stories') {
       assert.deepEqual(p.getMethods, ['list', 'template', 'validate', 'preview', 'playtest', 'export']);
-      assert.deepEqual(p.methods, ['import', 'enable', 'disable', 'remove']);
+      assert.deepEqual(p.methods, ['import', 'rebind', 'enable', 'disable', 'remove']);
     }
     for (const m of p.getMethods) {
       let args = [];
       if (m === 'history') args = [{ placeId: 'aquarium' }];
       else if (m === 'trip') args = [{ id: trip.id }];
-      else if ((p.id === 'stories' && m === 'template') || m === 'authorTemplate') args = [{ placeId: builtin.placeId }];
-      else if ((p.id === 'stories' && m === 'validate') || m === 'authorValidate') args = [{ json: template.json }];
-      else if ((p.id === 'stories' && ['preview', 'playtest', 'export'].includes(m)) || ['authorPreview', 'authorPlaytest', 'authorExport'].includes(m)) args = [{ id: builtin.id }];
+      else if ((p.id === 'story' && m === 'template') || m === 'authorTemplate') args = [{ placeId: builtin.placeId }];
+      else if ((p.id === 'story' && m === 'validate') || m === 'authorValidate') args = [{ json: template.json }];
+      else if ((p.id === 'story' && ['preview', 'playtest', 'export'].includes(m)) || ['authorPreview', 'authorPlaytest', 'authorExport'].includes(m)) args = [{ id: builtin.id }];
       const r = await decl.invoke(p.id, m, args);
       if (m === 'storyImageRead') assert.equal(r.ok, false, '未传图片 ID 时安全返回失败');
       else assert.equal(r.ok, true, `${p.id}.${m} 失败了：${r.error}`);
@@ -362,7 +372,7 @@ async function mountStoriesView(decl, options = {}) {
     call.result = await decl.invoke('stories', method, args);
     return call.result;
   } };
-  const mounted = bundle.default.panels.stories.mount(ctx);
+  const mounted = bundle.testMounts.stories(ctx);
   await waitFor(() => invocations.some((call) => call.method === 'list' && call.result), '故事包列表加载');
   return { root, invocations, mounted };
 }
@@ -495,6 +505,58 @@ test('stories 高级 JSON 显式覆盖；导出只读并保留草稿，新装无
   assert.ok(card().findByText('移除'));
 });
 
+test('地点编号对不上的故事包不会静默入库：导入当场拒收，可一次导入改绑，已入库的可 rebind', async () => {
+  const { decl } = await mountPanels();
+  const venue = await decl.invoke('places', 'save', [{ name: '温泉旅馆', areas: ['大厅', '汤池'] }]);
+  assert.equal(venue.ok, true, venue.error);
+  const elsewhere = await decl.invoke('places', 'save', [{ name: '旧书店', areas: ['书架间'] }]);
+  assert.equal(elsewhere.ok, true, elsewhere.error);
+  const template = await decl.invoke('stories', 'template', [{ placeId: venue.venue.id }]);
+  const pack = { ...JSON.parse(template.json), id: 'winter-onsen', title: '温泉旅馆的一夜' };
+
+  // 照「像预设的编号」写成下划线：地点册的 id 规则造不出这种编号，原来导入后会永久失效。
+  pack.placeId = 'winter_onsen_inn';
+  const rejected = await decl.invoke('stories', 'import', [{ json: JSON.stringify(pack) }]);
+  assert.equal(rejected.ok, false);
+  assert.equal(rejected.placeMissing, true);
+  assert.equal(rejected.placeId, 'winter_onsen_inn');
+  assert.match(rejected.error, /在地点册里没有/);
+  assert.equal((await decl.invoke('stories', 'list', [])).packs.some((item) => item.id === pack.id), false,
+    '永远不触发的包不能留在库里');
+
+  const checked = await decl.invoke('stories', 'validate', [{ json: JSON.stringify(pack) }]);
+  assert.equal(checked.ok, true);
+  assert.equal(checked.placeMissing, true, '校验阶段就要告诉面板地点缺失，面板才能当场摆出绑定');
+
+  const bound = await decl.invoke('stories', 'import', [{ json: JSON.stringify(pack), bindPlaceId: venue.venue.id }]);
+  assert.equal(bound.ok, true, bound.error);
+  assert.equal(bound.placeId, venue.venue.id);
+  const saved = JSON.parse((await decl.invoke('stories', 'export', [{ id: pack.id }])).json);
+  assert.equal(saved.placeId, venue.venue.id, '落盘的是改绑后的地点编号');
+  const listed = (await decl.invoke('stories', 'list', [])).packs.find((item) => item.id === pack.id);
+  assert.equal(listed.available, true);
+  assert.equal(listed.placeMissing, false);
+  assert.equal(listed.placeId, venue.venue.id);
+
+  // 已入库的包可以改绑到另一处；区域对不上要如实给警告，而不是假装可用。
+  const moved = await decl.invoke('stories', 'rebind', [{ id: pack.id, placeId: elsewhere.venue.id }]);
+  assert.equal(moved.ok, true, moved.error);
+  assert.equal(moved.available, false);
+  assert.ok(moved.warnings.some((warning) => warning.includes('大厅')), '缺的区域要如实说出来');
+  const after = JSON.parse((await decl.invoke('stories', 'export', [{ id: pack.id }])).json);
+  assert.equal(after.placeId, elsewhere.venue.id);
+  assert.notEqual(moved.revision, listed.revision, '改绑会重算 revision，旧进度按规矩暂停');
+
+  const missingTarget = await decl.invoke('stories', 'rebind', [{ id: pack.id, placeId: 'user-gone' }]);
+  assert.equal(missingTarget.ok, false);
+  assert.match(missingTarget.error, /已经不在地点册/);
+
+  // 同一套操作也从「出游」面板的作者区走（那里嵌的就是故事工坊）：映射漏一版会静默变成 list。
+  const viaOuting = await decl.invoke('story', 'authorRebind', [{ id: pack.id, placeId: venue.venue.id }]);
+  assert.equal(viaOuting.ok, true, viaOuting.error);
+  assert.equal(JSON.parse((await decl.invoke('stories', 'export', [{ id: pack.id }])).json).placeId, venue.venue.id);
+});
+
 const storyViewData = () => ({ ok: true, packs: [{ id: 'user-offline', title: '暂存故事', description: '留待地点恢复', placeId: 'user-gone', placeName: '',
   enabled: true, builtin: false, available: false, warnings: ['地点已移除；区域「木桥」不可用'], revision: 'rev-1', nodeCount: 1 }],
   places: [{ id: 'user-yard', name: '自己的院子', areas: ['树下', '门口'] }], warnings: [] });
@@ -512,6 +574,45 @@ test('stories 列表 ok:false 可重试；缺失地点或区域标暂不可用�
   await mounted.refresh();
   assert.equal(root.querySelector('.fun-story-json'), draft);
   assert.deepEqual(invocations.map((call) => call.method), ['list', 'list', 'list']);
+});
+
+test('stories 地点编号对不上时，导入处与作品卡都能就地改绑', async () => {
+  const data = storyViewData();
+  Object.assign(data.packs[0], {
+    placeId: 'winter_onsen_inn', placeName: '', placeMissing: true, available: false,
+    warnings: ['这处地点「winter_onsen_inn」在地点册里没有。先新建它，或把故事包绑到已有地点。'],
+  });
+  const calls = [];
+  const { root } = await mountStoriesView({ invoke: async (_panel, method, args) => {
+    calls.push({ method, args });
+    if (method === 'list') return data;
+    if (method === 'import') return { ok: false, placeMissing: true, placeId: 'winter_onsen_inn',
+      error: '这个包绑定的地点「winter_onsen_inn」在地点册里没有。先在地点册新建这处，或导入时把它绑到已有地点。' };
+    if (method === 'rebind') return { ok: true, id: 'user-offline', placeId: args[0].placeId, message: '已把「暂存故事」绑到「自己的院子」。' };
+    return { ok: true };
+  } });
+
+  // 作品卡：说清包里写的编号，并给出同页改绑。（导入区的空壳先出现在 DOM 里，按类名排掉）
+  const bind = root.findAll((node) => node.classList.contains('fun-story-bind') && !node.classList.contains('fun-story-bind-import'))[0];
+  assert.match(bind.textContent, /winter_onsen_inn/);
+  const select = bind.querySelector('select');
+  assert.ok([...select.querySelectorAll('option')].some((option) => option.value === 'user-yard'));
+  select.value = 'user-yard'; select.fire('change');
+  bind.findByText('绑定到此处').fire();
+  await waitFor(() => calls.some((call) => call.method === 'rebind'), '改绑请求');
+  assert.deepEqual(calls.find((call) => call.method === 'rebind').args, [{ id: 'user-offline', placeId: 'user-yard' }]);
+  await waitFor(() => root.findByText('导入故事包').getAttribute('aria-disabled') !== 'true', '改绑请求收尾');
+
+  // 导入：包被拒后原地给出绑定下拉；选好再点一次导入，请求里带上 bindPlaceId。
+  const draft = root.querySelector('.fun-story-json');
+  draft.value = '{"id":"winter-onsen"}'; draft.fire('input');
+  root.findByText('导入故事包').fire();
+  await waitFor(() => root.querySelector('.fun-story-bind-import')?.hidden === false, '导入失败后出现改绑下拉');
+  const importSelect = root.querySelector('.fun-story-bind-import').querySelector('select');
+  importSelect.value = 'user-yard'; importSelect.fire('change');
+  root.findByText('导入故事包').fire();
+  await waitFor(() => calls.filter((call) => call.method === 'import').length === 2, '第二次导入');
+  assert.equal(calls.filter((call) => call.method === 'import')[1].args[0].bindPlaceId, 'user-yard');
 });
 
 test('stories pending 与刷新保留同一 textarea、光标内容；节点只按文本显示', async () => {
@@ -1348,8 +1449,8 @@ test('面板登记了定时刷新，并且能被宿主 dispose', async () => {
 
 test('英文界面也有标题，不回落成中文', async () => {
   const { mount, decl } = await mountPanels({ language: 'en' });
-  assert.equal(decl.panels.find((p) => p.id === 'places').title, 'Where to go');
-  assert.equal(decl.panels.find((p) => p.id === 'book').title, 'Trip book');
+  assert.equal(decl.panels.find((p) => p.id === 'outing').title, 'Go explore');
+  assert.equal(decl.panels.find((p) => p.id === 'journal').title, 'Memory Journal');
   const root = await mount('book');
   await waitFor(() => root.querySelector('.fun-empty'), '渲染出来');
   assert.ok(root.childNodes.length > 0);
@@ -1361,9 +1462,8 @@ test('面板标题互不相同：两个故事面板不能都叫「故事工坊�
   const { decl, mount } = await mountPanels();
   const titles = decl.panels.map((panel) => panel.title);
   assert.equal(new Set(titles).size, titles.length, `面板标题重复：${titles.join('、')}`);
-  assert.deepEqual(titles, ['家', '去哪儿', '地点册', '出游', '纪念册', '纪念品架', '故事工坊']);
-  const root = await mount('stories');
-  assert.match(root.textContent, /给下一次出游，写一个故事。/);
+  assert.deepEqual(titles, ['家', '自己去逛', '故事手账', '回忆手账']);
+  assert.deepEqual(Object.keys((await loadPanelClient()).default.panels).sort(), ['home', 'journal', 'outing', 'story']);
 });
 
 test('shelf 面板：空架子给一句话', async () => {
@@ -1457,7 +1557,7 @@ test('book 面板可珍藏和取消珍藏，重载后仍保留', async () => {
 
 test('shelf 面板：英文界面也有标题', async () => {
   const { decl } = await mountPanels({ language: 'en' });
-  assert.equal(decl.panels.find((p) => p.id === 'shelf').title, 'Shelf');
+  assert.equal(decl.panels.find((p) => p.id === 'journal').title, 'Memory Journal');
 });
 
 async function mountWishPanel(invokeWish = async () => ({ ok: true }), invokeList = (data) => structuredClone(data)) {
@@ -1468,7 +1568,7 @@ async function mountWishPanel(invokeWish = async () => ({ ok: true }), invokeLis
     { id: 'river', name: '江边', areas: ['步道'], phaseNames: ['清早', '夜里'], souvenirs: ['明信片'] },
     { id: 'yard', name: '小院', areas: ['藤椅'], phaseNames: [], souvenirs: [] },
   ] };
-  const mounted = bundle.default.panels.book.mount({ root, async invoke(method, args) {
+  const mounted = bundle.testMounts.book({ root, async invoke(method, args) {
     calls.push({ method, args });
     if (method === 'list') return invokeList(data);
     return invokeWish(args[0], data);
@@ -1714,7 +1814,7 @@ async function mountView(panel, data, handlers = {}) {
   const bundle = await loadPanelClient();
   const root = new Node('div');
   const calls = [];
-  const mounted = bundle.default.panels[panel].mount({ root, signal: { aborted: false },
+  const mounted = bundle.testMounts[panel]({ root, signal: { aborted: false },
     interval() { return { dispose() {} }; }, timeout() { return { dispose() {} }; },
     async invoke(method, args = []) {
       calls.push({ method, args });

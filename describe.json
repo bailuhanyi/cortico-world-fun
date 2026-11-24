@@ -441,7 +441,7 @@
     },
     {
       "name": "fun_story",
-      "description": "管理本地故事工坊：校验/预览只读，导入、启停、删除要指定 action。需打开「聊天里也能管故事」才挂。",
+      "description": "管理本地故事工坊：校验/预览只读，导入、改绑地点、启停、删除要指定 action。需打开「聊天里也能管故事」才挂。",
       "parameters": {
         "type": "object",
         "properties": {
@@ -455,6 +455,7 @@
               "playtest",
               "export",
               "import",
+              "rebind",
               "enable",
               "disable",
               "remove"
@@ -470,7 +471,11 @@
           },
           "placeId": {
             "type": "string",
-            "description": "template 绑定的地点 ID（list 可查）。"
+            "description": "template 绑定的地点 ID；rebind 要绑到的新地点 ID（list 可查）。"
+          },
+          "bindPlaceId": {
+            "type": "string",
+            "description": "import 时把包里不存在的地点改绑到这处已有地点。"
           },
           "mode": {
             "type": "string",

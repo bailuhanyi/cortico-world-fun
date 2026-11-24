@@ -383,6 +383,11 @@ var CSS = `
 .fun-story-file-note{margin:0;font-size:11.5px;color:var(--fs-dim)}
 .fun-story-file-note[data-state=ok]{color:var(--fs-accent)}
 .fun-story-file-note[data-state=error]{color:var(--fs-error)}
+/* 地点编号对不上时的就地改绑（导入失败与作品卡共用） */
+.fun-story-bind{margin:8px 0;padding:8px 10px;border:1px dashed var(--fs-line);border-radius:10px;background:color-mix(in srgb,var(--fs-accent) 5%,var(--fs-card))}
+.fun-story-bind>.fun-story-note{margin:0 0 4px}
+.fun-story-bind .fun-story-row{margin:0}
+.fun-story-bind .fun-story-bind-place{max-width:100%}
 @media(max-width:520px){.fun-story-group-content{padding-inline:9px}.fun-story-sticky-actions{bottom:4px;padding:8px}.fun-story-sticky-actions .fun-story-row{align-items:stretch}.fun-story-sticky-actions .fun-story-row>button{flex:1}.fun-story-sticky-actions .fun-story-sticky-status{width:100%;margin:0;text-align:center}}
 /* 作品库：一个创建入口 + 作品卡；去掉右栏，正文收窄到 1040 居中 */
 .fun-story-head{display:flex;justify-content:space-between;align-items:flex-start;gap:14px 18px;flex-wrap:wrap;padding-bottom:14px;margin-bottom:18px;border-bottom:1px solid var(--fs-line)}
@@ -1051,10 +1056,34 @@ function mountStories(ctx) {
   const overwrite = el("input", { type: "checkbox", class: "fun-story-overwrite" });
   const editorReport = feedback2();
   const editorResult = el("div", { class: "fun-story-result" });
+  const importBind = el("div", { class: "fun-story-bind fun-story-bind-import", hidden: true });
+  let bindTarget = "";
+  function hideImportBind() {
+    importBind.hidden = true;
+    importBind.replaceChildren();
+    bindTarget = "";
+  }
+  function showImportBind(placeId) {
+    const venues = lastData?.places ?? [];
+    if (!venues.length) return;
+    const select = el("select", { class: "fun-story-bind-place", "aria-label": "导入时绑定到的地点" });
+    select.appendChild(el("option", { value: "" }, "选择要绑定到的地点"));
+    for (const venue of venues) select.appendChild(el("option", { value: venue.id }, `${venue.name || venue.id} · ${venue.id}`));
+    select.value = venues.some((venue) => venue.id === bindTarget) ? bindTarget : "";
+    select.addEventListener("change", () => {
+      bindTarget = select.value;
+    });
+    importBind.replaceChildren(
+      el("p", { class: "fun-story-note" }, `包里写的地点编号「${placeId}」在地点册里没有。选一处现有地点，再点「导入故事包」，这次会直接把包绑过去。`),
+      el("div", { class: "fun-story-row" }, select)
+    );
+    importBind.hidden = false;
+  }
   draft.addEventListener("input", () => {
     draftEdits += 1;
     if (!busy) editorReport.set();
     editorResult.replaceChildren();
+    hideImportBind();
     updateDirty();
   });
   const editingLabel = el("p", { class: "fun-story-note fun-story-editing", role: "status" });
@@ -1081,7 +1110,10 @@ function mountStories(ctx) {
       const edits = draftEdits;
       const placeId = place.value;
       const args = method === "template" ? placeId ? { placeId } : {} : { json };
-      if (method === "import" && overwrite.checked) args.replace = true;
+      if (method === "import") {
+        if (overwrite.checked) args.replace = true;
+        if (bindTarget) args.bindPlaceId = bindTarget;
+      }
       editorResult.replaceChildren();
       void run(editorReport, pending, method, args, async (result) => {
         const changed = draftEdits !== edits || draft.value !== json;
@@ -1102,13 +1134,17 @@ function mountStories(ctx) {
           }
           editorReport.set(result.ok ? changed || draft.value !== result.json ? "草稿已修改，保留当前内容。" : "模板已填入。" : "", result);
         } else if (method === "validate") {
-          editorReport.set(previous + (result.ok ? "校验通过。" : "校验未通过。"), result);
+          editorReport.set(previous + (result.ok ? result.placeMissing ? "结构校验通过，但包里的地点在本地没有。" : "校验通过。" : "校验未通过。"), result);
+          if (result.ok && result.placeMissing) showImportBind(result.pack?.placeId ?? "");
         } else if (method === "preview") {
           editorReport.set(previous + (result.ok ? "只读预览已生成。" : "预览失败。"), result);
           if (result.ok) editorResult.appendChild(previewGraph(result));
+          if (result.ok && result.placeMissing) showImportBind(result.placeId ?? "");
         } else {
           editorReport.set(previous + (result.ok ? `已导入${result.id ? ` · ${result.id}` : ""}。` : "导入失败。"), result);
+          if (!result.ok && result.placeMissing) showImportBind(result.placeId ?? "");
           if (result.ok) {
+            hideImportBind();
             if (!changed) jsonBaseline = json;
             overwrite.checked = false;
             updateDirty();
@@ -1253,6 +1289,7 @@ function mountStories(ctx) {
       editAction("导入故事包", "import", "正在导入…"),
       el("label", { class: "fun-story-field" }, overwrite, "覆盖同 ID 故事包")
     ),
+    importBind,
     editorReport.node,
     editorResult
   );
@@ -1363,6 +1400,31 @@ function mountStories(ctx) {
       cancel.focus();
     }, "fun-story-danger");
     const warnings = pack.warnings?.length ? pack.warnings : pack.available === false ? ["绑定地点或区域当前不匹配。"] : [];
+    const placeBind = pack.placeMissing ? (() => {
+      const venues = lastData?.places ?? [];
+      const select = el("select", { class: "fun-story-bind-place", "aria-label": `把「${title}」绑定到的地点` });
+      select.appendChild(el("option", { value: "" }, "选择要绑定到的地点"));
+      for (const venue of venues) select.appendChild(el("option", { value: venue.id }, `${venue.name || venue.id} · ${venue.id}`));
+      const apply = pack.builtin ? null : packAction("绑定到此处", "bind", () => {
+        if (!select.value) {
+          report.set("先在下拉里选一处地点。");
+          return;
+        }
+        const target = select.value;
+        void run(report, "正在绑定…", "rebind", { id: pack.id, placeId: target }, async (result) => {
+          report.set("", result);
+          if (!result.ok) return;
+          libraryReport.set(result.message || "已绑定。", result);
+          await load();
+        });
+      });
+      return el(
+        "div",
+        { class: "fun-story-bind" },
+        el("p", { class: "fun-story-note" }, `包里写的地点编号是「${pack.placeId}」，本地没有这处。`),
+        apply && venues.length ? el("div", { class: "fun-story-row" }, select, apply) : null
+      );
+    })() : null;
     const cover = el("div", { class: "fun-story-cover", "aria-hidden": "true" });
     cover.innerHTML = venueArtwork(pack.placeId || "");
     const body = el(
@@ -1380,6 +1442,7 @@ function mountStories(ctx) {
       metadata ? el("p", { class: "fun-story-note" }, `作者：${metadata.author} · 类型：${metadata.genre} · ${metadata.participation === "duo" ? "双人" : "单人"} · 时长：${durationLabel}`) : el("p", { class: "fun-story-note" }, `时长未知 · ${pack.nodeCount} 个节点不用于估算时长`),
       pack.description ? el("p", {}, pack.description) : null,
       warnings.length ? el("div", { class: "fun-story-note" }, messageList(warnings)) : null,
+      placeBind,
       el(
         "div",
         { class: "fun-story-row" },
@@ -7982,17 +8045,69 @@ function mountShelf(ctx) {
   void load();
   return { refresh: load };
 }
+function mergedPanel(ctx, sections, initial = 0) {
+  const doc = ctx.root.ownerDocument;
+  const nav = doc.createElement("div");
+  nav.className = "fun-panel-tabs";
+  nav.setAttribute("role", "tablist");
+  const panes = sections.map((section, index) => {
+    const pane = doc.createElement("section");
+    pane.hidden = index !== initial;
+    pane.setAttribute("role", "tabpanel");
+    const button2 = doc.createElement("button");
+    button2.type = "button";
+    button2.textContent = section.title;
+    button2.setAttribute("role", "tab");
+    button2.setAttribute("aria-selected", index === initial ? "true" : "false");
+    button2.addEventListener("click", () => {
+      sections.forEach((_, i) => {
+        panes[i].hidden = i !== index;
+        nav.children[i].setAttribute("aria-selected", i === index ? "true" : "false");
+      });
+    });
+    nav.appendChild(button2);
+    ctx.root.appendChild(pane);
+    const childCtx = { ...ctx, root: pane, invoke: (method, args = []) => ctx.invoke(method, [...args, { __panelSource: section.source }]) };
+    section.mount(childCtx);
+    return pane;
+  });
+  ctx.root.prepend(nav);
+}
+function mountOuting(ctx) {
+  mergedPanel(ctx, [
+    { title: "此刻去逛", source: "places", mount: mountPlaces2 },
+    { title: "地点册", source: "locations", mount: mountPlaces }
+  ]);
+}
+function mountJournal(ctx) {
+  mergedPanel(ctx, [
+    { title: "行程手账", source: "book", mount: mountBook },
+    { title: "珍藏柜", source: "shelf", mount: mountShelf }
+  ]);
+}
+function mountStoryJournal(ctx) {
+  const doc = ctx.root.ownerDocument;
+  const main = doc.createElement("section");
+  const more = doc.createElement("details");
+  more.className = "fun-more-stories";
+  const summary = doc.createElement("summary");
+  summary.textContent = "更多故事";
+  const authors = doc.createElement("div");
+  more.append(summary, authors);
+  ctx.root.replaceChildren(main, more);
+  mountFishStory({ ...ctx, root: main });
+  mountStories({ ...ctx, root: authors });
+}
+var testMounts = { home: mountHome, places: mountPlaces2, locations: mountPlaces, story: mountFishStory, stories: mountStories, book: mountBook, shelf: mountShelf };
 var webui_default = {
   panels: {
     home: { mount: mountHome },
-    places: { mount: mountPlaces2 },
-    book: { mount: mountBook },
-    shelf: { mount: mountShelf },
-    locations: { mount: mountPlaces },
-    story: { mount: mountFishStory },
-    stories: { mount: mountStories }
+    outing: { mount: mountOuting },
+    story: { mount: mountStoryJournal },
+    journal: { mount: mountJournal }
   }
 };
 export {
-  webui_default as default
+  webui_default as default,
+  testMounts
 };

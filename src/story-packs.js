@@ -526,26 +526,35 @@ function validateFreePack(value, errors) {
   return { ok: true, pack: { ...content, revision: canonicalRevision(content) }, errors: [] };
 }
 
-/** Check whether a structurally valid pack can be used with a venue catalog. */
-export function storyAvailability(pack, venues, completedStoryIds = []) {  const warnings = [];
+/**
+ * Check whether a structurally valid pack can be used with a venue catalog.
+ *
+ * 每条警告都直接说明「差什么、去哪儿补」：这里的中文会原样出现在故事工坊的作品卡和
+ * `fun_story` 的列表回执里，玩家就是靠它判断「导进去了为什么一直不触发」。
+ * `placeMissing` / `missingAreas` 另给一份结构化结果，面板据此直接摆出「绑定到现有地点」，
+ * 不必去解析文案。
+ */
+export function storyAvailability(pack, venues, completedStoryIds = []) {
+  const warnings = [];
   const venueList = Array.isArray(venues) ? venues : (venues ? [venues] : []);
-  const venue = venueList.find((item) => item?.id === pack?.placeId);
-  const placeName = typeof venue?.name === 'string' ? venue.name : (pack?.placeId ?? '');
+  const placeId = typeof pack?.placeId === 'string' ? pack.placeId : '';
+  const venue = venueList.find((item) => item?.id === placeId);
+  const placeName = typeof venue?.name === 'string' ? venue.name : placeId;
   if (!venue) {
-    warnings.push(`Place “${pack?.placeId ?? ''}” is not available.`);
-    return { available: false, placeName, warnings };
+    warnings.push(`这处地点「${placeId}」在地点册里没有。先新建它，或把故事包绑到已有地点。`);
+    return { available: false, placeMissing: true, placeId, placeName, warnings };
   }
   const venueAreas = new Set(Array.isArray(venue.areas) ? venue.areas : []);
   const missingAreas = [...new Set((Array.isArray(pack.nodes) ? pack.nodes : []).map((node) => node?.area).filter((area) => typeof area === 'string' && !venueAreas.has(area)))];
-  if (missingAreas.length) warnings.push(`Missing areas: ${missingAreas.join(', ')}.`);
+  if (missingAreas.length) warnings.push(`「${placeName}」缺少故事要用的区域：${missingAreas.join('、')}。在地点册的「能逛的」里补上同名的区域。`);
   const phases = new Set(Array.isArray(venue.phases) ? venue.phases.map((phase) => phase?.key).filter((key) => typeof key === 'string') : []);
   const referencedPhases = [...new Set((Array.isArray(pack.nodes) ? pack.nodes : []).flatMap((node) => node?.when?.phases ?? []))];
   const missingPhases = referencedPhases.filter((key) => !phases.has(key));
-  if (missingPhases.length) warnings.push(`Unsupported phases: ${missingPhases.join(', ')}.`);
+  if (missingPhases.length) warnings.push(`「${placeName}」没有故事要用的时段：${missingPhases.join('、')}。`);
   const completed = completedStoryIds instanceof Set ? completedStoryIds : new Set(Array.isArray(completedStoryIds) ? completedStoryIds : []);
   const missingStoryIds = (pack?.metadata?.requiresCompleted ?? []).filter((id) => !completed.has(id));
-  if (missingStoryIds.length) warnings.push(`Requires completed canonical stories: ${missingStoryIds.join(', ')}.`);
-  return { available: warnings.length === 0, placeName, warnings, ...(missingStoryIds.length ? { missingStoryIds } : {}) };
+  if (missingStoryIds.length) warnings.push(`要先完成这些故事：${missingStoryIds.join('、')}。`);
+  return { available: warnings.length === 0, placeMissing: false, placeId, placeName, warnings, ...(missingAreas.length ? { missingAreas } : {}), ...(missingStoryIds.length ? { missingStoryIds } : {}) };
 }
 
 function progressId(value) {

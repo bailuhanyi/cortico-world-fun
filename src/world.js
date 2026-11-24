@@ -300,12 +300,13 @@ export const FUN_TOOL_DECLS = [
   {
     name: 'fun_story',
     tags: ['write'],
-    description: '管理本地故事工坊：校验/预览只读，导入、启停、删除要指定 action。需打开「聊天里也能管故事」才挂。',
+    description: '管理本地故事工坊：校验/预览只读，导入、改绑地点、启停、删除要指定 action。需打开「聊天里也能管故事」才挂。',
     parameters: { type: 'object', properties: {
-      action: { type: 'string', enum: ['list', 'template', 'validate', 'preview', 'playtest', 'export', 'import', 'enable', 'disable', 'remove'] },
+      action: { type: 'string', enum: ['list', 'template', 'validate', 'preview', 'playtest', 'export', 'import', 'rebind', 'enable', 'disable', 'remove'] },
       id: { type: 'string', description: '已有包 ID（list 取）。' },
       json: { type: 'string', description: '完整包 JSON，≤32 KB；validate/preview 不保存。' },
-      placeId: { type: 'string', description: 'template 绑定的地点 ID（list 可查）。' },
+      placeId: { type: 'string', description: 'template 绑定的地点 ID；rebind 要绑到的新地点 ID（list 可查）。' },
+      bindPlaceId: { type: 'string', description: 'import 时把包里不存在的地点改绑到这处已有地点。' },
       mode: { type: 'string', enum: ['static', 'free'], description: 'template 类型：static 选项式（默认）/ free 场景包。' },
       area: { type: 'string', description: 'preview 的项目，默认起始项目。' },
       time: { type: 'string', description: 'preview 的测试时刻 HH:MM，默认现在。' },
@@ -1922,21 +1923,18 @@ export class FunWorld {
           methods: ['setActivity', 'setNote', 'setPlan', 'resume', 'setBackground', 'clearBackground', 'setForeground', 'clearForeground', 'setCharacter', 'clearCharacter', 'saveHotspots', 'savePlacements', 'setPainting', 'clearPainting', 'snapshotSave', 'snapshotRemove', 'importRoom', 'resetRoom'],
         },
         {
-          id: 'places',
-          title: p.places.title,
-          description: p.places.description,
-          // getMethods 是**只读**方法；save/remove/reset/resetAll 是写方法，
-          // 单独声明给宿主看，免得面板被当成纯展示、宿主判定它不需要刷新。
+          id: 'outing', title: this.language === 'en' ? 'Go explore' : '自己去逛',
+          description: this.language === 'en' ? 'Explore places and manage the place library.' : '推荐并管理能去逛的地方。',
           getMethods: ['list', 'blank', 'history'],
-          methods: ['save', 'remove', 'reset', 'resetAll', 'resume', 'closeDraft'],
+          methods: ['save', 'remove', 'reset', 'resetAll', 'resume', 'closeDraft', 'get', 'cover', 'create', 'update', 'setHome', 'setDefaultStyle', 'setCover', 'clearCover', 'previewImport', 'commitImport', 'restoreImport'],
         },
-        { id: 'locations', title: '地点册', description: '编辑全部地点（场所 + 画风 + 关联 + 封面），管理住所，迁入小世界备份。', getMethods: ['list'], methods: ['get', 'cover', 'create', 'update', 'remove', 'reset', 'resetAll', 'setHome', 'setDefaultStyle', 'setCover', 'clearCover', 'previewImport', 'commitImport', 'restoreImport'] },
-        { id: 'story', title: this.language === 'en' ? 'Outing' : '出游', description: this.language === 'en' ? 'Start from the fish home, play a text story, write one, and configure optional DM and images.' : '从鱼的家出发，游玩文字剧情、编写故事，并设置可选主持与图片。',
-          getMethods: ['status', 'storySettings', 'storyImageRead', 'authorList', 'authorTemplate', 'authorValidate', 'authorPreview', 'authorPlaytest', 'authorExport'],
-          methods: [...STORY_ACTIONS, 'locationCover', 'saveStorySettings', 'saveStoryAutoImages', 'clearStoryKey', 'storyImage', 'authorImport', 'authorEnable', 'authorDisable', 'authorRemove'] },
-        { id: 'book', title: p.book.title, description: p.book.description, getMethods: ['list'], methods: ['favorite', 'wish'] },
-        { id: 'shelf', title: p.shelf.title, description: p.shelf.description, getMethods: ['list', 'trip'] },
-        { id: 'stories', title: this.language === 'en' ? 'Story Workshop' : '故事工坊', description: this.language === 'en' ? 'Import, validate, preview and manage locally written story packs.' : '导入、校验、预览和管理本地原创剧情包。', getMethods: ['list', 'template', 'validate', 'preview', 'playtest', 'export'], methods: ['import', 'enable', 'disable', 'remove'] },
+        {
+          id: 'story', title: this.language === 'en' ? 'Story Journal' : '故事手账',
+          description: this.language === 'en' ? 'Play free stories and manage story packs.' : '开启自由故事、推进剧情并管理故事包。',
+          getMethods: ['status', 'storySettings', 'storyImageRead', 'authorList', 'authorTemplate', 'authorValidate', 'authorPreview', 'authorPlaytest', 'authorExport', 'list', 'template', 'validate', 'preview', 'playtest', 'export'],
+          methods: [...STORY_ACTIONS, 'locationCover', 'saveStorySettings', 'saveStoryAutoImages', 'clearStoryKey', 'storyImage', 'authorImport', 'authorRebind', 'authorEnable', 'authorDisable', 'authorRemove', 'import', 'rebind', 'enable', 'disable', 'remove'],
+        },
+        { id: 'journal', title: this.language === 'en' ? 'Memory Journal' : '回忆手账', description: this.language === 'en' ? 'Browse trips and keepsakes.' : '回看行程并整理珍藏。', getMethods: ['list', 'trip'], methods: ['favorite', 'keep'] },
       ],
       invoke: (panel, method, args) => this.#invoke(panel, method, args ?? []),
       config: [configGroup(this.language)],
@@ -2802,10 +2800,10 @@ export class FunWorld {
   }
 
   async #invokeStory(method, payload) {
-    const author = { authorList: 'list', authorTemplate: 'template', authorValidate: 'validate', authorPreview: 'preview', authorPlaytest: 'playtest', authorExport: 'export', authorImport: 'import', authorEnable: 'enable', authorDisable: 'disable', authorRemove: 'remove' }[method];
+    const author = { authorList: 'list', authorTemplate: 'template', authorValidate: 'validate', authorPreview: 'preview', authorPlaytest: 'playtest', authorExport: 'export', authorImport: 'import', authorRebind: 'rebind', authorEnable: 'enable', authorDisable: 'disable', authorRemove: 'remove' }[method];
     if (author) {
       const act = () => this.#storyLibrary.act({ ...payload, action: author });
-      return ['import', 'enable', 'disable', 'remove'].includes(author) ? this.#serial(act) : act();
+      return ['import', 'rebind', 'enable', 'disable', 'remove'].includes(author) ? this.#serial(act) : act();
     }
     if (method === 'storySettings') return this.#storySettings();
     if (method === 'saveStorySettings') return this.#serial(() => this.#saveStorySettings(payload));
@@ -3196,15 +3194,47 @@ export class FunWorld {
       this.#ensureStarted();
       const payload = args?.[0] ?? {};
       if (panel === 'home') return await this.#invokeHome(method, payload);
+      if (panel === 'outing' && ['locationList', 'locationGet', 'locationCover', 'locationPreviewImport', 'locationCommitImport', 'locationCreate', 'locationUpdate', 'locationRemove', 'locationReset', 'locationResetAll', 'locationSetHome', 'locationSetDefaultStyle', 'locationSetCover', 'locationClearCover', 'locationRestoreImport'].includes(method)) {
+        const locationMethod = method.slice('location'.length);
+        return await this.#invokeLocations(locationMethod[0].toLowerCase() + locationMethod.slice(1), payload);
+      }
+      if (panel === 'outing' && method.startsWith('place')) {
+        const placeMethod = method.slice('place'.length);
+        method = placeMethod[0].toLowerCase() + placeMethod.slice(1);
+        panel = 'places';
+      }
+      if (panel === 'outing' && ['get', 'cover', 'create', 'update', 'setHome', 'setDefaultStyle', 'setCover', 'clearCover', 'previewImport', 'commitImport', 'restoreImport'].includes(method)) return await this.#invokeLocations(method, payload);
+      if (panel === 'outing' && ['list', 'remove', 'reset', 'resetAll'].includes(method) && args?.at(-1)?.__panelSource === 'locations') return await this.#invokeLocations(method, payload);
+      if (panel === 'outing' && ['list', 'remove', 'reset', 'resetAll', 'blank', 'history', 'resume', 'closeDraft', 'save'].includes(method)) panel = 'places';
+      if (panel === 'home') return await this.#invokeHome(method, payload);
       if (panel === 'locations') return await this.#invokeLocations(method, payload);
       if (panel === 'story') {
+        if (['list', 'template', 'validate', 'preview', 'playtest', 'export', 'import', 'rebind', 'enable', 'disable', 'remove'].includes(method)) {
+          const reads = ['list', 'template', 'validate', 'preview', 'playtest', 'export'];
+          const payload = { ...(args?.[0] ?? {}), action: method };
+          if (reads.includes(method)) return await this.#storyLibrary.act(payload);
+          this.#bumpCache();
+          return await this.#serial(() => this.#storyLibrary.act(payload));
+        }
         if (method === 'locationCover') return await this.#invokeLocations('cover', payload);
         return await this.#storyLocations(await this.#invokeStory(method, payload));
       }
-      if (this.#stateError && (panel === 'book' || panel === 'shelf' || (panel === 'places' && method === 'history'))) return storyFailure(this.#stateError);
+      if (this.#stateError && (panel === 'journal' || (panel === 'places' && method === 'history'))) return storyFailure(this.#stateError);
+      if (panel === 'journal') {
+        const source = args?.at(-1)?.__panelSource;
+        if (method === 'list') return source === 'shelf' ? this.#shelfData() : this.#bookData();
+        if (method === 'trip') return this.#tripLookup({ id: payload.id }, true);
+        if (method === 'favorite') return await this.#favorite(payload.id, payload.keep !== false);
+        if (method === 'keep') {
+          const result = favoriteTrip(this.#state, payload.id, payload.keep !== false);
+          if (result.ok) await this.#save();
+          return result;
+        }
+        throw new Error('journal does not support method ' + method);
+      }
       if (panel === 'stories') {
         const reads = ['list', 'template', 'validate', 'preview', 'playtest', 'export'];
-        const writes = ['import', 'enable', 'disable', 'remove'];
+        const writes = ['import', 'rebind', 'enable', 'disable', 'remove'];
         const payload = { ...(args?.[0] ?? {}), action: method };
         if (reads.includes(method)) return await this.#storyLibrary.act(payload);
         if (writes.includes(method)) {
@@ -3251,7 +3281,7 @@ export class FunWorld {
       }
       throw new Error(`不认识的面板：${panel}`);
     } catch (err) {
-      return { ok: false, error: msg(err), ...((panel === 'locations' || panel === 'home') && typeof err?.code === 'string' ? { code: err.code } : {}) };
+      return { ok: false, error: msg(err), ...((panel === 'locations' || panel === 'outing' || panel === 'home') && typeof err?.code === 'string' ? { code: err.code } : {}) };
     }
   }
 
