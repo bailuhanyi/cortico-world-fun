@@ -152,6 +152,10 @@ class Node {
     for (const c of this.childNodes) yield* c.walk();
   }
 
+  contains(node) {
+    return [...this.walk()].includes(node);
+  }
+
   querySelector(sel) {
     return this.querySelectorAll(sel)[0] ?? null;
   }
@@ -175,6 +179,7 @@ class Node {
 
 globalThis.document = {
   createElement: (tag) => new Node(tag),
+  createElementNS: (_namespace, tag) => new Node(tag),
   createTextNode: (t) => Object.assign(new Node('#text'), { _text: String(t) }),
   activeElement: null,
   addEventListener() {},
@@ -282,6 +287,23 @@ test('bundle 单文件加载：面板 id 与服务端声明一一对上，mount 
     assert.equal(typeof b.default.panels[id].mount, 'function', `${id} 缺 mount`);
   }
   assert.ok(!Array.isArray(b.default.panels));
+});
+
+test('故事手账移除作品区外层折叠，并保留唯一「更多故事」入口及内容', async () => {
+  const { mount, root } = await mountPanels();
+  await mount('merged-story');
+  // 面板首屏是异步取数的：等折叠入口出现，别用固定次数的 tick 赌时序。
+  const moreStories = await waitFor(() => {
+    const found = [...root.querySelectorAll('details')]
+      .filter((item) => item.querySelector('summary')?.textContent.trim() === '更多故事');
+    return found.length ? found : null;
+  }, '故事手账的「更多故事」折叠入口');
+  assert.equal(moreStories.length, 1, '选项式故事只保留目录内的折叠入口');
+  assert.ok(moreStories[0].querySelector('.sw-story-grid'), '折叠内的选项式故事卡仍渲染');
+  assert.equal(root.querySelector('.fun-more-stories'), null, '作品区不再被「更多故事」折叠包裹');
+  assert.equal(root.childNodes.length, 2, '自由故事区与作品区都直接呈现');
+  assert.equal(root.childNodes[1].tagName, 'SECTION');
+  assert.ok(root.childNodes[1].textContent.trim().length > 0, '作品与作者功能仍挂载');
 });
 
 test('服务端面板声明带 getMethods，且声明的方法真的能调', async () => {
