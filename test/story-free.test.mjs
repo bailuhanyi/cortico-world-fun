@@ -59,11 +59,11 @@ async function boot(t, options = {}) {
   const replies = [...(options.replies ?? [])];
   const requests = [];
   const cognition = {
-    request: async (payload) => {
+    request: options.request ?? (async (payload) => {
       requests.push(payload);
       const next = replies.shift();
       return { text: typeof next === 'string' ? next : JSON.stringify(next ?? { narration: narration() }) };
-    },
+    }),
   };
   const cfg = { enabled: true, funStoryTextOn: true, funStoryFree: true, ...(options.cfg ?? {}) };
   const world = new FunWorld({ dataDir: dir, cfg, timezone: 'Asia/Shanghai', now: () => Date.parse(AT), random: () => 0 });
@@ -599,4 +599,22 @@ test('自由模式自演：签票的一句走正常主持通道，回执记在�
   const manual = await b.panel('story', 'say', { tripId: said.trip.id, stamp: said.trip.stamp, say: '我自己来一句。' });
   assert.equal(manual.ok, true, manual.error);
   assert.equal(manual.autoplay, false, '你说了一句就是接管');
+});
+
+test('主持还在路上时，status 不会被排到锁后面', async (t) => {
+  const waiting = [];
+  const b = await boot(t, { request: () => new Promise((resolve) => { waiting.push(resolve); }) });
+  await startFree(b);
+  const before = await b.panel('story', 'status');
+  const steps = { tripId: before.trip.id, stamp: before.trip.stamp };
+  const saying = b.panel('story', 'say', { ...steps, say: '我先进屋。' });
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  const started = Date.now();
+  const during = await b.panel('story', 'status');
+  const waited = Date.now() - started;
+  assert.ok(waited < 1000, 'status 不该等主持，实际等了 ' + waited + 'ms');
+  assert.equal(during.trip.stamp, steps.stamp, '这一回合还没提交');
+  waiting.shift()({ text: JSON.stringify({ narration: narration() }) });
+  const done = await saying;
+  assert.equal(done.ok, true, done.error);
 });

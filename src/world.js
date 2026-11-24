@@ -2871,7 +2871,14 @@ export class FunWorld {
     }
     if (method === 'dmPropose') return this.#proposeStoryDM(payload);
     if (method === 'dmCancel') return this.#serial(() => { this.#dm.cancel(); return this.#storyStatus(payload.token); });
-    if (method === 'status' || method === 'dmStatus') return this.#serial(() => this.#storyStatus(payload.token));
+    // 只读：不排进 #serial。一次主持调用最长 120 秒，若 status 也跟着排队，
+    // 面板打开时会以「宿主请求超时」收场——它读的只是已经提交的那份状态。
+    if (method === 'status' || method === 'dmStatus') return this.#storyStatus(payload.token);
+    // 暂停只清租约、不写盘：同样不该等一次主持调用跑完，否则「停」要等两分钟。
+    if (method === 'pause') {
+      if (typeof payload.token === 'string' && typeof payload.tripId === 'string') this.#autonomy.pause(payload.tripId, payload.token);
+      return this.#storyStatus(payload.token);
+    }
     if (method === 'saveParty' || method === 'ackFreeDefault') return this.#serial(async () => {
       const next = this.#normalizeState();
       if (method === 'saveParty') {
