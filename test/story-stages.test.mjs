@@ -165,7 +165,7 @@ test('duo owner, joint disagreement, fish and ending use explicit actors across 
   const forged = await r.tool('fun_wander', { area: s.trip.nextArea });
   assert.equal(forged.failed, true);
   s = ok(await r.rpc('move', step(s)));
-  assert.equal((await r.tool('fun_choice', { choiceId: s.trip.pending.id, optionId: 'window-seat' })).failed, true);
+  assert.equal(r.world.tools().some((row) => row.name === 'fun_choice'), false, '旧选项入口已合并，不再暴露');
   s = ok(await r.rpc('choose', choice(s, 'window-seat')));
   s = ok(await r.rpc('move', step(s)));
   assert.equal(s.trip.actor, 'owner');

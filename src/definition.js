@@ -63,6 +63,8 @@ const TOOL_SUMMARIES = {
     zh: '珍藏或取消珍藏一趟行程，不影响纪念册近期列表和长期收藏。',
     en: 'Keep or unkeep a trip without changing the recent trip book or permanent collection.',
   },
+  fun_home_room: { zh: '查看房间状态，可切换活动或写备注，不会写入经历。', en: 'Read the room, change an activity, or add a note without recording an outing.' },
+  fun_journal: { zh: '查看行程、纪念品或珍藏，也可珍藏或取消珍藏行程。', en: 'Browse trips, souvenirs, or keepsakes; keep or unkeep a trip.' },
   fun_story: {
     zh: '管理、校验与预览本地故事工坊，支持自填地点。',
     en: 'Manage, validate, and preview local story packs, including custom places.',

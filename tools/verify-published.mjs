@@ -215,17 +215,20 @@ try {
       ok(false, `${id} 面板取数成功`, error?.message ?? String(error));
     }
   }
-  const places = lists.get('places');
+  const places = lists.get('outing');
   // 绑包里那份预设库，别写死数字：0.1.4 从 12 处加到 20 处时，写死的 12 让验包一直红。
   // dataDir 是临时空目录，纯预设、没有用户自填，total 应当正好等于预设数。
   const presetCount = Array.isArray(mod.VENUES) ? mod.VENUES.length : null;
   ok(presetCount !== null, '包里导出了 VENUES（能拿到预设场所数）');
   ok(presetCount !== null && places?.total === presetCount,
     `${presetCount ?? '?'} 处预设场所（实际 ${places?.total}）`);
-  const book = lists.get('book');
+  // 0.8.0 起页签收成 4 个：行程与珍藏都在 journal 下，靠 __panelSource 分页。
+  const book = lists.get('journal');
   ok(book?.total === 1, `纪念册里有一趟（实际 ${book?.total}）`);
   ok(book?.trips?.[0]?.visited?.includes('海底隧道'), '纪念册记下游逛项目');
   ok(book?.trips?.[0]?.souvenirs?.includes('鲸鱼挂件'), '纪念册记下所买纪念品');
+  const shelf = await ui.invoke('journal', 'list', [{}, { __panelSource: 'shelf' }]);
+  ok(shelf?.ok === true && (shelf.total ?? 0) >= 1, '珍藏柜取数成功', shelf?.error);
   await world.stop();
 
   console.log('8) 面板 bundle 能对上线上的服务端');

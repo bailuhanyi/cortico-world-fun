@@ -1,0 +1,33 @@
+import { test, report } from './harness.mjs';
+import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import { FUN_TOOL_DECLS, FunWorld } from '../src/world.js';
+import { funDefinition } from '../src/definition.js';
+import { DEFAULTS } from '../src/config.js';
+import { tempDir, trackWorld } from './tmp.mjs';
+
+const CONTRACTS = ['fun_places','fun_go','fun_wander','fun_home','fun_story_start','fun_story_act','fun_story_current','fun_story_recap','fun_story_places','fun_story_candidates','fun_story_detail','fun_story_schedule','fun_story'];
+test('0.8.0 工具声明、跨插件契约、运行时 handler 与 describe 数量固定', async () => {
+  assert.equal(FUN_TOOL_DECLS.length, 15);
+  const names = FUN_TOOL_DECLS.map(x => x.name);
+  for (const name of CONTRACTS) assert.ok(names.includes(name), name);
+  assert.equal(new Set(names).size, names.length);
+  const actSchema = FUN_TOOL_DECLS.find(x => x.name === 'fun_story_act').parameters.properties;
+  assert.deepEqual(actSchema.intent.enum, ['say', 'close', 'redo']);
+  assert.ok(actSchema.actions && FUN_TOOL_DECLS.find(x => x.name === 'fun_story_start').parameters.properties.party);
+  const prompt = await readFile(new URL('../src/ENV_PROMPT.md', import.meta.url), 'utf8');
+  assert.match(prompt, /不要每看到一句就调用/);
+  assert.match(prompt, /actions:\[\{who,say\}\]/);
+  const dir = await tempDir('fun-tools-contract-');
+  const world = trackWorld(new FunWorld({ cfg: { ...DEFAULTS, enabled: true }, dataDir: dir, persist() {} }));
+  await world.start({ log: { info() {}, warn() {} } });
+  const runtime = world.tools().map(x => x.name);
+  assert.equal(runtime.length, 14);
+  assert.ok(!runtime.includes('fun_story'));
+  for (const name of runtime) assert.ok(typeof world.tools().find(x => x.name === name)?.handler === 'function', name);
+  const described = funDefinition.describe.tools.map(x => x.name);
+  assert.deepEqual(described, names);
+  const output = JSON.parse(await readFile(new URL('../describe.json', import.meta.url), 'utf8'));
+  assert.deepEqual(output.tools.map(x => x.name), names);
+});
+report();

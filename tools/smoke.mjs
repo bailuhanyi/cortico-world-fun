@@ -76,18 +76,17 @@ await world.start(host);
 ok(logged.some(([m]) => /从0开始的肥鱼大冒险已启动/.test(m)), 'start 打了启动日志');
 
 const names = world.tools().map((t) => t.name).sort();
-// 七个工具：0.1.6 加了 fun_shelf（纪念品架）。
-// 这里不写死条数，只钉住「该有的都有」——加工具时不该因为数字变了就红。
-const MUST_HAVE = ['fun_go', 'fun_home', 'fun_places', 'fun_shelf', 'fun_start', 'fun_view', 'fun_wander'];
+// 0.8.0 公共工具契约；数量由 tools-contract.test.mjs 精确钉住。
+const MUST_HAVE = ['fun_go', 'fun_home', 'fun_home_room', 'fun_journal', 'fun_places', 'fun_wander'];
 const missing = MUST_HAVE.filter((n) => !names.includes(n));
 ok(!missing.length, `工具都在：${names.join(',')}${missing.length ? `（缺 ${missing.join(',')}）` : ''}`);
 const declared = FUN_TOOL_DECLS.map((t) => t.name);
 ok(names.every((n) => declared.includes(n)), 'tools() 里的每一项都在 FUN_TOOL_DECLS 里');
-// 默认：文字通道开着，只藏作者工具（23/24）。
-ok(names.length === declared.length - 1, `默认只差作者工具（${names.length}/${declared.length}）`);
+// 默认 14 个运行时工具；fun_story 作者工具保留声明但默认隐藏。
+ok(names.length === 14 && names.length === declared.length - 1, `默认 14 个工具（${names.length}/${declared.length}）`);
 const storyOff = new FunWorld({ cfg: { enabled: true, funStoryTextOn: false }, dataDir: dir, timezone: TZ });
 await storyOff.start(host);
-ok(storyOff.tools().length === declared.length - 7, '关掉文字通道后收起 7 个故事工具（17/24）');
+ok(storyOff.tools().length === 8, '关掉文字通道后保留 6 个非故事工具与 2 个故事只读查询');
 await storyOff.stop();
 for (const t of world.tools()) {
   ok(typeof t.handler === 'function', `${t.name} 有 handler`);
@@ -141,10 +140,10 @@ const home = await tool('fun_home')({});
 ok(/回家：这一趟在海洋馆/.test(home.text), 'fun_home 回家');
 ok(/scene 填「水族馆」/.test(home.text), '回家回执里的 scene 是水族馆');
 ok(/feast_life_play/.test(home.text), '回家回执指向 feast_life_play');
-const view = await tool('fun_view')({});
+const view = await tool('fun_journal')({ view: 'trips' });
 ok(/海洋馆/.test(view.text), '纪念册记得住');
-const start = await tool('fun_start')({});
-ok(/fun_go 进门/.test(start.text), 'fun_start 给出走法');
+const start = await tool('fun_places')({ now: true });
+ok(/fun_go 进门/.test(start.text), 'fun_places now 给出此刻走法');
 
 console.log('6) 坏输入不炸');
 const bad1 = await tool('fun_go')({ place: '火星' });
