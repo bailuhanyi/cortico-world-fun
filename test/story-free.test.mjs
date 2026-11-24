@@ -5,8 +5,8 @@ import { join } from 'node:path';
 import { FunWorld } from '../src/world.js';
 import { validateStoryPack } from '../src/story-packs.js';
 import {
-  applyFreeDelta, checkEnd, continueFreeSegment, effectiveMaxTurns, evaluateWhen, freeCanContinue, freeSegmentsLeft, freeTurn,
-  freeTurnsLeft, freeSummaryText, newFreeState, normalizeFreeActions, normalizeFreeState, normalizeStoryParty, parseFreeOutput, freePromptPayload,
+  applyFreeDelta, checkEnd, continueFreeSegment, effectiveMaxTurns, evaluateWhen, freeCanContinue, freeLinePayload, freeSegmentsLeft, freeTurn,
+  freeTurnsLeft, freeSummaryText, newFreeState, normalizeFreeActions, normalizeFreeState, normalizeStoryParty, parseFreeLine, parseFreeOutput, freePromptPayload,
 } from '../src/story-free.js';
 import { cleanup } from './tmp.mjs';
 
@@ -480,4 +480,74 @@ test('选项式故事的选择对不上时，先返回 proposalId，确认后才
   const confirmed = await b.json('fun_story_act', { tripId: started.tripId, stamp: moved.stamp, intent: 'say', proposalId: proposal.proposalId, optionId: 'walk' });
   assert.equal(confirmed.ok, true, confirmed.error);
   assert.equal(confirmed.chosen, 'walk');
+});
+
+// ---- 自由模式的自演（「鱼自己玩」） ------------------------------------------
+
+test('自演的一句只收 say / reason；给她的资料里没有结局、节拍和秘密', () => {
+  const good = parseFreeLine(JSON.stringify({ say: '我把灯杆接过来，先掂一掂它有多沉。', reason: '她想先确认自己拿得动' }));
+  assert.equal(good.ok, true, good.error);
+  assert.equal(good.say, '我把灯杆接过来，先掂一掂它有多沉。');
+  assert.equal(parseFreeLine(JSON.stringify({ say: '好' })).ok, false, '太短');
+  assert.equal(parseFreeLine(JSON.stringify({ say: '我走过去。', narration: '越权写旁白' })).ok, false, '多余字段');
+  assert.equal(parseFreeLine(JSON.stringify({ say: '我走过去。', reason: '  ' })).ok, false, '空理由');
+  assert.equal(parseFreeLine('不是 JSON').ok, false);
+  const long = parseFreeLine(JSON.stringify({ say: '字'.repeat(400) }));
+  assert.equal(long.ok, true);
+  assert.equal(long.say.length, 300, '超长按上限截断');
+
+  const setting = freePack().setting;
+  const payload = freeLinePayload(setting, newFreeState(setting));
+  assert.equal('ends' in payload, false, '不能让她看到结局原文');
+  assert.equal('beats' in payload, false, '不能给她下一拍');
+  assert.equal(JSON.stringify(payload).includes('secret'), false, '秘密一律不给');
+  assert.deepEqual(payload.canon, setting.canon);
+  assert.equal(payload.locations.length, setting.locations.length);
+  assert.equal(typeof payload.locations[0].name, 'string');
+  assert.equal(payload.turn, 1);
+});
+
+test('自由模式自演：签票的一句走正常主持通道，回执记在鱼名下', async (t) => {
+  const b = await boot(t, { replies: [
+    { say: '我把灯杆接过来，先掂一掂它有多沉。', reason: '她想先确认自己拿得动' },
+    { narration: narration() },
+    { narration: narration() },
+  ] });
+  await startFree(b);
+  const status = await b.panel('story', 'status');
+  const steps = { tripId: status.trip.id, stamp: status.trip.stamp };
+
+  const before = await b.panel('story', 'improvise', { ...steps });
+  assert.equal(before.ok, false, '没有授权时不能自演');
+
+  const mode = await b.panel('story', 'mode', { ...steps, enabled: true });
+  assert.equal(mode.ok, true, mode.error);
+  assert.ok(mode.autonomy.token, '开启后要有租约');
+  assert.equal(mode.autoplay, true);
+
+  const improvised = await b.panel('story', 'improvise', { ...steps, token: mode.autonomy.token });
+  assert.equal(improvised.ok, true, improvised.error);
+  assert.equal(improvised.say, '我把灯杆接过来，先掂一掂它有多沉。');
+  assert.ok(improvised.ticket, '要有可核验的票');
+
+  const said = await b.panel('story', 'say', { tripId: steps.tripId, stamp: improvised.trip.stamp,
+    say: improvised.say, auto: true, token: mode.autonomy.token, ticket: improvised.ticket });
+  assert.equal(said.ok, true, said.error);
+  assert.equal(said.trip.free.turn, 1);
+  assert.equal(said.trip.free.log.at(-1).from, '鱼');
+  assert.equal(said.trip.budget.steps, 1, '一句算一步');
+  assert.equal(said.trip.budget.calls, 1, '一句算一次决定');
+  assert.match(b.requests[1].brief, /"from":"鱼"/);
+
+  const state = JSON.parse(await readFile(b.world.stateFile(), 'utf8'));
+  assert.ok(state.storyReceipts.some((row) => row.action === 'say' && row.actor === 'fish'), '回执要记在鱼名下');
+  assert.ok(!state.storyReceipts.some((row) => row.action === 'say' && row.actor === 'owner'), '这一句不是主人写的');
+
+  const replay = await b.panel('story', 'say', { tripId: steps.tripId, stamp: improvised.trip.stamp,
+    say: improvised.say, auto: true, token: mode.autonomy.token, ticket: improvised.ticket });
+  assert.equal(replay.ok, false, '同一张票只能提交一次');
+
+  const manual = await b.panel('story', 'say', { tripId: said.trip.id, stamp: said.trip.stamp, say: '我自己来一句。' });
+  assert.equal(manual.ok, true, manual.error);
+  assert.equal(manual.autoplay, false, '你说了一句就是接管');
 });

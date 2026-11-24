@@ -52,8 +52,8 @@ import { pickStory, advanceStoryChoice, normalizeStoryProgress, storyReferences 
 import { describeMemory, describePack, describeStoryTrip, freeStoryStamp, requestStoryDecision, STORY_ACTIONS, storyFailure, storyStamp, StoryAutonomy } from './story-panel.js';
 import { jointActor, jointCanVote, jointDecision, jointView } from './joint.js';
 import {
-  continueFreeSegment, effectiveMaxTurns, freeCanContinue, freePromptPayload, freeSummaryText, freeTurn, freeTurnsLeft,
-  isFreePack, newFreeState, normalizeFreeActions, normalizeFreeState, normalizeStoryParty, requestFreeTurn,
+  continueFreeSegment, effectiveMaxTurns, freeCanContinue, freeLinePayload, freePromptPayload, freeSummaryText, freeTurn, freeTurnsLeft,
+  isFreePack, newFreeState, normalizeFreeActions, normalizeFreeState, normalizeStoryParty, requestFreeLine, requestFreeTurn,
 } from './story-free.js';
 import { StorySecrets, validateStoryDmSettings } from './story-secrets.js';
 import { DEFAULT_STORY_NODE_LIMIT, MAX_STORY_NODE_LIMIT, StoryNodeLimit } from './story-node-limit.js';
@@ -1771,7 +1771,7 @@ export class FunWorld {
           id: 'story', title: this.language === 'en' ? 'Story Journal' : '故事手账',
           description: this.language === 'en' ? 'Play free stories and manage story packs.' : '开启自由故事、推进剧情并管理故事包。',
           getMethods: ['status', 'storySettings', 'storyImageRead', 'authorList', 'authorTemplate', 'authorValidate', 'authorPreview', 'authorPlaytest', 'authorExport', 'list', 'template', 'validate', 'preview', 'playtest', 'export'],
-          methods: [...STORY_ACTIONS, 'say', 'rewind', 'saveParty', 'ackFreeDefault', 'locationCover', 'saveStorySettings', 'saveStoryAutoImages', 'testStoryDm', 'clearStoryKey', 'storyImage', 'authorImport', 'authorRebind', 'authorEnable', 'authorDisable', 'authorRemove', 'import', 'rebind', 'enable', 'disable', 'remove'],
+          methods: [...STORY_ACTIONS, 'say', 'improvise', 'rewind', 'saveParty', 'ackFreeDefault', 'locationCover', 'saveStorySettings', 'saveStoryAutoImages', 'testStoryDm', 'clearStoryKey', 'storyImage', 'authorImport', 'authorRebind', 'authorEnable', 'authorDisable', 'authorRemove', 'import', 'rebind', 'enable', 'disable', 'remove'],
         },
         { id: 'journal', title: this.language === 'en' ? 'Memory Journal' : '回忆手账', description: this.language === 'en' ? 'Browse trips and keepsakes.' : '回看行程并整理珍藏。', getMethods: ['list', 'trip'], methods: ['favorite', 'keep'] },
       ],
@@ -2342,6 +2342,17 @@ export class FunWorld {
     let from = typeof args?.from === 'string' ? args.from.trim().slice(0, 40) : '';
     let who = from;
     let input;
+    // 自演：这一句必须来自刚签出的票，面板不能凭空造一句「鱼说的话」。
+    const auto = args?.auto === true;
+    let signedLine = null;
+    if (auto) {
+      if (intent !== 'say' || usesActions) return { text: '自动提交只能用于说这一句。', failed: true };
+      const taken = this.#autonomy.takeLine(trip, args?.token, args?.ticket, this.#now());
+      if (!taken.ok) return { text: taken.error, failed: true };
+      signedLine = taken.say;
+      from = '鱼';
+      who = '鱼';
+    }
     const noRedoInput = intent === 'redo' && args.say === undefined && args.actions === undefined;
     if (usesActions) {
       const normalized = normalizeFreeActions(args.actions, storyRun.party);
@@ -2352,7 +2363,7 @@ export class FunWorld {
       from = '';
       input = actions;
     } else if (!noRedoInput) {
-      say = typeof args?.say === 'string' ? args.say.replace(/\s+/g, ' ').trim().slice(0, 1500) : '';
+      say = auto ? signedLine : (typeof args?.say === 'string' ? args.say.replace(/\s+/g, ' ').trim().slice(0, 1500) : '');
       if (!say) return { text: '请把用户这一回合的原话放进 say，或用 actions 汇总多人发言（合计最多 1500 字）。', failed: true };
       input = say;
     } else input = null;
@@ -2438,6 +2449,14 @@ export class FunWorld {
     if (!nextRun) return { text: '故事已经不在进行中了。', failed: true };
     nextRun.free = outcome.free;
     nextRun.seq = (nextRun.seq ?? 0) + 1;
+    if (auto) {
+      // 一步 = 一次成功提交；「决定次数」已经在 improvise 预留时计过了。
+      const budget = storyBudget(nextRun.budget);
+      nextRun.budget = { ...budget, steps: budget.steps + 1 };
+    } else {
+      // 你自己说了一句，就是接管：偏好关掉，不然下一次刷新会把自演自动续上。
+      nextRun.autoplay = false;
+    }
     const checkpoint = {
       id: randomUUID(), runId: nextRun.runId ?? trip.id, packId: nextRun.packId, revision: nextRun.revision,
       resourceVersion: nextRun.resourceVersion ?? 'legacy-unknown', seq: nextRun.seq,
@@ -2462,14 +2481,14 @@ export class FunWorld {
         : freeTurnsLeft(outcome.free, maxTurns) === 0 ? '这段有点长了，要不要收进回忆？也可以到面板点「再来一段」。' : '继续等用户下一句。',
       ...(dmFallback ? { dmFallback: true, note: '外接接口不可用，已回退宿主主持。' } : {}),
     };
-    this.#recordFreeReceipt(next, trip, nextRun, identity, intent, reply);
+    this.#recordFreeReceipt(next, trip, nextRun, identity, intent, reply, auto ? 'fish' : 'owner');
     await this.#commitState(next);
     return { text: JSON.stringify(reply) };
   }
 
-  #recordFreeReceipt(next, trip, run, identity, action, reply) {
+  #recordFreeReceipt(next, trip, run, identity, action, reply, actor = 'owner') {
     const { stamp, turn, recorded, report, rewound, unstructured } = reply;
-    const receipt = { ...identity, at: this.#now(), action, actor: 'owner', runId: run.runId ?? trip.id,
+    const receipt = { ...identity, at: this.#now(), action, actor, runId: run.runId ?? trip.id,
       stepId: trip.stamp, revision: run.revision, stamp, turn, recorded, report, rewound, unstructured, reply: JSON.stringify(reply) };
     next.storyReceipts = normalizeStoryReceipts([...(next.storyReceipts ?? []), receipt], this.#now());
   }
@@ -2862,6 +2881,44 @@ export class FunWorld {
       await this.#commitState(next);
       return method === 'saveParty' ? this.#storyStatus() : { ok: true };
     });
+    if (method === 'improvise') {
+      // 与 decide 同一套分工：先在锁内预留额度，模型调用在锁外，回来再锁内签票。
+      const prepared = await this.#serial(async () => {
+        this.#ensureStarted();
+        const status = this.#storyStatus(payload.token);
+        if (!status.ok) return status;
+        const trip = status.trip;
+        if (!trip || trip.mode !== 'free') return storyFailure('只有自由模式可以让她自己说这一句。');
+        if (payload.tripId !== trip.id || payload.stamp !== trip.stamp) return storyFailure('行程或事件已变更，请刷新后再操作。');
+        const row = this.#storyLibrary.catalog().find(({ pack }) => pack.id === trip.packId && pack.revision === trip.revision);
+        if (!row || !isFreePack(row.pack)) return storyFailure('这篇故事不是自由模式（场景包）。');
+        const cognition = this.#host?.cognition;
+        if (typeof cognition?.request !== 'function') return storyFailure('自主游玩暂不可用：当前角色没有开放宿主认知接口。');
+        const next = this.#normalizeState();
+        const outing = next.session ?? next.draft;
+        const run = outing?.storyRun;
+        if (!run || run.packId !== trip.packId) return storyFailure('故事已经不在进行中了。');
+        const free = normalizeFreeState(run.free, row.pack.setting);
+        const reserved = this.#autonomy.reserveLine(trip, payload.token, this.#now(), this.#autoLimits());
+        if (!reserved.ok) return reserved;
+        run.budget = reserved.budget;
+        try { await this.#commitState(next); }
+        catch (error) {
+          this.#autonomy.finishLine(trip, payload.token, this.#now(), storyFailure('预算未保存。'), reserved.attemptId);
+          throw error;
+        }
+        return { ok: true, reserved, cognition, setting: row.pack.setting, free, party: run.party, trip };
+      });
+      if (!prepared.ok) return prepared;
+      const line = await requestFreeLine(prepared.cognition, freeLinePayload(prepared.setting, prepared.free, { turn: prepared.free.turn, party: prepared.party }));
+      return this.#serial(() => {
+        const status = this.#started ? this.#storyStatus(payload.token) : null;
+        const current = status?.ok && status.trip?.stamp === prepared.trip.stamp ? status.trip : null;
+        const finished = this.#autonomy.finishLine(current, payload.token, this.#now(), line, prepared.reserved.attemptId);
+        if (!finished.ok) return storyFailure(finished.error);
+        return { ...(status ?? {}), ok: true, say: finished.say, reason: finished.reason ?? '', ticket: finished.ticket };
+      });
+    }
     if (method === 'say') {
       return this.#serial(async () => {
         this.#ensureStarted();

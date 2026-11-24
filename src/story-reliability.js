@@ -41,7 +41,8 @@ export function storyBudget(raw) {
 export function budgetStop(budget, limits, { step, stamp } = {}) {
   const spent = storyBudget(budget);
   if (spent.steps >= limits.steps) return 'steps';
-  if (step === 'choose' && spent.calls >= limits.calls) return 'calls';
+  // 选项式的一次「决定」和自由模式的一句自演，花的是同一个决定额度。
+  if ((step === 'choose' || step === 'say') && spent.calls >= limits.calls) return 'calls';
   if (step === 'choose' && stamp && spent.attemptStep === stamp && spent.attempts >= 2) return 'attempts';
   return null;
 }

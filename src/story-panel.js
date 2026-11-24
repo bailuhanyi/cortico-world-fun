@@ -176,7 +176,7 @@ export class StoryAutonomy {
     const more = segmentsLeft > 0;
     if (stop === 'steps') return `这一趟的自主步数已经用满（${limits.steps} 步）。${more ? '可以「再来一段」，或者自己接着走。' : `这一趟已经走过 ${AUTO_SEGMENTS} 段，先收尾吧。`}`;
     if (stop === 'calls') return `这一趟鱼已经自己决定了 ${limits.calls} 次，额度用满。${more ? '可以「再来一段」，或者你替她选这一步。' : '你替她选这一步，或者先收尾。'}`;
-    if (stop === 'attempts') return '这一步鱼试了两次都没给出有效选项。你替她选这一步，或者先收尾。';
+    if (stop === 'attempts') return '这一步鱼试了两次都没给出有效内容。你自己来，或者先收尾。';
     return '';
   }
 
@@ -188,7 +188,7 @@ export class StoryAutonomy {
     const enabled = Boolean(available && active && trip?.actor !== 'owner' && this.#matches(trip.id, token, now));
     const stop = active ? budgetStop(budget, limits, { step: trip.step, stamp: trip.stamp }) : null;
     const segmentsLeft = Math.max(0, AUTO_SEGMENTS - 1 - budget.segment);
-    const canContinue = Boolean(stop && ['move', 'choose', 'close'].includes(trip.step) && segmentsLeft > 0);
+    const canContinue = Boolean(stop && ['move', 'choose', 'close', 'say'].includes(trip.step) && segmentsLeft > 0);
     return {
       available, enabled, limit: { steps: limits.steps, calls: limits.calls },
       remaining: Math.max(0, limits.steps - budget.steps), remainingCalls: Math.max(0, limits.calls - budget.calls),
@@ -207,6 +207,7 @@ export class StoryAutonomy {
 
   clear() {
     this.#lease = undefined;
+    this.#inFlight = undefined;
   }
 
   pause(tripId, token) {
@@ -216,7 +217,7 @@ export class StoryAutonomy {
   enable(trip, cognition, now, rawLimits) {
     if (typeof cognition?.request !== 'function') return storyFailure('自主游玩暂不可用：当前角色没有开放宿主认知接口。');
     if (trip?.actor === 'owner') return storyFailure('当前是用户回合，鱼的自主模式不会代替用户选择。');
-    if (!['move', 'choose', 'close'].includes(trip.step)) return storyFailure('当前步骤无法自动推进。');
+    if (!['move', 'choose', 'close', 'say'].includes(trip.step)) return storyFailure('当前步骤无法自动推进。');
     if (this.#lease?.tripId === trip.id && now < this.#lease.expires) return storyFailure('另一窗口已开启自主游玩。可切换到手动推进，或稍后重试。');
     const limits = autoLimits(rawLimits);
     const budget = storyBudget(trip.budget);
@@ -252,6 +253,50 @@ export class StoryAutonomy {
     this.#lease.ticket = { ticket, stamp: trip.stamp, optionId: decision.optionId, reason: decision.reason };
     this.#lease.expires = Math.min(this.#lease.deadline, now + LEASE_MS);
     return { ok: true, ticket, reason: decision.reason };
+  }
+
+  /**
+   * 自由模式的一句自演：先预留一次「决定」额度，再让角色写这一句。
+   * 与 `reserve` 同一套语义——失败也计次，票只在成功时签发。
+   */
+  reserveLine(trip, token, now, rawLimits) {
+    if (!this.#matches(trip.id, token, now) || trip.step !== 'say') return storyFailure('当前自主授权已失效。');
+    if (this.#inFlight || this.#lease.line?.stamp === trip.stamp) return storyFailure('已有一句正在生成或等待提交。');
+    const limits = autoLimits(rawLimits);
+    const budget = storyBudget(trip.budget);
+    const attempts = budget.attemptStep === trip.stamp ? budget.attempts : 0;
+    const stop = budgetStop(budget, limits, { step: 'say', stamp: trip.stamp });
+    if (stop || attempts >= 2) {
+      this.clear();
+      return storyFailure(this.#stopNote(stop ?? 'attempts', limits, Math.max(0, AUTO_SEGMENTS - 1 - budget.segment)));
+    }
+    const attemptId = randomUUID();
+    this.#inFlight = attemptId;
+    return { ok: true, attemptId, budget: { ...budget, calls: budget.calls + 1, attemptStep: trip.stamp, attempts: attempts + 1 } };
+  }
+
+  /** 把通过校验的一句签成票；票与这一屏的 stamp 绑定，换一屏就作废。 */
+  finishLine(trip, token, now, line, attemptId) {
+    if (this.#inFlight !== attemptId) return storyFailure('这一句已过期。');
+    this.#inFlight = undefined;
+    if (!trip || !this.#matches(trip.id, token, now) || trip.step !== 'say') return storyFailure('这一句已过期，进度以当前行程为准。');
+    if (!line.ok) return line;
+    const ticket = randomUUID();
+    this.#lease.line = { ticket, stamp: trip.stamp, say: line.say };
+    this.#lease.expires = Math.min(this.#lease.deadline, now + LEASE_MS);
+    return { ok: true, ticket, say: line.say, reason: line.reason ?? '' };
+  }
+
+  /** 提交前验票：面板不能凭空造一句「鱼说的话」。 */
+  takeLine(trip, token, ticket, now) {
+    if (!this.#matches(trip.id, token, now)) return storyFailure('自主游玩已暂停，请重新开启或手动继续。');
+    if (trip.step !== 'say') return storyFailure('当前不是自由模式的一句话回合。');
+    const signed = this.#lease.line;
+    if (!signed || !ticket || ticket !== signed.ticket || signed.stamp !== trip.stamp) return storyFailure('没有当前这一屏的已核验台词。');
+    delete this.#lease.line;
+    this.#lease.expires = now + LEASE_MS;
+    this.#lease.deadline = now + 90_000;
+    return { ok: true, say: signed.say };
   }
 
   take(trip, token, ticket, now, rawLimits) {

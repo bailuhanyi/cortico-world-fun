@@ -40,7 +40,7 @@ export function createStoryController(ctx, onChange = () => {}, environment = {}
   async function call(method, payload, opts = {}) {
     if (typeof ctx.storyCall !== 'function') throw new Error('故事面板尚未连接调用适配器，请提供 ctx.storyCall。');
     const result = await ctx.storyCall(method, payload, {
-      timeoutMs: ['decide', 'dmPropose'].includes(method) ? 45000 : 20000,
+      timeoutMs: ['decide', 'dmPropose', 'improvise'].includes(method) ? 45000 : 20000,
       ...(opts.keepalive ? {} : { signal: ctx.signal }), ...opts,
     });
     if (!result || result.ok !== true) throw new Error(description(result?.error ?? '服务没有返回可确认的结果。'));
@@ -171,28 +171,44 @@ export function createStoryController(ctx, onChange = () => {}, environment = {}
         state.busy = '鱼正在看一看';
         emit();
         try {
-          let ticket;
-          if (current.step === 'choose') {
+          let snapshot;
+          if (current.step === 'say') {
+            // 自由模式：一次自演 = 一次「她说这一句」+ 一次「主持演这一回合」，两次都是真实模型调用。
             state.busy = '鱼正在想一想';
             emit();
-            const decision = await call('decide', { ...identityPayload(), token: identity.token });
-            // This check intentionally precedes applying any delayed decision snapshot.
+            const line = await call('improvise', { tripId: identity.id, stamp: identity.stamp, token: identity.token });
             if (!same(identity)) break;
-            if (decision.trip?.id !== identity.id || decision.trip?.stamp !== identity.stamp
-              || decision.autonomy?.token !== identity.token || !decision.autonomy.enabled) {
-              throw new Error('作决定期间实际进度或游玩模式已改变。');
-            }
-            if (!Object.hasOwn(decision, 'ticket') || decision.ticket == null) throw new Error('没有收到可核验的决定凭证。');
-            ticket = decision.ticket;
-            state.reason = typeof decision.reason === 'string' ? decision.reason : '';
+            if (typeof line.say !== 'string' || !line.say || typeof line.ticket !== 'string') throw new Error('没有收到可核验的台词凭证。');
+            state.reason = typeof line.reason === 'string' ? line.reason : '';
             emit();
+            state.busy = '正在确认这一句';
+            emit();
+            snapshot = await call('say', { tripId: identity.id, stamp: identity.stamp, say: line.say,
+              auto: true, token: identity.token, ticket: line.ticket });
+          } else {
+            let ticket;
+            if (current.step === 'choose') {
+              state.busy = '鱼正在想一想';
+              emit();
+              const decision = await call('decide', { ...identityPayload(), token: identity.token });
+              // This check intentionally precedes applying any delayed decision snapshot.
+              if (!same(identity)) break;
+              if (decision.trip?.id !== identity.id || decision.trip?.stamp !== identity.stamp
+                || decision.autonomy?.token !== identity.token || !decision.autonomy.enabled) {
+                throw new Error('作决定期间实际进度或游玩模式已改变。');
+              }
+              if (!Object.hasOwn(decision, 'ticket') || decision.ticket == null) throw new Error('没有收到可核验的决定凭证。');
+              ticket = decision.ticket;
+              state.reason = typeof decision.reason === 'string' ? decision.reason : '';
+              emit();
+            }
+            if (!same(identity)) break;
+            state.busy = '正在确认这一步';
+            emit();
+            // Exactly one action, with the version and mode token seen before decide.
+            snapshot = await call('auto', { tripId: identity.id, stamp: identity.stamp, token: identity.token,
+              ...(ticket === undefined ? {} : { ticket }) });
           }
-          if (!same(identity)) break;
-          state.busy = '正在确认这一步';
-          emit();
-          // Exactly one action, with the version and mode token seen before decide.
-          const snapshot = await call('auto', { tripId: identity.id, stamp: identity.stamp, token: identity.token,
-            ...(ticket === undefined ? {} : { ticket }) });
           if (!alive()) break;
           // An already-submitted action may finish after mode-off; read fresh state.
           if (!same(identity)) { await recover('模式已改变，正在确认已提交动作的结果。'); break; }

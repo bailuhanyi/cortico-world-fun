@@ -57,6 +57,59 @@ test('autonomy stops at twenty steps while reporting the exact remaining budget'
   assert.equal(autonomy.enable(trip, cognition, now).ok, false);
 });
 
+test('free-mode self-play: a say step can be authorized, ticketed and consumed once', () => {
+  const autonomy = new StoryAutonomy();
+  const cognition = { request() {} };
+  const now = 1_000_000;
+  const trip = { id: 'say-trip', state: 'active', step: 'say', stamp: 'stamp-say', actor: null, budget: { steps: 0, calls: 0 } };
+
+  assert.equal(autonomy.enable({ ...trip, actor: 'owner' }, cognition, now).ok, false, '用户回合不授权给鱼');
+  const grant = expectOk(autonomy.enable(trip, cognition, now));
+  assert.equal(autonomy.view(trip, cognition, now, grant.token).enabled, true);
+
+  const reserved = expectOk(autonomy.reserveLine(trip, grant.token, now));
+  assert.equal(reserved.budget.calls, 1, '写这一句先记一次决定');
+  assert.equal(autonomy.reserveLine(trip, grant.token, now).ok, false, '上一句没签完不能再开一句');
+
+  const line = expectOk(autonomy.finishLine(trip, grant.token, now,
+    { ok: true, say: '我把灯杆接过来。', reason: '她不想再等' }, reserved.attemptId));
+  assert.ok(line.ticket);
+  assert.equal(autonomy.takeLine(trip, grant.token, 'not-the-ticket', now).ok, false);
+  assert.equal(expectOk(autonomy.takeLine(trip, grant.token, line.ticket, now)).say, '我把灯杆接过来。');
+  assert.equal(autonomy.takeLine(trip, grant.token, line.ticket, now).ok, false, '一张票只能用一次');
+});
+
+test('free-mode self-play: the calls budget and two bad lines both stop the loop', () => {
+  const cognition = { request() {} };
+  const now = 1_000_000;
+  const limits = { steps: 20, calls: 6 };
+  const spent = { id: 'say-spent', state: 'active', step: 'say', stamp: 'a'.repeat(43), actor: null, budget: { steps: 0, calls: 6 } };
+  assert.equal(new StoryAutonomy().enable(spent, cognition, now, limits).ok, false, '额度用满时不再开授权');
+
+  const autonomy = new StoryAutonomy();
+  const trip = { id: 'say-budget', state: 'active', step: 'say', stamp: 'b'.repeat(43), actor: null, budget: { steps: 0, calls: 5 } };
+  const grant = expectOk(autonomy.enable(trip, cognition, now, limits));
+  const reserved = expectOk(autonomy.reserveLine(trip, grant.token, now, limits));
+  assert.equal(reserved.budget.calls, 6);
+  const line = expectOk(autonomy.finishLine(trip, grant.token, now, { ok: true, say: '再站一会儿。' }, reserved.attemptId));
+  trip.budget = { ...reserved.budget };
+  expectOk(autonomy.takeLine(trip, grant.token, line.ticket, now));
+  const stopped = autonomy.reserveLine(trip, grant.token, now, limits);
+  assert.equal(stopped.ok, false);
+  assert.match(stopped.error, /额度用满/);
+
+  const again = new StoryAutonomy();
+  const other = { id: 'say-attempt', state: 'active', step: 'say', stamp: 'c'.repeat(43), actor: null, budget: { steps: 0, calls: 0 } };
+  const second = expectOk(again.enable(other, cognition, now, limits));
+  const first = expectOk(again.reserveLine(other, second.token, now, limits));
+  assert.equal(again.finishLine(other, second.token, now, { ok: false, error: '格式不对' }, first.attemptId).ok, false);
+  other.budget = { ...first.budget };
+  const retry = expectOk(again.reserveLine(other, second.token, now, limits));
+  assert.equal(again.finishLine(other, second.token, now, { ok: false, error: '还是不对' }, retry.attemptId).ok, false);
+  other.budget = { ...retry.budget };
+  assert.equal(again.reserveLine(other, second.token, now, limits).ok, false, '同一步两次不合格就停');
+});
+
 test('the sixth cognition reservation can commit but a seventh request is refused', () => {
   const autonomy = new StoryAutonomy();
   const cognition = { request() {} };

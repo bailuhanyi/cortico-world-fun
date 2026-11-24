@@ -72,4 +72,8 @@ export const STYLES = `
 .sw-settings-part-head h3{font-size:15px;letter-spacing:.01em}
 .sw-settings-part-head p{font-size:11.5px;line-height:1.7;color:var(--sw-muted);margin-top:4px;max-width:64ch}
 .sw-settings-part+.sw-settings-part{padding-top:20px;border-top:1px solid color-mix(in srgb,var(--sw-line) 70%,transparent)}
+/* 自由模式的自演条：与选项式的「鱼自己游玩」是同一个开关，只是这里没有选项可点 */
+.sw-free-mode{display:grid;gap:8px;padding:0 22px 14px}
+.sw-free-mode .sw-mode{padding:11px 13px;border:1px solid var(--sw-line);border-radius:10px;background:var(--sw-soft)}
+.sw-free-mode .sw-note{margin:0}
 `;

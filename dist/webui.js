@@ -1642,7 +1642,7 @@ function createStoryController(ctx, onChange = () => {
   async function call(method, payload, opts = {}) {
     if (typeof ctx.storyCall !== "function") throw new Error("故事面板尚未连接调用适配器，请提供 ctx.storyCall。");
     const result = await ctx.storyCall(method, payload, {
-      timeoutMs: ["decide", "dmPropose"].includes(method) ? 45e3 : 2e4,
+      timeoutMs: ["decide", "dmPropose", "improvise"].includes(method) ? 45e3 : 2e4,
       ...opts.keepalive ? {} : { signal: ctx.signal },
       ...opts
     });
@@ -1782,29 +1782,50 @@ function createStoryController(ctx, onChange = () => {
         state.busy = "鱼正在看一看";
         emit();
         try {
-          let ticket;
-          if (current.step === "choose") {
+          let snapshot;
+          if (current.step === "say") {
             state.busy = "鱼正在想一想";
             emit();
-            const decision = await call("decide", { ...identityPayload(), token: identity.token });
+            const line2 = await call("improvise", { tripId: identity.id, stamp: identity.stamp, token: identity.token });
             if (!same(identity)) break;
-            if (decision.trip?.id !== identity.id || decision.trip?.stamp !== identity.stamp || decision.autonomy?.token !== identity.token || !decision.autonomy.enabled) {
-              throw new Error("作决定期间实际进度或游玩模式已改变。");
-            }
-            if (!Object.hasOwn(decision, "ticket") || decision.ticket == null) throw new Error("没有收到可核验的决定凭证。");
-            ticket = decision.ticket;
-            state.reason = typeof decision.reason === "string" ? decision.reason : "";
+            if (typeof line2.say !== "string" || !line2.say || typeof line2.ticket !== "string") throw new Error("没有收到可核验的台词凭证。");
+            state.reason = typeof line2.reason === "string" ? line2.reason : "";
             emit();
+            state.busy = "正在确认这一句";
+            emit();
+            snapshot = await call("say", {
+              tripId: identity.id,
+              stamp: identity.stamp,
+              say: line2.say,
+              auto: true,
+              token: identity.token,
+              ticket: line2.ticket
+            });
+          } else {
+            let ticket;
+            if (current.step === "choose") {
+              state.busy = "鱼正在想一想";
+              emit();
+              const decision = await call("decide", { ...identityPayload(), token: identity.token });
+              if (!same(identity)) break;
+              if (decision.trip?.id !== identity.id || decision.trip?.stamp !== identity.stamp || decision.autonomy?.token !== identity.token || !decision.autonomy.enabled) {
+                throw new Error("作决定期间实际进度或游玩模式已改变。");
+              }
+              if (!Object.hasOwn(decision, "ticket") || decision.ticket == null) throw new Error("没有收到可核验的决定凭证。");
+              ticket = decision.ticket;
+              state.reason = typeof decision.reason === "string" ? decision.reason : "";
+              emit();
+            }
+            if (!same(identity)) break;
+            state.busy = "正在确认这一步";
+            emit();
+            snapshot = await call("auto", {
+              tripId: identity.id,
+              stamp: identity.stamp,
+              token: identity.token,
+              ...ticket === void 0 ? {} : { ticket }
+            });
           }
-          if (!same(identity)) break;
-          state.busy = "正在确认这一步";
-          emit();
-          const snapshot = await call("auto", {
-            tripId: identity.id,
-            stamp: identity.stamp,
-            token: identity.token,
-            ...ticket === void 0 ? {} : { ticket }
-          });
           if (!alive()) break;
           if (!same(identity)) {
             await recover("模式已改变，正在确认已提交动作的结果。");
@@ -2327,6 +2348,10 @@ var STYLES = `
 .sw-settings-part-head h3{font-size:15px;letter-spacing:.01em}
 .sw-settings-part-head p{font-size:11.5px;line-height:1.7;color:var(--sw-muted);margin-top:4px;max-width:64ch}
 .sw-settings-part+.sw-settings-part{padding-top:20px;border-top:1px solid color-mix(in srgb,var(--sw-line) 70%,transparent)}
+/* 自由模式的自演条：与选项式的「鱼自己游玩」是同一个开关，只是这里没有选项可点 */
+.sw-free-mode{display:grid;gap:8px;padding:0 22px 14px}
+.sw-free-mode .sw-mode{padding:11px 13px;border:1px solid var(--sw-line);border-radius:10px;background:var(--sw-soft)}
+.sw-free-mode .sw-note{margin:0}
 `;
 
 // webui/story/panel.js
@@ -2808,20 +2833,40 @@ function mountPanel(root, ctx) {
       if (confirmed && !disposed) await controller.mutate("close");
     }, { quiet: opts.quiet ?? true, small: opts.small, disabled: !manually, key: "close-early" });
   }
-  function autoplaySwitch(state) {
+  function autoplaySwitch(state, mode = "choice") {
     const checked = state.autoplay === true;
     const busy = state.busy === "正在开启自主游玩" || state.busy === "正在关闭自主游玩";
     const trip = state.snapshot?.trip;
+    const label2 = mode === "free" ? "鱼自己玩（自由）" : "鱼自己玩（选项）";
     return node("button", {
       type: "button",
       class: "sw-switch",
       role: "switch",
-      "aria-label": "鱼自己游玩",
+      "aria-label": label2,
       "aria-checked": String(checked),
       disabled: busy || !checked && (!state.snapshot.autonomy.available || trip?.state === "draft" || !state.ready || state.loading || state.recovering || Boolean(state.busy)),
       "data-focus": "trip-mode",
       onclick: () => controller.setMode(!checked)
     });
+  }
+  function freeAutoplayBar(state, current, free, capped) {
+    const autonomy = state.snapshot?.autonomy ?? {};
+    const checked = state.autoplay === true;
+    const running = state.autoAuthorized === true;
+    const subtitle = free.ended ? "这一段已经收尾" : capped ? "这一段的回合说完了" : autonomy.available !== true ? "角色接口不可用，这一趟只能你来" : running ? "她正在自己往下走" : checked ? "她自己往下走；你打一句，就接过来了" : "关着：每一回合等你说";
+    const bar = node(
+      "div",
+      { class: "sw-free-mode" },
+      node("div", { class: "sw-mode" }, node("div", {}, node("strong", {}, "鱼自己玩（自由）"), node("small", {}, subtitle)), autoplaySwitch(state, "free"))
+    );
+    if (checked && Number.isInteger(autonomy.remainingCalls)) {
+      bar.append(note(`本段还能说 ${text(autonomy.remainingCalls, 0)} 句 · 本趟还剩 ${text(autonomy.remaining, 0)} 步（一句 = 1 步 + 1 次决定）`));
+    } else if (!checked) {
+      bar.append(note("打开后她会自己说下一句，主持照常演这一回合；你随时打一句都算接管。它和选项式的「鱼自己玩（选项）」是同一个偏好。"));
+    } else if (autonomy.reason) {
+      bar.append(note(autonomy.reason));
+    }
+    return bar;
   }
   function autoImageSwitch(snapshot) {
     const images = snapshot?.images ?? {};
@@ -2904,7 +2949,7 @@ function mountPanel(root, ctx) {
         drawerOpen = !drawerOpen;
         render();
       }, { small: true, key: "imm-history", pressed: drawerOpen }),
-      node("div", { class: "sw-imm-bar-mode" }, node("small", {}, "鱼自己游玩"), autoplaySwitch(state)),
+      node("div", { class: "sw-imm-bar-mode" }, node("small", {}, "鱼自己玩（选项）"), autoplaySwitch(state)),
       node("div", { class: "sw-imm-bar-actions" }, ...primary, current.step === "close" ? null : closeEarlyButton(state, { small: true }))
     );
   }
@@ -2932,6 +2977,7 @@ function mountPanel(root, ctx) {
       node("span", { class: "sw-dot-sep", "aria-hidden": "true" }, "·"),
       `第 ${text(free.turn, 0)} / ${text(free.limit, free.maxTurns)} 回合`
     ));
+    left.append(freeAutoplayBar(state, current, free, capped));
     left.append(scene(null, text(current.placeName), "", { location: current.locationArt, class: "sw-play-scene sw-play-strip", tag: "场景包" }));
     const reading = node("div", { class: "sw-reading", "data-focus": "play-reading" });
     if (free.summary) reading.append(note(`到目前为止：${free.summary}`));
@@ -2953,7 +2999,7 @@ function mountPanel(root, ctx) {
     if (chips.childNodes.length) reading.append(node("div", { class: "sw-free-state" }, node("div", { class: "sw-kicker" }, "正在起作用的状态"), chips));
     if (list(current.blocked).length || current.blocked) reading.append(node("div", { class: "sw-notice sw-notice-error" }, icon("info"), node("p", {}, text(current.blocked))));
     left.append(reading);
-    const input = node("textarea", { class: "sw-free-input", rows: "2", maxlength: "1500", placeholder: capped ? "这段有点长了，要不要收进回忆？" : "这一回合你想做什么？", "aria-label": "这一回合做什么", disabled: isDraft || Boolean(current.blocked) });
+    const input = node("textarea", { class: "sw-free-input", rows: "2", maxlength: "1500", placeholder: capped ? "这段有点长了，要不要收进回忆？" : state.autoplay ? "她正在自己走；你打一句，就接过来了。" : "这一回合你想做什么？", "aria-label": "这一回合做什么", disabled: isDraft || Boolean(current.blocked) });
     const send = button("说这一句", async () => {
       const say = input.value.trim();
       if (!say || !canAct(state)) return;
@@ -2964,7 +3010,7 @@ function mountPanel(root, ctx) {
       { class: "sw-play-action sw-free-compose" },
       input,
       actionRow(send, freeRedoButton(state, input, free, current), free.canContinue ? button(
-        `再来一段 · 还能 ${text(free.segmentsLeft, 0)} 段`,
+        `再来一段（自由）· 还能 ${text(free.segmentsLeft, 0)} 段`,
         () => controller.continueSegment(),
         { primary: true, icon: "arrow", key: "free-segment", disabled: !canAct(state) || state.loading || state.recovering || Boolean(state.busy) }
       ) : null)
@@ -3095,7 +3141,7 @@ function mountPanel(root, ctx) {
     modeCard.append(node(
       "div",
       { class: "sw-mode" },
-      node("div", {}, node("strong", {}, "鱼自己游玩"), node("small", {}, modeSubtitle)),
+      node("div", {}, node("strong", {}, "鱼自己玩（选项）"), node("small", {}, modeSubtitle)),
       autoplaySwitch(state)
     ));
     modeCard.append(note(checked ? "这是一次持久偏好：轮到你时会暂停，你选完鱼会接着走；切走页面只暂停当下。关掉开关即可接管。" : "打开后鱼会自己往下走；轮到你时暂停，随时可以接管。"));
@@ -3103,7 +3149,7 @@ function mountPanel(root, ctx) {
     if (snapshot.autonomy.remaining !== void 0) modeCard.append(node("div", { class: "sw-budget" }, node("span", {}, "本趟剩余预算"), node("b", {}, `${text(snapshot.autonomy.remaining)} 步${Number.isInteger(snapshot.autonomy.remainingCalls) ? ` · ${snapshot.autonomy.remainingCalls} 次决定` : ""}${Number.isInteger(snapshot.autonomy.segment) ? ` · 第 ${snapshot.autonomy.segment} 段` : ""}`)));
     if (snapshot.autonomy.canContinue) {
       modeCard.append(button(
-        `再来一段（鱼自己玩）· 还能 ${snapshot.autonomy.segmentsLeft} 段`,
+        `再来一段（选项）· 还能 ${snapshot.autonomy.segmentsLeft} 段`,
         () => controller.continueSegment(),
         { small: true, primary: true, key: "segment", disabled: !snapshot.autonomy.available || !canAct(state) || state.loading || state.recovering || Boolean(state.busy) }
       ));
@@ -3201,10 +3247,10 @@ function mountPanel(root, ctx) {
       node("div", { class: "sw-kicker" }, free.ended ? "已收尾" : `第 ${text(free.segment, 1)} 段 · 还剩 ${turnsLeft} 回合`),
       node("p", { class: "sw-imm-lead" }, text(last?.narration || current.opening, "开场已经在那里了。说一句想做的事，故事就会往下走。")),
       last?.unstructured ? note("本回合由纯文本接住。") : null,
-      last?.say ? node("p", { class: "sw-imm-ask" }, `你刚才说：「${text(last.say)}」`) : null,
+      last?.say ? node("p", { class: "sw-imm-ask" }, last.from === "鱼" ? `她说：「${text(last.say)}」` : `你刚才说：「${text(last.say)}」`) : null,
       free.summary ? note(`到目前为止：${free.summary}`) : null
     ));
-    const input = node("textarea", { class: "sw-free-input", rows: "2", placeholder: capped ? "这一段说完了，可以再来一段。" : "这一回合你想做什么？", "aria-label": "这一回合做什么", disabled: isDraft || Boolean(free.ended) || capped });
+    const input = node("textarea", { class: "sw-free-input", rows: "2", placeholder: capped ? "这一段说完了，可以再来一段。" : state.autoplay ? "她正在自己走；你打一句，就接过来了。" : "这一回合你想做什么？", "aria-label": "这一回合做什么", disabled: isDraft || Boolean(free.ended) || capped });
     const send = button("说这一句", async () => {
       const say = input.value.trim();
       if (!say || !canAct(state)) return;
@@ -3215,7 +3261,7 @@ function mountPanel(root, ctx) {
       { class: "sw-imm-compose" },
       input,
       actionRow(send, free.canContinue ? button(
-        `再来一段 · 还能 ${text(free.segmentsLeft, 0)} 段`,
+        `再来一段（自由）· 还能 ${text(free.segmentsLeft, 0)} 段`,
         () => controller.continueSegment(),
         { primary: true, icon: "arrow", key: "free-segment", disabled: !canAct(state) || state.loading || state.recovering || Boolean(state.busy) }
       ) : null)
@@ -3227,6 +3273,7 @@ function mountPanel(root, ctx) {
         drawerOpen = !drawerOpen;
         render();
       }, { small: true, key: "imm-history", pressed: drawerOpen }),
+      node("div", { class: "sw-imm-bar-mode" }, node("small", {}, "鱼自己玩（自由）"), autoplaySwitch(state, "free")),
       node(
         "div",
         { class: "sw-imm-bar-actions" },
