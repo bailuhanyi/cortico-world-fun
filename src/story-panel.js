@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { pickStory, storyAvailability, storyReferences, storyStepBlock } from './story-packs.js';
-import { effectiveMaxTurns, evaluateWhen, freeCanContinue, freeSegmentsLeft, freeTurnsLeft, isFreePack, normalizeFreeState } from './story-free.js';
+import { effectiveMaxTurns, evaluateWhen, freeCanContinue, freeSegmentsLeft, freeTurnsLeft, isFreePack, normalizeFreeState, normalizeStoryParty } from './story-free.js';
 import { jointActor, jointView } from './joint.js';
 
 export const STORY_ACTIONS = ['start', 'move', 'choose', 'resume', 'close', 'mode', 'pause', 'decide', 'auto', 'fork', 'segment'];
@@ -78,6 +78,11 @@ export function describeMemory(trip) {
 }
 
 // 自由模式的一趟：没有选项、没有区域节点，只有回合和状态。
+export function freeStoryStamp(id, run, free, isDraft) {
+  return storyStamp([id, run.revision, free.turn, free.ended, free.redo ?? 0, free.segment,
+    run.seq ?? 0, free.log.at(-1)?.at ?? 0, isDraft]);
+}
+
 export function freeTripView(outing, row, venue, isDraft, freeTurnLimit) {
   const run = outing.storyRun;
   const setting = row.pack.setting ?? {};
@@ -88,20 +93,21 @@ export function freeTripView(outing, row, venue, isDraft, freeTurnLimit) {
   let step = isDraft ? 'say' : free.ended ? 'close' : 'say';
   let blocked = '';
   if (!row.enabled || !venue) { blocked = '故事版本、启用状态或绑定地点已变更。可以按已发生的记录回家。'; step = 'blocked'; }
-  const last = free.log.at(-1);
   const goalProgress = (setting.goals ?? []).filter((goal) => evaluateWhen(goal.when, free));
   return {
     id: outing.id, placeName: outing.placeName, title: run.title, placeId: outing.placeId, formatVersion: 3,
+    participation: 'solo', party: normalizeStoryParty(run.party),
     area: (setting.locations ?? [])[0]?.name ?? outing.placeName ?? '', state: isDraft ? 'draft' : 'active', packId: run.packId, revision: run.revision,
     step, blocked, complete: Boolean(free.ended), endingNodeId: free.ended,
     actor: null, pending: null, mode: 'free', maxTurns,
+    opening: setting.opening ?? '',
     areaName: (setting.locations ?? [])[0]?.name ?? '',
     free: {
       turn: free.turn, maxTurns, limit: Math.max(0, free.turnBase ?? 0) + maxTurns, turnsLeft,
       segment: free.segment + 1, segmentsLeft: freeSegmentsLeft(free), canContinue, summary: free.summary, ended: free.ended,
       facts: { ...free.facts }, flags: { ...free.flags }, counters: { ...free.counters },
       goals: goalProgress.map(({ id, text }) => ({ id, text })),
-      log: free.log.slice(-12).map(({ turn, from, say, narration, at }) => ({ turn, from, say, narration, at })),
+      log: free.log.slice(-12),
     },
     ends: (setting.ends ?? []).map(({ id, text }) => ({ id, text })),
     events: free.log.slice(-16).map((entry) => entry.narration),
@@ -109,7 +115,7 @@ export function freeTripView(outing, row, venue, isDraft, freeTurnLimit) {
     timeline: outing.timeline,
     references: [],
     budget: storyBudget(run.budget),
-    stamp: storyStamp([outing.id, run.revision, free.turn, free.ended, last?.at ?? 0, isDraft]),
+    stamp: freeStoryStamp(outing.id, run, free, isDraft),
   };
 }
 
@@ -141,6 +147,7 @@ export function describeStoryTrip(outing, isDraft, catalog, venue, nowMin, visit
     : null;
   return {
     id: outing.id, placeName: outing.placeName, title: run.title, placeId: outing.placeId, formatVersion: row?.pack.version ?? 1,
+    participation: run.participation === 'duo' ? 'duo' : 'solo', party: [],
     area: outing.visited.at(-1)?.area ?? '', state: isDraft ? 'draft' : 'active', packId: run.packId, revision: run.revision,
     step, blocked, nextArea: step === 'move' ? nextNode.area : undefined, complete: Boolean(run.endingNodeId), endingNodeId: run.endingNodeId,
     actor: currentActor,

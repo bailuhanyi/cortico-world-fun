@@ -354,7 +354,7 @@ export function createStoryController(ctx, onChange = () => {}, environment = {}
         if (operationGeneration !== generation) { await recover('窗口状态已改变。'); return; }
         ++requestVersion;
         apply(snapshot);
-        state.notice = method === 'close' ? '这趟经历已收进回忆。' : '';
+        state.notice = method === 'close' ? '这趟经历已收进回忆。' : snapshot.lastSay?.note ?? '';
         maybeResume();
       } catch (error) { if (alive()) await recover(error); }
       finally {

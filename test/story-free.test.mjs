@@ -6,7 +6,7 @@ import { FunWorld } from '../src/world.js';
 import { validateStoryPack } from '../src/story-packs.js';
 import {
   applyFreeDelta, checkEnd, continueFreeSegment, effectiveMaxTurns, evaluateWhen, freeCanContinue, freeSegmentsLeft, freeTurn,
-  freeTurnsLeft, newFreeState, normalizeFreeState, parseFreeOutput,
+  freeTurnsLeft, freeSummaryText, newFreeState, normalizeFreeActions, normalizeFreeState, normalizeStoryParty, parseFreeOutput, freePromptPayload,
 } from '../src/story-free.js';
 import { cleanup } from './tmp.mjs';
 
@@ -83,10 +83,11 @@ async function importFree(b) {
   return card;
 }
 
-async function startFree(b) {
+async function startFree(b, party) {
   const card = await importFree(b);
   const current = await b.json('fun_story_current');
-  const started = await b.json('fun_story_start', { packId: card.id, revision: card.revision, startStamp: current.startStamp, confirm: true });
+  const started = await b.json('fun_story_start', { packId: card.id, revision: card.revision, startStamp: current.startStamp, confirm: true,
+    ...(party === undefined ? {} : { party }) });
   assert.equal(started.ok, true, started.error);
   return started;
 }
@@ -118,6 +119,51 @@ test('主持的返回严格限定字段，短叙述和多余字段都不收', ()
   const withDelta = parseFreeOutput(JSON.stringify({ narration: narration(), delta: { flags: { 'met-keeper': true } } }));
   assert.equal(withDelta.ok, true);
   assert.deepEqual(withDelta.delta.flags, { 'met-keeper': true });
+});
+
+test('纯文本兜底只接 12–1500 字的非 JSON 开头；引号合法且标记非结构化', () => {
+  const quoted = parseFreeOutput('他说“走吧”，雨声里有人答应了，灯影落在湿透的木板上。');
+  assert.equal(quoted.ok, true);
+  assert.equal(quoted.mode, 'prose');
+  assert.equal(quoted.endRequest, null);
+  assert.equal(parseFreeOutput('{坏掉的 JSON').ok, false);
+  assert.equal(parseFreeOutput('[' + '字'.repeat(20)).ok, false);
+  assert.equal(parseFreeOutput('短句').ok, false);
+  assert.equal(parseFreeOutput('叙'.repeat(1501)).ok, false);
+  const setting = freePack().setting;
+  const turn = freeTurn(setting, newFreeState(setting), quoted, { say: '试试', maxTurns: 6 });
+  assert.equal(turn.ok, true);
+  assert.equal(turn.free.log[0].unstructured, true);
+  assert.match(freeSummaryText(setting, turn.free), /本回合由纯文本接住/);
+});
+
+test('多人动作限长、合计、归属和党名单人设注入；日志容量为 1500', () => {
+  const party = normalizeStoryParty([{ who: '阿枫', tag: '勇敢' }, { who: '小汐', tag: '谨慎' }]);
+  assert.deepEqual(party, [{ who: '阿枫', tag: '勇敢' }, { who: '小汐', tag: '谨慎' }]);
+  const actions = normalizeFreeActions([{ who: '阿枫', say: '看四周' }, { who: '路过的人', say: '借过' }], party);
+  assert.equal(actions.ok, true);
+  assert.equal(actions.actions[1].who, '路人');
+  assert.equal(normalizeFreeActions([{ who: '阿枫', say: '字'.repeat(501) }, { who: '小汐', say: '好' }], party).ok, true, '单条截断后有效');
+  const single = normalizeFreeActions([{ who: '阿枫', say: '字'.repeat(501) }], party);
+  assert.equal(single.ok, true);
+  assert.equal(single.actions[0].say.length, 500, '每条发言上限为 500 字');
+  assert.equal(normalizeFreeActions(Array.from({ length: 4 }, () => ({ who: '阿枫', say: '字'.repeat(500) })), party).ok, false);
+  const payload = freePromptPayload(freePack().setting, newFreeState(freePack().setting), { say: actions.say, actions: actions.actions, party });
+  assert.deepEqual(payload.party, party);
+  assert.equal(payload.player.say, actions.say);
+  const long = '字'.repeat(1500);
+  const normalized = normalizeFreeState({ ...newFreeState({}), log: [{ narration: '叙述', say: long }] }, {});
+  assert.equal(normalized.log[0].say.length, 1500);
+});
+
+test('无登记槽位的包走宽松旁白，不应用 delta 或结束请求', () => {
+  const setting = { canon: [], facts: [], flags: [], counters: [], ends: [] };
+  const output = { ok: true, mode: 'json', narration: narration(), delta: { invent: true }, endRequest: 'missing', summary: '' };
+  const turn = freeTurn(setting, newFreeState(setting), output, { maxTurns: 3 });
+  assert.equal(turn.ok, true);
+  assert.deepEqual(turn.free.flags, {});
+  assert.equal(turn.free.ended, null);
+  assert.equal(freeTurn(freePack().setting, newFreeState(freePack().setting), output, { maxTurns: 3 }).ok, false);
 });
 
 test('状态增量白名单：未登记、类型错、越界、未知分区都整份拒绝', () => {
@@ -217,6 +263,46 @@ test('自由模式在聊天里走一回合：落盘、旧 stamp 拒绝、不重�
   assert.equal(after.session.storyRun.free.turn, 1);
 });
 
+test('多人 actions 一组只推进一回合；party 快照注入、幂等回执和原子 redo', async (t) => {
+  const b = await boot(t, { replies: [
+    { narration: narration('两个人一起走到灯下。') },
+    '他说“再等一会儿”，雨声从屋檐落下，灯影在木板之间慢慢晃动。',
+  ] });
+  const party = [{ who: '阿枫', tag: '勇敢，先观察再行动' }, { who: '小汐', tag: '谨慎，留意周围声响' }];
+  const started = await startFree(b, party);
+  assert.deepEqual(started.party, party);
+  assert.deepEqual((await b.json('fun_story_current')).party, party);
+  const actions = [{ who: '阿枫', say: '我走近灯塔看看。' }, { who: '小汐', say: '我留在门边听雨声。' }];
+  const first = await b.json('fun_story_act', { tripId: started.tripId, stamp: started.stamp, intent: 'say', actions });
+  assert.equal(first.ok, true, first.error);
+  assert.equal(first.turn, 1);
+  assert.equal(first.recorded, 2);
+  assert.ok(first.stamp && first.stamp !== started.stamp);
+  assert.match(first.report, /两个人一起/);
+  assert.ok(first.report.length <= 400);
+  assert.match(b.requests[0].brief, /勇敢，先观察再行动/);
+  assert.match(b.requests[0].brief, /小汐：我留在门边听雨声/);
+
+  const replay = await b.json('fun_story_act', { tripId: started.tripId, stamp: started.stamp, intent: 'say', actions });
+  assert.equal(replay.alreadyCommitted, true);
+  assert.equal(replay.stamp, first.stamp);
+  assert.equal(b.requests.length, 1, '重复回执不再次调用主持');
+
+  const redone = await b.json('fun_story_act', { tripId: started.tripId, stamp: first.stamp, intent: 'redo', say: '补上大家回头确认了灯还亮着。' });
+  assert.equal(redone.ok, true, redone.error);
+  assert.equal(redone.turn, 1, '回滚加重做原子完成，净回合仍为一');
+  assert.equal(redone.unstructured, true);
+  assert.match(redone.summary, /本回合由纯文本接住/);
+  assert.notEqual(redone.stamp, first.stamp);
+
+  const rewind = await b.json('fun_story_act', { tripId: started.tripId, stamp: redone.stamp, intent: 'redo' });
+  assert.equal(rewind.rewound, true);
+  assert.equal(rewind.turn, 0);
+  assert.notEqual(rewind.stamp, started.stamp, 'redo 计数避免回到旧 stamp');
+  const rewindReplay = await b.json('fun_story_act', { tripId: started.tripId, stamp: redone.stamp, intent: 'redo' });
+  assert.equal(rewindReplay.alreadyCommitted, true);
+});
+
 test('自由模式「再来一段」只抬高本段下限，最多三段', () => {
   const setting = freePack().setting;
   const maxTurns = 2;
@@ -309,7 +395,7 @@ test('面板也能推进自由模式：不受文字通道开关限制', async (t
   assert.match(said.lastSay.narration, /雨声/);
   const stale = await b.panel('story', 'say', { tripId: started.trip.id, stamp: started.trip.stamp, say: '再说一次' });
   assert.equal(stale.ok, false);
-  assert.match(stale.error, /进度已变更/);
+  assert.match(stale.error, /进度已经变了/);
 });
 
 test('自由模式可以退回上一回合：状态与日志一起回滚，额度不退', async (t) => {
@@ -348,8 +434,7 @@ test('文字通道一次提交后 stamp 变化，重复同一句不会双推进'
   const first = await b.json('fun_story_act', args);
   assert.equal(first.ok, true, first.error);
   const again = await b.tool('fun_story_act', args);
-  assert.equal(again.failed, true);
-  assert.match(again.text, /STALE/);
+  assert.equal(JSON.parse(again.text).alreadyCommitted, true);
   const state = JSON.parse(await readFile(b.world.stateFile(), 'utf8'));
   assert.equal(state.session.storyRun.free.turn, 1);
 });

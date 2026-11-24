@@ -50,13 +50,21 @@ export function normalizeStoryReceipts(raw, now) {
   if (!Array.isArray(raw)) return [];
   return raw.filter((r) => r && DIGEST.test(r.key) && DIGEST.test(r.digest)
     && Number.isSafeInteger(r.at) && r.at > 0 && (!now || now - r.at <= RECEIPT_MS)
-    && ['start', 'move', 'choose', 'resume', 'close', 'say'].includes(r.action)
+    && ['start', 'move', 'choose', 'resume', 'close', 'say', 'redo'].includes(r.action)
     && ['owner', 'fish', 'joint'].includes(r.actor)
     && typeof r.runId === 'string' && r.runId.length <= 100)
     .slice(-MAX_RECEIPTS)
-    .map(({ key, digest, at, action, actor, runId, stepId, revision, area, optionId, memoryId, votes, substituted }) => ({
+    .map(({ key, digest, at, action, actor, runId, stepId, stamp, revision, area, optionId, memoryId, votes, substituted,
+      turn, recorded, report, rewound, unstructured, reply }) => ({
       key, digest, at, action, actor, runId,
       stepId: String(stepId ?? '').slice(0, 43), revision: String(revision ?? '').slice(0, 60),
+      ...(DIGEST.test(stamp ?? '') ? { stamp } : {}),
+      ...(Number.isSafeInteger(turn) && turn >= 0 ? { turn: Math.min(turn, 600) } : {}),
+      ...(Number.isSafeInteger(recorded) && recorded >= 0 ? { recorded: Math.min(recorded, 20) } : {}),
+      ...(typeof report === 'string' ? { report: report.replace(/[\r\n]+/g, ' ').slice(0, 400) } : {}),
+      ...(rewound === true ? { rewound: true } : {}),
+      ...(['say', 'redo'].includes(action) && typeof reply === 'string' && reply.length <= 8192 ? { reply } : {}),
+      ...(unstructured === true ? { unstructured: true } : {}),
       ...(typeof area === 'string' ? { area: area.slice(0, 80) } : {}),
       ...(typeof optionId === 'string' ? { optionId: optionId.slice(0, 60) } : {}),
       ...(substituted === true ? { substituted: true } : {}),
@@ -71,7 +79,7 @@ export function storyRequestKey(method, payload) {
   if (method === 'start') {
     if (!DIGEST.test(payload.startStamp ?? '') || typeof payload.packId !== 'string' || typeof payload.revision !== 'string'
       || payload.packId.length > 24 || payload.revision.length > 60) return null;
-    return { key: hashStoryValue(['start', payload.startStamp]), digest: hashStoryValue(['start', payload.packId, payload.revision]) };
+    return { key: hashStoryValue(['start', payload.startStamp]), digest: hashStoryValue(['start', payload.packId, payload.revision, payload.party ?? []]) };
   }
   if (!['move', 'choose', 'resume', 'close', 'auto', 'say'].includes(method)
     || typeof payload.tripId !== 'string' || payload.tripId.length > 100 || !DIGEST.test(payload.stamp ?? '')) return null;
@@ -87,6 +95,14 @@ export function storyRequestKey(method, payload) {
         : method === 'say' ? [method, normalizeSay(payload.say), typeof payload.from === 'string' ? payload.from.slice(0, 40) : '']
           : [method]),
   };
+}
+
+/** Free-story input identity: the redo counter prevents a replay after rewind colliding with its old receipt. */
+export function storyFreeRequestKey(tripId, turn, redo, input) {
+  if (typeof tripId !== 'string' || tripId.length > 100 || !Number.isSafeInteger(turn) || turn < 0
+    || !Number.isSafeInteger(redo) || redo < 0) return null;
+  const digest = hashStoryValue(input);
+  return { key: hashStoryValue([tripId, turn, redo, digest]), digest };
 }
 
 export function publicStoryReceipt(row) {

@@ -292,7 +292,7 @@ test('服务端面板声明带 getMethods，且声明的方法真的能调', asy
   const trip = (await decl.invoke('book', 'list', [])).trips[0];
   const storyList = await decl.invoke('stories', 'list', []);
   assert.equal(storyList.ok, true, storyList.error);
-  assert.deepEqual(storyList.packs.map(({ id, builtin }) => [id, builtin]), [
+  assert.deepEqual(storyList.packs.filter(({ formatVersion }) => formatVersion < 3).map(({ id, builtin }) => [id, builtin]), [
     ['foldtide-reply-lite', true], ['drizzled-list', true], ['bridge-echo-solo', true], ['swapped-plaque-riddle', true],
   ], '新装附带四篇获批内置故事');
   const template = await decl.invoke('stories', 'template', []);

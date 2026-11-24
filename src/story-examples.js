@@ -621,6 +621,21 @@ const drafts = [
   },
   bridgeEcho,
   swappedPlaque,
+  ...[
+    ['free-river-light', '江边的浮灯', 'riverside', '夜游', '步道', '一盏纸灯靠在岸边。浮标一亮一暗，鱼蹲下来，指给你看灯罩底下的蓝线。',
+      ['江水向东流。', '纸灯没有点火，里面是一枚反光片。', '沿岸步道可以通行，不必下水。']],
+    ['free-museum-shadows', '闭馆前的影子', 'museum', '谜题', '展厅', '离闭馆还有一刻钟。鱼发现三只展柜的影子碰在一起，恰好拼成了一个展厅里没标出来的角落。',
+      ['展柜不能打开。', '影子随着日光而动。', '影子不是馆方布置的展品。']],
+    ['free-cafe-recipe', '咖啡店里的空白菜单', 'cafe', '日常', '窗边座', '雨开始打在玻璃上。窗台立着一张空白菜单，鱼把铅笔推给你：今天的特别饮品，叫什么名字？',
+      ['空白菜单是给访客留言的。', '桌上有三罐供人试闻的香料。', '配方由你和鱼商量，不需要真的制作。']],
+    ['free-park-wind', '公园的风信', 'park', '轻探险', '林荫小路', '风吹起了步道旁的三根彩带。鱼正要猜它们指向哪儿，才发现每根末梢都绣着一个不同的小图案。',
+      ['彩带系在步道旁，不必折树枝。', '线索只在公园里。', '风有时会停，彩带静止也是正常的。']],
+  ].map(([id, title, placeId, genre, name, opening, canon]) => ({
+    version: 3, id, title, placeId,
+    metadata: { mode: 'free', author: '肥鱼大冒险', release: '1.0.0', genre, synopsis: opening, participation: 'solo' },
+    setting: { premise: opening, canon, cast: [{ id: 'fish', name: '鱼', role: '结伴游玩的伙伴' }],
+      locations: [{ id: 'start', name }], opening },
+  })),
 ];
 
 export const BUILTIN_STORY_PACKS = Object.freeze(drafts.map((draft) => {

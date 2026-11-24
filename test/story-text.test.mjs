@@ -104,6 +104,30 @@ test('文字通道：用户回合可以按原话替用户提交，鱼的回合�
   assert.deepEqual(actors.slice(-2), ['owner', 'fish']);
 });
 
+test('双人文字收尾：无待决或主人待决可以确认收尾，鱼待决和 fun_home 仍拦截', async (t) => {
+  for (const seat of ['none', 'owner', 'fish']) {
+    const b = await boot(t);
+    const started = await startPack(b, duoPack(b.venue.id));
+    let stamp = started.stamp;
+    const act = (intent, args) => b.tool('fun_story_act', { tripId: started.tripId, stamp, intent, ...args });
+    async function say(line) {
+      const result = await act('say', { say: line });
+      assert.ok(!result.failed, result.text);
+      const body = JSON.parse(result.text);
+      stamp = body.stamp;
+      return body.pending?.actor;
+    }
+    if (seat !== 'none') assert.equal(await say('往里走'), 'owner');
+    if (seat === 'fish') { await say('往左走'); assert.equal(await say('走到栏杆边'), 'fish'); }
+    assert.equal((await b.tool('fun_home')).failed, true);
+    assert.equal((await act('close', {})).failed, true);
+    const result = await act('close', { confirm: true });
+    if (seat === 'fish') assert.match(result.text, /轮到鱼/);
+    else assert.ok(JSON.parse(result.text).closed, result.text);
+    await b.world.stop();
+  }
+});
+
 test('文字通道：说「第二个」也能落到对应选项', async (t) => {
   const b = await boot(t);
   const started = await startPack(b, soloPack(b.venue.id));

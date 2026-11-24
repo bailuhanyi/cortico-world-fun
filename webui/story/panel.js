@@ -71,7 +71,8 @@ export function mountPanel(root, ctx) {
   }
   // 进作者视图不替用户展开：编辑区默认收起，展开状态由用户上次的选择决定。
   function openAuthor(expand = false) { navigate('author'); if (expand) authorPanel?.expand(); }
-  let view = 'home';
+  let view = 'stories';
+  let freeNoticeAcknowledged = false;
   let memoryFilter = 'all';
   let autoPreset = true;
   // 出游页的两种读法：默认对话式（钉住头尾、中间滚），顶栏可切到「沉浸」的一屏一幕。
@@ -229,17 +230,74 @@ export function mountPanel(root, ctx) {
   function stories(state) {
     const snapshot = state.snapshot;
     const all = list(snapshot.catalog);
+    const freeStories = all.filter((story) => story.mode === 'free' || story.formatVersion === 3);
+    const featured = freeStories.slice(0, 4);
+    const more = [...freeStories.slice(4), ...all.filter((story) => !freeStories.includes(story))];
     const intro = node('div', { class: 'sw-lead' }, node('h2', {}, t.storyCatalogTitle), node('p', {}, t.storyCatalogIntro));
     const preset = node('section', { class: 'sw-card sw-card-pad' }, node('div', { class: 'sw-mode' },
       node('div', {}, node('strong', {}, '这次，想让鱼自己游玩吗？'), node('small', {}, '默认让鱼自己往下走；出发后你随时可以接管。')),
       node('button', { type: 'button', class: 'sw-switch', role: 'switch', 'aria-label': '出发后开启鱼自己游玩', 'aria-checked': String(autoPreset),
         disabled: !snapshot.autonomy.available || Boolean(snapshot.trip), 'data-focus': 'auto-preset', onclick: () => { autoPreset = !autoPreset; render(); } })),
       note(snapshot.autonomy.available ? '可以随时接管。关闭窗口、切走页面或遇到错误时会暂停。' : text(snapshot.autonomy.reason, '自主游玩暂不可用，手动玩法不受影响。')));
-    return node('div', { class: 'sw-stack' }, intro, preset,
-      all.length ? node('div', { class: 'sw-story-grid' }, all.map((story) => storyCard(story, state)))
-        : empty(t.storyEmptyTitle, t.storyEmptyBody),
-      node('section', { class: 'sw-card sw-card-pad' }, node('div', { class: 'sw-side-title' }, icon('settings'), t.storyWrite),
-        node('p', { class: 'sw-card-note' }, t.storyAuthorHint), button(t.storyWrite, () => openAuthor(true), { primary: true, key: 'stories-write' })));
+    const freeNotice = snapshot.showFreeDefault && !freeNoticeAcknowledged
+      ? node('div', { class: 'sw-notice', role: 'status' }, note('自由故事已默认开启，可在高级里关掉。'),
+        button('知道了', async () => {
+          try {
+            const result = await ownCall('ackFreeDefault', {});
+            if (!result?.ok) throw new Error(result?.error || '没有保存提示状态。');
+            freeNoticeAcknowledged = true;
+          } catch (error) { localError = error.message; }
+          render();
+        }, { small: true })) : null;
+    return node('div', { class: 'sw-stack' }, intro,
+      featured.length ? node('div', { class: 'sw-story-grid', 'aria-label': '自由故事' }, featured.map((story) => storyCard(story, state)))
+        : !more.length ? empty(t.storyEmptyTitle, t.storyEmptyBody) : null,
+      freeNotice,
+      snapshot.trip ? button('继续这趟故事', () => navigate('play'), { primary: true, key: 'stories-continue' }) : null,
+      partyEditor(snapshot),
+      more.length ? trackedDetails('more-stories', node('summary', {}, '更多故事'), preset,
+        node('div', { class: 'sw-story-grid' }, more.map((story) => storyCard(story, state)))) : null,
+      trackedDetails('story-authoring', node('summary', {}, t.storyWrite),
+        note(t.storyAuthorHint), button(t.storyWrite, () => openAuthor(true), { size: 'small', key: 'stories-write' })));
+  }
+
+  function partyEditor(snapshot) {
+    const input = node('textarea', { class: 'sw-free-input', rows: '4', maxlength: '3000', 'aria-label': '常驻小队名单' });
+    input.value = list(snapshot.savedParty).map(({ who, tag }) => tag ? who + '｜' + tag : who).join('\n');
+    return trackedDetails('story-party', node('summary', {}, '常驻小队'),
+      note('每行一位：昵称｜人设标签。改名单只影响下一次开局。'), input,
+      button('保存小队', async () => {
+        const party = input.value.split(/\r?\n/).map((line) => {
+          const [who, ...tags] = line.split('｜');
+          return { who: who.trim(), tag: tags.join('｜').trim() };
+        }).filter(({ who }) => who);
+        try {
+          const result = await ownCall('saveParty', { party });
+          if (!result?.ok) throw new Error(result?.error || '没有保存小队。');
+          localError = '';
+          localNotice = '常驻小队已保存。';
+          await controller.refresh();
+        } catch (error) { localError = error.message; render(); }
+      }, { key: 'save-party', small: true }));
+  }
+
+  function freeLogEntry(entry) {
+    return node('li', {},
+      node('small', {}, text(entry.who || entry.from, '这一回合')),
+      list(entry.actions).length ? list(entry.actions).map(({ who, say }) => node('p', { class: 'sw-free-say' }, who + '：' + say))
+        : entry.say ? node('p', { class: 'sw-free-say' }, '「' + entry.say + '」') : null,
+      node('p', { class: 'sw-prose' }, text(entry.narration)),
+      entry.unstructured ? note('本回合由纯文本接住。') : null);
+  }
+
+  function freeRedoButton(state, input, free, current) {
+    if (!(Number(free.turn) > 0)) return null;
+    return button('补充并重跑', async () => {
+      const say = input.value.trim();
+      if (!say || !canAct(state)) return;
+      const confirmed = await askConfirm('补充并重跑？', '主持成功后，这份新输入会替代上一回合。已经花掉的模型调用不退。');
+      if (confirmed && !disposed) await controller.mutate('say', { intent: 'redo', say });
+    }, { small: true, key: 'free-redo', disabled: !canAct(state) || current.state === 'draft' || Boolean(current.blocked) });
   }
 
   /**
@@ -407,16 +465,12 @@ export function mountPanel(root, ctx) {
     const reading = node('div', { class: 'sw-reading', 'data-focus': 'play-reading' });
     if (free.summary) reading.append(note(`到目前为止：${free.summary}`));
     const log = list(free.log);
-    if (!log.length) reading.append(node('p', { class: 'sw-prose' }, '开场已经在那里了。说一句想做的事，故事就会往下走。'));
+    if (!log.length) reading.append(node('p', { class: 'sw-prose' }, text(current.opening, '开场已经在那里了。说一句想做的事，故事就会往下走。')));
     else {
-      const render = (entry) => node('li', {},
-        node('small', {}, text(entry.from, '这一回合')),
-        entry.say ? node('p', { class: 'sw-free-say' }, `「${text(entry.say)}」`) : null,
-        node('p', { class: 'sw-prose' }, text(entry.narration)));
       const earlier = log.slice(0, -6);
       if (earlier.length) reading.append(trackedDetails('free-earlier', node('summary', {}, `更早的 ${earlier.length} 回合`),
-        node('ol', { class: 'sw-free-log' }, earlier.map(render))));
-      reading.append(node('ol', { class: 'sw-free-log' }, log.slice(-6).map(render)));
+        node('ol', { class: 'sw-free-log' }, earlier.map(freeLogEntry))));
+      reading.append(node('ol', { class: 'sw-free-log' }, log.slice(-6).map(freeLogEntry)));
     }
     const chips = node('div', { class: 'sw-story-meta' });
     for (const [id, value] of Object.entries(free.facts ?? {})) chips.append(badge(`${id} · ${text(value)}`, true));
@@ -426,14 +480,14 @@ export function mountPanel(root, ctx) {
     if (list(current.blocked).length || current.blocked) reading.append(node('div', { class: 'sw-notice sw-notice-error' }, icon('info'), node('p', {}, text(current.blocked))));
     left.append(reading);
 
-    const input = node('textarea', { class: 'sw-free-input', rows: '2', placeholder: capped ? '这一段说完了，可以再来一段。' : '这一回合你想做什么？', 'aria-label': '这一回合做什么', disabled: isDraft || Boolean(free.ended) || capped });
+    const input = node('textarea', { class: 'sw-free-input', rows: '2', maxlength: '1500', placeholder: capped ? '这段有点长了，要不要收进回忆？' : '这一回合你想做什么？', 'aria-label': '这一回合做什么', disabled: isDraft || Boolean(current.blocked) });
     const send = button('说这一句', async () => {
       const say = input.value.trim();
       if (!say || !canAct(state)) return;
       await controller.mutate('say', { say });
     }, { primary: true, key: 'free-say', disabled: !canAct(state) || isDraft || Boolean(free.ended) || capped });
     left.append(node('div', { class: 'sw-play-action sw-free-compose' }, input,
-      actionRow(send, free.canContinue ? button(`再来一段 · 还能 ${text(free.segmentsLeft, 0)} 段`, () => controller.continueSegment(),
+      actionRow(send, freeRedoButton(state, input, free, current), free.canContinue ? button(`再来一段 · 还能 ${text(free.segmentsLeft, 0)} 段`, () => controller.continueSegment(),
         { primary: true, icon: 'arrow', key: 'free-segment', disabled: !canAct(state) || state.loading || state.recovering || Boolean(state.busy) }) : null)));
     left.append(node('div', { class: 'sw-play-foot' },
       node('div', { class: 'sw-status', role: 'status' }, icon(state.busy ? 'clock' : 'check'), state.busy || '实际进度已同步'),
@@ -445,6 +499,8 @@ export function mountPanel(root, ctx) {
           if (confirmed && !disposed) await controller.mutate('rewind');
         }, { quiet: true, disabled: !canAct(state), key: 'free-rewind' }) : null)));
     const right = node('aside', { class: 'sw-stack sw-aside', 'aria-label': '自由模式说明' });
+    if (list(current.party).length) right.append(node('section', { class: 'sw-card sw-card-pad' },
+      node('strong', {}, '本局小队'), node('ul', {}, current.party.map(({ who, tag }) => node('li', {}, tag ? who + ' · ' + tag : who)))));
     right.append(node('section', { class: 'sw-card sw-card-pad' },
       node('div', { class: 'sw-side-title' }, icon('book'), '这一段怎么走'),
       note('作者只定下大方向和不能改的事实；每一回合怎么演，交给主持。你随时可以停。'),
@@ -609,7 +665,8 @@ export function mountPanel(root, ctx) {
     wrap.append(scene(null, text(current.placeName), '', { location: current.locationArt, class: 'sw-imm-scene', tag: '场景包' }));
     wrap.append(node('div', { class: 'sw-imm-body' },
       node('div', { class: 'sw-kicker' }, free.ended ? '已收尾' : `第 ${text(free.segment, 1)} 段 · 还剩 ${turnsLeft} 回合`),
-      node('p', { class: 'sw-imm-lead' }, text(last?.narration, '开场已经在那里了。说一句想做的事，故事就会往下走。')),
+      node('p', { class: 'sw-imm-lead' }, text(last?.narration || current.opening, '开场已经在那里了。说一句想做的事，故事就会往下走。')),
+      last?.unstructured ? note('本回合由纯文本接住。') : null,
       last?.say ? node('p', { class: 'sw-imm-ask' }, `你刚才说：「${text(last.say)}」`) : null,
       free.summary ? note(`到目前为止：${free.summary}`) : null));
     const input = node('textarea', { class: 'sw-free-input', rows: '2', placeholder: capped ? '这一段说完了，可以再来一段。' : '这一回合你想做什么？', 'aria-label': '这一回合做什么', disabled: isDraft || Boolean(free.ended) || capped });
@@ -628,10 +685,7 @@ export function mountPanel(root, ctx) {
           : button('先收起', () => controller.mutate('close'), { small: true, quiet: true, disabled: !canAct(state), key: 'free-close-early' }))));
     if (drawerOpen) {
       const body = node('div', { class: 'sw-drawer-body' });
-      if (log.length) body.append(node('ol', { class: 'sw-free-log' }, log.map((entry) => node('li', {},
-        node('small', {}, text(entry.from, '这一回合')),
-        entry.say ? node('p', { class: 'sw-free-say' }, `「${text(entry.say)}」`) : null,
-        node('p', { class: 'sw-prose' }, text(entry.narration))))));
+      if (log.length) body.append(node('ol', { class: 'sw-free-log' }, log.map(freeLogEntry)));
       else body.append(note('还没有发生的回合。'));
       wrap.append(node('div', { class: 'sw-drawer', role: 'dialog', 'aria-label': '这一段的回看' },
         node('div', { class: 'sw-drawer-head' }, node('div', {}, node('div', { class: 'sw-kicker' }, '这一段'), node('strong', {}, `回看 · ${log.length} 回合`)),
@@ -1070,7 +1124,7 @@ export function mountPanel(root, ctx) {
     } else if (view !== 'play') {
       playScroll = { key: '', top: 0, atBottom: true };
     }
-    top.replaceChildren(node('div', { class: 'sw-brand' }, node('span', { class: 'sw-logo' }, icon('fish')), node('div', {}, node('strong', {}, '故事工坊'), node('small', {}, '把日常，慢慢过成故事'))),
+    top.replaceChildren(node('div', { class: 'sw-brand' }, node('span', { class: 'sw-logo' }, icon('fish')), node('div', {}, node('strong', {}, t.storyTitle), node('small', {}, '把日常，慢慢过成故事'))),
       node('div', { class: 'sw-top-actions' }, node('span', { class: 'sw-status' }, node('span', { class: 'sw-dot' }), snapshot?.trip ? '旅途进行中' : '欢迎回家'),
         autoImageSwitch(snapshot),
         button(immersive ? '沉浸中' : '沉浸', () => { immersive = !immersive; drawerOpen = false; render(); },

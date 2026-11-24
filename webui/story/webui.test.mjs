@@ -80,7 +80,7 @@ test('manual first mount reads status, renders real choices, stores no progress'
   const root = document.createElement('div'); const stored = [];
   h.ctx.memo = { get: (_key, fallback) => fallback, set: (...args) => stored.push(args) };
   const mounted = mountPanel(root, h.ctx); await flush();
-  assert.match(root.textContent, /故事工坊/);
+  assert.match(root.textContent, /故事手账/);
   assert.equal(h.calls[0].method, 'status'); assert.equal(h.calls.length, 1);
   root.querySelector('[data-focus="nav-play"]').click();
   assert.match(root.textContent, /接下来，想去哪里/);
@@ -90,6 +90,24 @@ test('manual first mount reads status, renders real choices, stores no progress'
   mounted.dispose();
   assert.equal(root.childNodes.length, 0);
 });
+test('first screen features four free stories and folds other stories and authoring', async () => {
+  const initial = snapshot(); initial.trip = null; initial.showFreeDefault = true;
+  initial.catalog.push(...Array.from({ length: 5 }, (_, index) => ({ ...initial.catalog[0],
+    id: `free-${index}`, title: `自由故事 ${index}`, mode: 'free', formatVersion: 3 })));
+  const h = harness(null, initial);
+  globalThis.document = h.env.document; globalThis.window = h.env.window;
+  const root = document.createElement('div'); const mounted = mountPanel(root, h.ctx); await flush();
+  const featured = root.querySelector('[aria-label="自由故事"]');
+  assert.equal(featured.querySelectorAll('.sw-story-card').length, 4);
+  assert.doesNotMatch(featured.textContent, /自建溪边故事|自由故事 4/);
+  const more = root.querySelector('[data-details="more-stories"]');
+  assert.equal(more.open, false);
+  assert.match(more.textContent, /自由故事 4.*自建溪边故事/s);
+  assert.equal(root.querySelector('[data-details="story-authoring"]').open, false);
+  assert.match(root.textContent, /自由故事已默认开启/);
+  mounted.dispose();
+});
+
 test('fallback receipt remains visible with a status role after panel refresh and rerender', async () => {
   const initial = snapshot();
   initial.dm = {
@@ -279,6 +297,7 @@ test('image failures fall back locally and preserve story controls', async () =>
   const h = harness(); globalThis.document = h.env.document; globalThis.window = h.env.window;
   h.ctx.memo = { get: (key, fallback) => key.endsWith('home-day') ? 'data:image/png;base64,iVBORw==' : fallback };
   const root = document.createElement('div'); const mounted = mountPanel(root, h.ctx); await flush();
+  root.querySelector('[data-focus="nav-home"]').click();
   const image = root.querySelector('img'); assert.ok(image); image.dispatchEvent(new Event('error'));
   assert.equal(root.querySelector('img'), null);
   assert.match(root.textContent, /图片未能加载/);
@@ -807,7 +826,7 @@ test('R4 自由场景包表单：切过去填完就能产出 v3 场景包', asyn
     : method === 'authorImport' ? { ok: true, id: 'user-free' } : undefined, initial);
   globalThis.document = h.env.document; globalThis.window = h.env.window;
   const root = document.createElement('div'); const mounted = mountPanel(root, h.ctx); await flush();
-  root.querySelector('[data-focus="home-write"]').click(); await flush();
+  root.querySelector('[data-focus="stories-write"]').click(); await flush();
   const freeTab = [...root.querySelectorAll('.fun-story-mode-tab')].find((node) => /自由场景包/.test(node.textContent));
   assert.ok(freeTab);
   freeTab.click(); await flush();
@@ -851,7 +870,10 @@ test('R4 no-sample empty state enters the full author panel through same-world R
   const root = document.createElement('div'); const mounted = mountPanel(root, h.ctx); await flush();
   assert.match(root.textContent, /还没有故事.*编写故事/s);
   assert.doesNotMatch(root.textContent, /样章|漂流信|导入样章/);
-  root.querySelector('[data-focus="home-write"]').click(); await flush();
+  const writing = root.querySelector('[data-details="story-authoring"]');
+  assert.equal(writing.open, false, 'writing controls are folded on the first screen');
+  writing.open = true;
+  writing.querySelector('[data-focus="stories-write"]').click(); await flush();
   assert.equal(h.calls.filter((call) => call.method === 'authorList').length, 1);
   assert.equal(root.querySelector('.fun-story-editor-toggle').getAttribute('aria-expanded'), 'true');
   const modes = root.querySelectorAll('.fun-story-mode-tab');

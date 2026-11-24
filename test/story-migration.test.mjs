@@ -140,10 +140,10 @@ test('StoryLibrary upgrade after the 0.3.3 migration also promotes the two newly
 });
 
 test('new installations ship the four approved built-in stories and no retired sample', () => {
-  assert.deepEqual(SHIPPED_STORY_PACKS.map((pack) => pack.id), [
+  assert.deepEqual(SHIPPED_STORY_PACKS.filter(({ version }) => version < 3).map((pack) => pack.id), [
     'foldtide-reply-lite', 'drizzled-list', 'bridge-echo-solo', 'swapped-plaque-riddle',
   ]);
   assert.deepEqual([...PROMOTED_STORY_IDS], ['foldtide-reply-lite', 'drizzled-list']);
-  for (const pack of SHIPPED_STORY_PACKS) assert.ok([1, 2].includes(pack.version));
+  assert.equal(SHIPPED_STORY_PACKS.filter(({ version }) => version === 3).length, 4);
   assert.equal(SAMPLE_STORY.id, 'creek-drift-letter');
 });

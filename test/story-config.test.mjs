@@ -54,7 +54,7 @@ const directSecrets = (request) => ({
 test('new install ships the four approved built-in stories and settings reads do not create data', async (t) => {
   const r = await rig(t);
   const state = success(await r.call('status'));
-  assert.deepEqual(state.catalog.map((entry) => entry.id), ['foldtide-reply-lite', 'drizzled-list', 'bridge-echo-solo', 'swapped-plaque-riddle']);
+  assert.deepEqual(state.catalog.filter(({ mode }) => mode !== 'free').map((entry) => entry.id), ['foldtide-reply-lite', 'drizzled-list', 'bridge-echo-solo', 'swapped-plaque-riddle']);
   assert.ok(state.catalog.every((entry) => entry.builtin === true));
   assert.equal(Object.hasOwn(state, 'sample'), false);
   assert.equal((await r.call('installSample')).ok, false);

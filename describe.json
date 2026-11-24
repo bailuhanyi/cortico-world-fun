@@ -439,7 +439,7 @@
     },
     {
       "name": "fun_story_start",
-      "description": "在聊天里开始一段故事（需开「文字通道也能玩故事」）。先从 fun_story_candidates / detail 取 packId、revision，从 fun_story_current 取 startStamp；开始前会重校验。用户明确说要开始才填 confirm:true。",
+      "description": "在聊天里开始一段故事（需开「文字通道也能玩故事」）。先从 fun_story_candidates / detail 取 packId、revision，从 fun_story_current 取 startStamp；开始前会重校验。自由故事可传 party 群聊名单；选项式故事不接受 party。用户明确说要开始才填 confirm:true。",
       "parameters": {
         "type": "object",
         "properties": {
@@ -461,15 +461,18 @@
           },
           "party": {
             "type": "array",
-            "description": "群聊参与者，可选。",
+            "maxItems": 20,
+            "description": "自由故事群聊参与者；省略时沿用常驻名单。",
             "items": {
               "type": "object",
               "properties": {
                 "who": {
-                  "type": "string"
+                  "type": "string",
+                  "maxLength": 40
                 },
                 "tag": {
-                  "type": "string"
+                  "type": "string",
+                  "maxLength": 100
                 }
               },
               "required": [
@@ -497,7 +500,7 @@
     },
     {
       "name": "fun_story_act",
-      "description": "在聊天里推进当前故事，把用户原话交给它，不替用户编选择。选项式按回合身份提交：用户回合记 owner，鱼回合由鱼决定；原话对不上先返回 proposalId，确认后再带 proposalId+optionId。自由模式每句一回合；结束用 intent:close + confirm:true。",
+      "description": "在聊天里推进当前故事。自由故事可用 say（≤1500 字）或 actions 一次汇总多人发言（每人≤500 字、合计≤1500 字），一组只推进一回合；早提交用 redo 重跑。选项式按回合身份提交：用户回合记 owner，鱼回合由鱼决定；原话对不上先返回 proposalId，确认后再带 proposalId+optionId。close 需 confirm:true。",
       "parameters": {
         "type": "object",
         "properties": {
@@ -524,15 +527,18 @@
           },
           "actions": {
             "type": "array",
-            "description": "多人动作一次性汇总提交。",
+            "maxItems": 20,
+            "description": "多人动作一次性汇总提交；每条 say ≤500 字，合计 ≤1500 字。",
             "items": {
               "type": "object",
               "properties": {
                 "who": {
-                  "type": "string"
+                  "type": "string",
+                  "maxLength": 40
                 },
                 "say": {
-                  "type": "string"
+                  "type": "string",
+                  "maxLength": 500
                 }
               },
               "required": [

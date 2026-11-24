@@ -226,7 +226,7 @@ test('availability reports missing venue areas or supported phase keys without c
 });
 
 test('release ships the four approved built-in stories including the supplied v1 packs', () => {
-  assert.deepEqual(SHIPPED_STORY_PACKS.map((pack) => pack.id), [
+  assert.deepEqual(SHIPPED_STORY_PACKS.filter(({ version }) => version < 3).map((pack) => pack.id), [
     'foldtide-reply-lite', 'drizzled-list', 'bridge-echo-solo', 'swapped-plaque-riddle',
   ]);
   const byId = new Map(SHIPPED_STORY_PACKS.map((pack) => [pack.id, pack]));

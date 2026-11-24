@@ -444,17 +444,17 @@ function normalizeFreeSetting(raw, errors) {
     name: textValue(item.name, `${path}.name`, 40, errors),
     desc: textValue(item.desc, `${path}.desc`, 160, errors, { required: false }) ?? '',
   }), errors);
-  const flags = freeIds(raw.flags, 'setting.flags', 12, (item, path) => ({
+  const flags = freeIds(raw.flags === undefined ? [] : raw.flags, 'setting.flags', 12, (item, path) => ({
     id: validId(item.id, `${path}.id`, errors),
     label: textValue(item.label, `${path}.label`, 40, errors, { required: false }) ?? '',
     initial: item.initial === true,
   }), errors);
-  const facts = freeIds(raw.facts, 'setting.facts', 12, (item, path) => ({
+  const facts = freeIds(raw.facts === undefined ? [] : raw.facts, 'setting.facts', 12, (item, path) => ({
     id: validId(item.id, `${path}.id`, errors),
     label: textValue(item.label, `${path}.label`, 40, errors, { required: false }) ?? '',
     initial: textValue(item.initial, `${path}.initial`, 200, errors, { required: false }) ?? '',
   }), errors);
-  const counters = freeIds(raw.counters, 'setting.counters', 8, (item, path) => {
+  const counters = freeIds(raw.counters === undefined ? [] : raw.counters, 'setting.counters', 8, (item, path) => {
     const min = Number.isSafeInteger(item.min) ? item.min : 0;
     const max = Number.isSafeInteger(item.max) ? item.max : 10;
     if (min < 0 || max > 100 || min >= max) errors.push(`${path}: needs 0 <= min < max <= 100`);
@@ -472,17 +472,16 @@ function normalizeFreeSetting(raw, errors) {
   const allStateIds = new Set([...stateIds.flags, ...stateIds.counters, ...stateIds.facts]);
   if (allStateIds.size !== stateIds.flags.size + stateIds.counters.size + stateIds.facts.size) errors.push('setting: flag/counter/fact ids must not repeat across sections');
 
-  const goals = freeIds(raw.goals, 'setting.goals', 4, (item, path) => ({
+  const goals = freeIds(raw.goals === undefined ? [] : raw.goals, 'setting.goals', 4, (item, path) => ({
     id: validId(item.id, `${path}.id`, errors),
     text: textValue(item.text, `${path}.text`, 120, errors),
     when: normalizeFreeWhen(item.when, `${path}.when`, errors, stateIds),
   }), errors);
-  const ends = freeIds(raw.ends, 'setting.ends', 4, (item, path) => {
+  const ends = freeIds(raw.ends === undefined ? [] : raw.ends, 'setting.ends', 4, (item, path) => {
     const when = normalizeFreeWhen(item.when, `${path}.when`, errors, stateIds);
     if (when === undefined) errors.push(`${path}.when: endings need a condition`);
     return { id: validId(item.id, `${path}.id`, errors), text: textValue(item.text, `${path}.text`, 120, errors), when };
   }, errors);
-  if (!ends.length) errors.push('setting.ends: needs at least one ending');
 
   return { premise, canon, ...(forbidden.length ? { forbidden } : {}), cast, locations, opening, flags, counters, facts, goals, ends, ...(beats.length ? { beats } : {}) };
 }

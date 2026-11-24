@@ -143,7 +143,7 @@ test('explicit import, exact pack, both real branches and independent memories',
   const { dir, rpc, panel } = await rig(t);
   const first = expectOk(await rpc('status'));
   assert.equal(first.sample, undefined);
-  assert.deepEqual(first.catalog.map(({ id }) => id), ['foldtide-reply-lite', 'drizzled-list', 'bridge-echo-solo', 'swapped-plaque-riddle']);
+  assert.deepEqual(first.catalog.filter(({ mode }) => mode !== 'free').map(({ id }) => id), ['foldtide-reply-lite', 'drizzled-list', 'bridge-echo-solo', 'swapped-plaque-riddle']);
   assert.equal(first.autonomy.available, false);
   assert.equal((await rpc('start', { packId: 'missing', revision: 'missing', startStamp: first.startStamp })).ok, false);
   await rpc.installStory();

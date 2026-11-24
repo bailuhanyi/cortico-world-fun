@@ -30,7 +30,7 @@ import { normalizeTimeline, normalizeRoute, normalizeRoutes, addMoment, timeline
 import { normalizeStoryCanon } from './story-canon.js';
 import { dmBudget } from './story-dm.js';
 import { normalizeStoryReceipts, storyBudget, AUTO_SEGMENTS } from './story-reliability.js';
-import { FREE_TURN_CAP } from './story-free.js';
+import { FREE_TURN_CAP, normalizeFreeActions, normalizeStoryParty } from './story-free.js';
 
 /** 纪念册最多留几趟。 */
 export const MAX_TRIPS = 40;
@@ -79,7 +79,7 @@ export function minutesIn(tz, nowMs) {
 
 /** 当天的新状态。 */
 export function newState(day) {
-  return { day, session: null, draft: null, route: null, routes: [], routeSeq: 0, exploration: [], storyCanon: [], trips: [], collection: [], keepsakeTrips: [], tripSeq: 0, wishes: [], trash: [] };
+  return { day, session: null, draft: null, route: null, routes: [], routeSeq: 0, exploration: [], storyCanon: [], trips: [], collection: [], keepsakeTrips: [], tripSeq: 0, wishes: [], trash: [], party: [] };
 }
 
 export function newTripId(placeId, enteredAt, leftAt) {
@@ -201,6 +201,7 @@ function normalizeFreeRun(raw) {
   const turn = Number.isSafeInteger(raw.turn) && raw.turn >= 0 ? Math.min(raw.turn, turnCeiling) : 0;
   const turnBase = Number.isSafeInteger(raw.turnBase) && raw.turnBase >= 0 ? Math.min(raw.turnBase, turnCeiling) : 0;
   const segment = Number.isSafeInteger(raw.segment) && raw.segment >= 0 ? Math.min(raw.segment, AUTO_SEGMENTS - 1) : 0;
+  const redo = Number.isSafeInteger(raw.redo) && raw.redo >= 0 ? Math.min(raw.redo, 100_000) : 0;
   const facts = {};
   if (raw.facts && typeof raw.facts === 'object' && !Array.isArray(raw.facts)) {
     for (const [id, value] of Object.entries(raw.facts).slice(0, 24)) {
@@ -221,12 +222,16 @@ function normalizeFreeRun(raw) {
   }
   const log = (Array.isArray(raw.log) ? raw.log : []).slice(-40).flatMap((entry) => {
     if (!entry || typeof entry !== 'object') return [];
-    const narration = text(entry.narration, 900);
+    const narration = entry.unstructured === true && typeof entry.narration === 'string'
+      ? entry.narration.slice(0, 1500) : text(entry.narration, 900);
     if (!narration) return [];
+    const actions = normalizeFreeActions(entry.actions, entry.actions);
     return [{ turn: Number.isSafeInteger(entry.turn) && entry.turn >= 0 ? entry.turn : 0, from: text(entry.from, 40),
-      say: text(entry.say, 200), narration, at: Number.isFinite(Number(entry.at)) ? Number(entry.at) : 0 }];
+      ...(entry.who ? { who: text(entry.who, 200) } : {}), say: typeof entry.say === 'string' ? entry.say.trim().slice(0, 1500) : '', narration,
+      at: Number.isFinite(Number(entry.at)) ? Number(entry.at) : 0, ...(entry.unstructured === true ? { unstructured: true } : {}),
+      ...(actions.ok ? { actions: actions.actions } : {}) }];
   });
-  return { turn, turnBase, segment, facts, flags, counters, summary: text(raw.summary, 200), log,
+  return { turn, turnBase, segment, redo, facts, flags, counters, summary: text(raw.summary, 200), log,
     ended: typeof raw.ended === 'string' && FREE_NAME_RE.test(raw.ended) ? raw.ended : null };
 }
 
@@ -252,9 +257,10 @@ function normalizeStoryRun(raw) {
   return { storyRun: { packId, revision, title, endingNodeId: text(raw.endingNodeId, 24) || null, seq, budget: storyBudget(raw.budget), dmBudget: dmBudget(raw.dmBudget),
     ...(free ? { free } : {}),
     autoplay: raw.autoplay === true,
-    freeCalls: Number.isSafeInteger(raw.freeCalls) && raw.freeCalls >= 0 ? Math.min(raw.freeCalls, 1000) : 0,
+    freeCalls: Number.isSafeInteger(raw.freeCalls) && raw.freeCalls >= 0 ? Math.min(raw.freeCalls, AUTO_SEGMENTS * (FREE_TURN_CAP * 2 + 4)) : 0,
     forkToken: typeof raw.forkToken === 'string' && /^[A-Za-z0-9_-]{16,80}$/.test(raw.forkToken) ? raw.forkToken : null,
     participation: raw.participation === 'duo' ? 'duo' : 'solo',
+    party: normalizeStoryParty(raw.party),
     runId: text(raw.runId, 100) || null, sourceRunId: text(raw.sourceRunId, 100) || null, sourceMemoryId: text(raw.sourceMemoryId, 100) || null,
     sourceCheckpointId: text(raw.sourceCheckpointId, 80) || null,
     canonical: raw.canonical !== false, resourceVersion: text(raw.resourceVersion, 80) || 'legacy-unknown', checkpoints } };
@@ -405,6 +411,8 @@ export function normalizeState(raw, day, nowMs = 0, ttlMin = DEFAULT_TTL_MIN, ti
     exploration,
     storyCanon: normalizeStoryCanon(raw.storyCanon, [...trips, ...mergeKeptTrips(raw.keepsakeTrips, trips)]),
     wishes: normalizeWishes(raw.wishes),
+    party: normalizeStoryParty(raw.party),
+    ...(raw.notices?.freeDefaultOn === true ? { notices: { freeDefaultOn: true } } : {}),
     trash: normalizeTrash(raw.trash),
     ...(raw.storyReceipts ? { storyReceipts: normalizeStoryReceipts(raw.storyReceipts, nowMs) } : {}),
   };
