@@ -311,15 +311,9 @@ export function configGroup(language = 'zh') {
           type: 'integer', title: advanced('funStoryNodeLimit'), description: t.funStoryNodeLimitDesc,
           minimum: 0, maximum: Number.MAX_SAFE_INTEGER, 'x-suffix': ' 个节点',
         },
-        [`${K}.funStoryDM`]: {
-          type: 'boolean', title: advanced('funStoryDM'), description: t.funStoryDMDesc,
-        },
-        [`${K}.funStoryDmUrl`]: {
-          type: 'string', title: advanced('funStoryDmUrl'), description: t.funStoryDmUrlDesc,
-        },
-        [`${K}.funStoryDmModel`]: {
-          type: 'string', title: advanced('funStoryDmModel'), description: t.funStoryDmModelDesc,
-        },
+        // 主持方式、接口地址与模型名不在这里出现：它们和 API Key 一起放在
+        // 「故事手账 → 设置 → 高级设置」，一处配完。DEFAULTS 里仍保留这三个键，
+        // 面板保存走 #saveStorySettings 写回 cfg。
         [`${K}.funStoryImages`]: {
           type: 'boolean', title: advanced('funStoryImages'), description: t.funStoryImagesDesc,
         },

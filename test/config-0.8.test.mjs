@@ -32,13 +32,19 @@ async function boot(t, options = {}) {
   return { dir, world, call: (method, payload = {}) => world.webUi().invoke('story', method, [payload]) };
 }
 
-test('0.8 defaults and host config expose three ordinary settings plus fifteen advanced settings', () => {
+test('0.8 defaults and host config expose three ordinary settings plus twelve advanced settings', () => {
   assert.equal(DEFAULTS.funStoryFree, true);
   assert.equal(DEFAULTS.funStoryFreeTurns, 200);
   assert.equal(DEFAULTS.funAutoOuting, false);
   assert.equal(DEFAULTS.funShareAfter, true);
   const schema = configGroup().schema.properties;
-  assert.equal(Object.keys(schema).length, 18);
+  // 主持方式、接口地址与模型名只在「故事手账 → 设置」出现，配置页不再平铺这三项；
+  // 三个键仍留在 DEFAULTS 里，面板保存照旧写回 cfg。
+  for (const key of ['funStoryDM', 'funStoryDmUrl', 'funStoryDmModel']) {
+    assert.equal(schema['worlds.fun.' + key], undefined, key + ' must not appear in host configuration');
+    assert.ok(Object.hasOwn(DEFAULTS, key), key + ' must remain a persisted default');
+  }
+  assert.equal(Object.keys(schema).length, 15);
   const regular = Object.entries(schema).filter(([, value]) => !String(value.title).startsWith('高级 · '));
   assert.deepEqual(regular.map(([key]) => key), ['worlds.fun.funOn', 'worlds.fun.funAutoOuting', 'worlds.fun.funShareAfter']);
   const restartRequired = ['worlds.fun.funStoryTextOn', 'worlds.fun.funStoryAuthorInChat'];

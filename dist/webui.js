@@ -8102,15 +8102,11 @@ function mountJournal(ctx) {
 function mountStoryJournal(ctx) {
   const doc = ctx.root.ownerDocument;
   const main = doc.createElement("section");
-  const more = doc.createElement("details");
-  more.className = "fun-more-stories";
-  const summary = doc.createElement("summary");
-  summary.textContent = "更多故事";
-  const authors = doc.createElement("div");
-  more.append(summary, authors);
-  ctx.root.replaceChildren(main, more);
+  const library = doc.createElement("section");
+  library.className = "fun-story-library";
+  ctx.root.replaceChildren(main, library);
   mountFishStory({ ...ctx, root: main });
-  mountStories({ ...ctx, root: authors });
+  mountStories({ ...ctx, root: library });
 }
 var testMounts = { home: mountHome, places: mountPlaces2, locations: mountPlaces, story: mountFishStory, stories: mountStories, book: mountBook, shelf: mountShelf };
 var webui_default = {

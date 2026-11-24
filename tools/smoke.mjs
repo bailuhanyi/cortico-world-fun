@@ -123,13 +123,20 @@ const cfgPaths = Object.keys(ui.config[0].schema.properties);
 ok(cfgPaths.every((p) => p.startsWith('worlds.fun.')), `配置路径都在 worlds.fun. 段：${cfgPaths.join(',')}`);
 // Two deprecated config aliases remain in DEFAULTS for old-profile reads and
 // synchronized writes, but intentionally are not shown as duplicate UI items.
-const configKeys = Object.keys(DEFAULTS).filter((key) => !['enabled', 'funAskReport', 'funHomeAutoGo'].includes(key));
-ok(cfgPaths.length === configKeys.length && cfgPaths.length === 18,
-  `面板配置项保持 3 个常用项 + 15 个高级项（实际 ${cfgPaths.length}）`);
+// 主持方式、接口地址与模型名同理：仍在 DEFAULTS 里持久化，但只在
+// 「故事手账 → 设置」出现，配置页不再平铺这三项。
+const PANEL_ONLY_KEYS = ['funStoryDM', 'funStoryDmUrl', 'funStoryDmModel'];
+const configKeys = Object.keys(DEFAULTS)
+  .filter((key) => !['enabled', 'funAskReport', 'funHomeAutoGo', ...PANEL_ONLY_KEYS].includes(key));
+ok(cfgPaths.length === configKeys.length && cfgPaths.length === 15,
+  `面板配置项保持 3 个常用项 + 12 个高级项（实际 ${cfgPaths.length}）`);
 const configProperties = ui.config[0].schema.properties;
 const ordinaryCount = Object.values(configProperties).filter((property) => !String(property.title).startsWith('高级 · ')).length;
 const advancedCount = Object.values(configProperties).filter((property) => String(property.title).startsWith('高级 · ')).length;
-ok(ordinaryCount === 3 && advancedCount === 15, `普通 ${ordinaryCount} 项、高级 ${advancedCount} 项`);
+ok(ordinaryCount === 3 && advancedCount === 12, `普通 ${ordinaryCount} 项、高级 ${advancedCount} 项`);
+for (const key of PANEL_ONLY_KEYS) {
+  ok(!cfgPaths.includes(`worlds.fun.${key}`), `${key} 只在故事手账设置里，不进配置页`);
+}
 for (const alias of ['funAskReport', 'funHomeAutoGo']) {
   ok(!cfgPaths.includes(`worlds.fun.${alias}`), `${alias} 仅作兼容别名，不重复显示`);
 }
