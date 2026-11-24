@@ -475,3 +475,27 @@ test('author-created venue and story use stable IDs after the venue is renamed',
   assert.equal(atChoice.trip.packId, authored.id);
   assert.match(atChoice.trip.pending.event, /玻璃瓶/);
 });
+
+test('free-mode self-play survives a slow model: the lease outlives a 60s call', () => {
+  const autonomy = new StoryAutonomy();
+  const cognition = { request() {} };
+  const t0 = 1_000_000;
+  const trip = { id: 'slow-line', state: 'active', step: 'say', stamp: 'd'.repeat(43), actor: null, budget: { steps: 0, calls: 0 } };
+  const grant = expectOk(autonomy.enable(trip, cognition, t0));
+  const reserved = expectOk(autonomy.reserveLine(trip, grant.token, t0));
+  const done = autonomy.finishLine(trip, grant.token, t0 + 60_000, { ok: true, say: '我等了很久。' }, reserved.attemptId);
+  assert.equal(done.ok, true, done.error);
+  expectOk(autonomy.takeLine(trip, grant.token, done.ticket, t0 + 61_000));
+});
+
+test('a slow decision also survives: the lease covers the model call', () => {
+  const autonomy = new StoryAutonomy();
+  const cognition = { request() {} };
+  const t0 = 1_000_000;
+  const trip = { id: 'slow-choose', state: 'active', step: 'choose', stamp: 'e'.repeat(43), actor: 'fish', budget: { steps: 0, calls: 0 } };
+  const grant = expectOk(autonomy.enable(trip, cognition, t0));
+  const reserved = expectOk(autonomy.reserve(trip, grant.token, t0));
+  const decision = autonomy.finish(trip, grant.token, t0 + 60_000, { ok: true, optionId: 'a', reason: 'x' }, reserved.attemptId);
+  assert.equal(decision.ok, true, decision.error);
+  expectOk(autonomy.take(trip, grant.token, decision.ticket, t0 + 61_000));
+});

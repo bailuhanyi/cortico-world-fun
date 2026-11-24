@@ -6,7 +6,10 @@ import { jointActor, jointView } from './joint.js';
 export const STORY_ACTIONS = ['start', 'move', 'choose', 'resume', 'close', 'mode', 'pause', 'decide', 'auto', 'fork', 'segment'];
 import { AUTO_SEGMENTS, autoLimits, budgetStop, storyBudget } from './story-reliability.js';
 const LEASE_MS = 45_000;
-const MODEL_TIMEOUT_MS = 20_000;
+// 自演要等一次完整模型调用（慢的服务商要 40–60 秒），租约必须比这个窗口长；
+// 选项式的决定也有同样的等待，统一用这一个窗口。
+const CALL_LEASE_MS = 240_000;
+const MODEL_TIMEOUT_MS = 120_000;
 export const storyStamp = (input) => createHash('sha256').update(JSON.stringify(input)).digest('base64url');
 export const storyFailure = (error) => ({ ok: false, error });
 
@@ -241,6 +244,9 @@ export class StoryAutonomy {
     }
     const attemptId = randomUUID();
     this.#inFlight = attemptId;
+    // 决定要等一次模型调用；先把租约扩到这个窗口，回来签票时才不会「已过期」。
+    this.#lease.expires = Math.max(this.#lease.expires, now + CALL_LEASE_MS);
+    this.#lease.deadline = Math.max(this.#lease.deadline, now + CALL_LEASE_MS);
     return { ok: true, attemptId, budget: { ...budget, calls: budget.calls + 1, attemptStep: trip.stamp, attempts: attempts + 1 } };
   }
 
@@ -272,6 +278,9 @@ export class StoryAutonomy {
     }
     const attemptId = randomUUID();
     this.#inFlight = attemptId;
+    // 她这一句要等一次完整模型调用（慢的服务商 40–60 秒），先把租约扩到这个窗口。
+    this.#lease.expires = Math.max(this.#lease.expires, now + CALL_LEASE_MS);
+    this.#lease.deadline = Math.max(this.#lease.deadline, now + CALL_LEASE_MS);
     return { ok: true, attemptId, budget: { ...budget, calls: budget.calls + 1, attemptStep: trip.stamp, attempts: attempts + 1 } };
   }
 

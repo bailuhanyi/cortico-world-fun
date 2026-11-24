@@ -1,6 +1,6 @@
-{
+﻿{
   "name": "cortico-world-fun",
-  "version": "0.8.9",
+  "version": "0.8.11",
   "type": "module",
   "description": "从0开始的肥鱼大冒险：四个面板（家、故事手账、自己去逛、回忆手账），15 个工具（默认可用 14 个），自由故事、地点探索与本地回忆。",
   "license": "MIT",

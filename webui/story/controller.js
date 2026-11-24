@@ -40,7 +40,7 @@ export function createStoryController(ctx, onChange = () => {}, environment = {}
   async function call(method, payload, opts = {}) {
     if (typeof ctx.storyCall !== 'function') throw new Error('故事面板尚未连接调用适配器，请提供 ctx.storyCall。');
     const result = await ctx.storyCall(method, payload, {
-      timeoutMs: method === 'say' ? 150000 : ['decide', 'dmPropose', 'improvise'].includes(method) ? 90000 : 20000,
+      timeoutMs: ['say', 'decide', 'dmPropose', 'improvise'].includes(method) ? 150000 : 20000,
       ...(opts.keepalive ? {} : { signal: ctx.signal }), ...opts,
     });
     if (!result || result.ok !== true) throw new Error(description(result?.error ?? '服务没有返回可确认的结果。'));

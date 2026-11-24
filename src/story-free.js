@@ -332,7 +332,7 @@ export function freeSummaryText(setting, free, title = '') {
   ].filter(Boolean).join(' ').slice(0, 600) || title;
 }
 
-export const FREE_TIMEOUT_MS = 60_000;
+export const FREE_TIMEOUT_MS = 120_000;
 
 /**
  * 一次主持请求。优先接收严格 JSON，并允许按明确判据接住纯文本旁白；

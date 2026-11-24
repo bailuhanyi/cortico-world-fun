@@ -193,7 +193,7 @@ export class StorySecrets {
   #requests = new Set();
 
   constructor({ dataDir, crypto = createDpapiCrypto(), fetch = globalThis.fetch,
-    timeout = 60_000, onInvalidate = () => {}, url, model } = {}) {
+    timeout = 120_000, onInvalidate = () => {}, url, model } = {}) {
     if (typeof dataDir !== 'string' || !isAbsolute(dataDir)) reject('SECRET_STORAGE');
     this.#dir = join(dataDir, 'fun');
     this.#file = join(this.#dir, 'story-secrets.json');
