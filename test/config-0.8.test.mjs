@@ -41,8 +41,10 @@ test('0.8 defaults and host config expose three ordinary settings plus fifteen a
   assert.equal(Object.keys(schema).length, 18);
   const regular = Object.entries(schema).filter(([, value]) => !String(value.title).startsWith('高级 · '));
   assert.deepEqual(regular.map(([key]) => key), ['worlds.fun.funOn', 'worlds.fun.funAutoOuting', 'worlds.fun.funShareAfter']);
-  assert.deepEqual(Object.entries(schema).filter(([, value]) => value['x-hot']).map(([key]) => key),
-    ['worlds.fun.funStoryTextOn', 'worlds.fun.funStoryAuthorInChat']);
+  const restartRequired = ['worlds.fun.funStoryTextOn', 'worlds.fun.funStoryAuthorInChat'];
+  assert.deepEqual(Object.entries(schema).filter(([, value]) => value['x-hot'] === false).map(([key]) => key), restartRequired);
+  assert.deepEqual(Object.entries(schema).filter(([, value]) => value['x-hot'] === true), []);
+  for (const key of restartRequired) assert.doesNotMatch(schema[key].description, /重启|restart/i);
   assert.equal(schema['worlds.fun.funStoryFreeTurns'].default, undefined);
   assert.equal(schema['worlds.fun.funStoryFreeTurns'].maximum, 200);
 });

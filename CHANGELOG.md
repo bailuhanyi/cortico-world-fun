@@ -31,12 +31,12 @@
 
 - 启动时清除没有对应选项式故事进度的旧 pendingChoice，并记录「这一趟的岔路已跳过」；与故事包版本和进度匹配的正式故事待选项继续保留。
 - wishes、route/routes、timeline 继续归一化、读写；移除路线与心愿入口不等于删除这些字段。place-transfer.js、wishes.js、journeys.js 和 story-venue-migration.js 保留。
-- 仅删除 aquarium.js、branches.js、choices.js 三个模块及其对应测试；story-reliability、#rewindFreeTurn 与 #forkStory 保留。
+- 仅删除 aquarium.js、branches.js、choices.js 三个模块及其对应测试；story-reliability 保留并扩展（redo 幂等键与 report 回执），#rewindFreeTurn 与 #forkStory 保留。
 
 ### 验收
 
 - 新增旧存档兼容回归：升级后清理旧普通岔路、继续旧联程并保留 wishes/timeline；再由历史 World 读取、续玩和收尾。
-- 运行 npm test、npm run verify、npm run build:webui、npm run describe（15 个工具）及 npm run check:publish。
+- 本次 npm test 全绿；DPAPI 解密用例依赖 Windows 用户上下文，此前隔离环境下与 0.7.8 基线同样失败。npm run verify、npm run build:webui、npm run describe（15 个工具）及 npm run check:publish 通过。
 - 未发布或推送本版本。
 
 ## 0.7.7

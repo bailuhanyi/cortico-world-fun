@@ -114,7 +114,6 @@ const ZH = {
   config: {
     title: '从0开始的肥鱼大冒险',
     advancedPrefix: '高级 · ',
-    restartRequired: '修改后需要重启 World 生效。',
     funOn: '开着',
     funOnDesc: '总开关。关掉之后不往提示词里注入场所清单；工具和面板照旧可用，她想逛随时能逛。',
     funShareAfter: '回家说一声',
@@ -179,7 +178,6 @@ const EN = {
   config: {
     title: 'Adventures of Fat Fish from Scratch',
     advancedPrefix: 'Advanced · ',
-    restartRequired: 'Restart the World for this change to take effect.',
     funOn: 'Enabled',
     funOnDesc: 'Master switch. Off: no venue list in the prompt; the tools and panel still work, she can go any time.',
     funShareAfter: 'Say something at the end',
@@ -332,12 +330,12 @@ export function configGroup(language = 'zh') {
           type: 'string', title: advanced('funStoryImageSource'), description: t.funStoryImageSourceDesc,
         },
         [`${K}.funStoryTextOn`]: {
-          type: 'boolean', title: advanced('funStoryTextOn'), description: `${t.funStoryTextOnDesc}\n\n${t.restartRequired}`,
-          'x-hot': true,
+          type: 'boolean', title: advanced('funStoryTextOn'), description: t.funStoryTextOnDesc,
+          'x-hot': false,
         },
         [`${K}.funStoryAuthorInChat`]: {
-          type: 'boolean', title: advanced('funStoryAuthorInChat'), description: `${t.funStoryAuthorInChatDesc}\n\n${t.restartRequired}`,
-          'x-hot': true,
+          type: 'boolean', title: advanced('funStoryAuthorInChat'), description: t.funStoryAuthorInChatDesc,
+          'x-hot': false,
         },
         [`${K}.funStoryFree`]: {
           type: 'boolean', title: advanced('funStoryFree'), description: t.funStoryFreeDesc,
