@@ -36,7 +36,7 @@
 ### 验收
 
 - 新增旧存档兼容回归：升级后清理旧普通岔路、继续旧联程并保留 wishes/timeline；再由历史 World 读取、续玩和收尾。
-- 本次 npm test 全绿；DPAPI 解密用例依赖 Windows 用户上下文，此前隔离环境下与 0.7.8 基线同样失败。npm run verify、npm run build:webui、npm run describe（15 个工具）及 npm run check:publish 通过。
+- npm test 除 DPAPI 用例外全绿（该用例依赖 Windows 用户上下文，隔离环境下与 0.7.8 基线同样失败，不是本次改动引入）。npm run verify、npm run build:webui、npm run describe（15 个工具）及 npm run check:publish 通过。
 - 未发布或推送本版本。
 
 ## 0.7.7
