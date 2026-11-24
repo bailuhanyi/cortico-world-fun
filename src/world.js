@@ -2417,6 +2417,7 @@ export class FunWorld {
     }
     let outcome = null;
     let lastError = '';
+    let providerError = '';
     let narrationText = '';
     const payload = freePromptPayload(setting, baseFree, { say, from, who, actions, party: storyRun.party, turn: baseFree.turn });
     for (let attempt = 0; attempt < 2 && !outcome; attempt += 1) {
@@ -2430,6 +2431,8 @@ export class FunWorld {
       const answer = await requestFreeTurn(cognition, payload, lastError);
       if (!answer.ok) {
         lastError = answer.error;
+        // 回退宿主会盖掉外接接口的真实原因；先把第一次的错留下来，报错时优先用它。
+        if (cognition?.storyDmDirect === true && !providerError) providerError = answer.error;
         if (cognition?.storyDmDirect === true && answer.providerFailed) {
           cognition = this.#host?.cognition;
           dmFallback = true;
@@ -2441,7 +2444,7 @@ export class FunWorld {
       outcome = turn;
       narrationText = answer.output.narration;
     }
-    if (!outcome) return { text: `这一回合没有提交：${lastError}。进度没有变化，可以重说一句。`, failed: true };
+    if (!outcome) return { text: `这一回合没有提交：${providerError || lastError}。进度没有变化，可以重说一句。`, failed: true };
 
     const next = this.#normalizeState();
     const nextOuting = next.session ?? next.draft;

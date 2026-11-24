@@ -332,7 +332,7 @@ export function freeSummaryText(setting, free, title = '') {
   ].filter(Boolean).join(' ').slice(0, 600) || title;
 }
 
-export const FREE_TIMEOUT_MS = 20_000;
+export const FREE_TIMEOUT_MS = 60_000;
 
 /**
  * 一次主持请求。优先接收严格 JSON，并允许按明确判据接住纯文本旁白；
@@ -359,8 +359,9 @@ export async function requestFreeTurn(cognition, payload, retryNote = '', timeou
     if (result?.error || typeof result?.text !== 'string') return { ok: false, providerFailed: true, error: '主持请求超时或失败。' };
     const parsed = parseFreeOutput(result.text);
     return parsed.ok ? { ok: true, output: parsed } : { ok: false, error: parsed.error };
-  } catch {
-    return { ok: false, providerFailed: true, error: '主持请求失败。' };
+  } catch (error) {
+    const detail = typeof error?.message === 'string' ? error.message.slice(0, 120) : '';
+    return { ok: false, providerFailed: true, error: detail ? `主持请求失败：${detail}` : '主持请求失败。' };
   } finally {
     clearTimeout(timer);
   }
@@ -465,8 +466,9 @@ export async function requestFreeLine(cognition, payload, retryNote = '', timeou
     if (typeof result?.text !== 'string') return { ok: false, providerFailed: true, error: `角色没有给出这一句（${reason()}）。` };
     const parsed = parseFreeLine(result.text);
     return parsed.ok ? { ok: true, say: parsed.say, reason: parsed.reason } : { ok: false, error: parsed.error };
-  } catch {
-    return { ok: false, providerFailed: true, error: '角色请求失败。' };
+  } catch (error) {
+    const detail = typeof error?.message === 'string' ? error.message.slice(0, 120) : '';
+    return { ok: false, providerFailed: true, error: detail ? `角色请求失败：${detail}` : '角色请求失败。' };
   } finally {
     clearTimeout(timer);
   }

@@ -6,7 +6,7 @@ import { FunWorld } from '../src/world.js';
 import { validateStoryPack } from '../src/story-packs.js';
 import {
   applyFreeDelta, checkEnd, continueFreeSegment, effectiveMaxTurns, evaluateWhen, freeCanContinue, freeLinePayload, freeSegmentsLeft, freeTurn,
-  freeTurnsLeft, freeSummaryText, newFreeState, normalizeFreeActions, normalizeFreeState, normalizeStoryParty, parseFreeLine, parseFreeOutput, freePromptPayload, requestFreeLine,
+  freeTurnsLeft, freeSummaryText, newFreeState, normalizeFreeActions, normalizeFreeState, normalizeStoryParty, parseFreeLine, parseFreeOutput, freePromptPayload, requestFreeLine, requestFreeTurn,
 } from '../src/story-free.js';
 import { cleanup } from './tmp.mjs';
 
@@ -542,6 +542,18 @@ test('宿主拒绝时把它的原话带回来，不再笼统地说超时', async
     summary: '', turn: 1, state: { facts: {}, flags: {}, counters: {} }, recent: [] });
   assert.equal(out.ok, false);
   assert.match(out.error, /Unsupported story decision request/);
+});
+
+test('外接主持超时/失败时，把上游那句话原样带到回执里', async () => {
+  const cognition = { request: async () => { throw new Error('主持接口等待超时；上游可能仍计费，可以有限重试。'); } };
+  const turn = await requestFreeTurn(cognition, { premise: 'x' });
+  assert.equal(turn.ok, false);
+  assert.match(turn.error, /等待超时/);
+
+  const line = await requestFreeLine(cognition, { premise: 'x', canon: [], forbidden: [], locations: [], party: [],
+    summary: '', turn: 1, state: { facts: {}, flags: {}, counters: {} }, recent: [] });
+  assert.equal(line.ok, false);
+  assert.match(line.error, /等待超时/);
 });
 
 test('自由模式自演：签票的一句走正常主持通道，回执记在鱼名下', async (t) => {
