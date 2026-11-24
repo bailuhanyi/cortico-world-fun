@@ -20,7 +20,7 @@ export function createStoryController(ctx, onChange = () => {}, environment = {}
   const token = () => state.snapshot?.autonomy?.token;
   const description = (error) => typeof error === 'string' ? error : error?.message ?? '请求未完成，请重新读取实际进度。';
   const waits = new Set();
-  const invalidate = () => { generation += 1; state.autoAuthorized = false; for (const cancel of [...waits]) cancel(); };
+  const invalidate = () => { generation += 1; state.autoAuthorized = false; state.loading = false; for (const cancel of [...waits]) cancel(); };
   function pace() {
     const ms = environment.pacingMs ?? 650;
     if (ms <= 0) return Promise.resolve();

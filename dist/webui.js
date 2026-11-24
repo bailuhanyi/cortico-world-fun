@@ -1618,6 +1618,7 @@ function createStoryController(ctx, onChange = () => {
   const invalidate = () => {
     generation += 1;
     state.autoAuthorized = false;
+    state.loading = false;
     for (const cancel of [...waits]) cancel();
   };
   function pace() {
@@ -3312,7 +3313,7 @@ function mountPanel(root, ctx) {
       await ownCall("deleteMemory", { memoryId: memory.id });
       localNotice = "已移到回收站，可以在那里恢复。";
       localError = "";
-      await controller.refresh();
+      await controller.refresh({ initial: true });
     } catch (error) {
       localError = error?.message ?? "删除失败，请重试。";
       localNotice = "";
@@ -3324,7 +3325,7 @@ function mountPanel(root, ctx) {
       await ownCall("restoreMemory", { trashId: entry.id });
       localNotice = "这条回忆已经放回纪念册。";
       localError = "";
-      await controller.refresh();
+      await controller.refresh({ initial: true });
     } catch (error) {
       localError = error?.message ?? "恢复失败，请重试。";
       localNotice = "";
@@ -3337,7 +3338,7 @@ function mountPanel(root, ctx) {
       await ownCall("purgeMemory", { trashId: entry.id });
       localNotice = "已彻底删除。";
       localError = "";
-      await controller.refresh();
+      await controller.refresh({ initial: true });
     } catch (error) {
       localError = error?.message ?? "删除失败，请重试。";
       localNotice = "";
@@ -3350,7 +3351,7 @@ function mountPanel(root, ctx) {
       await ownCall("emptyTrash");
       localNotice = "回收站已清空。";
       localError = "";
-      await controller.refresh();
+      await controller.refresh({ initial: true });
     } catch (error) {
       localError = error?.message ?? "清空失败，请重试。";
       localNotice = "";

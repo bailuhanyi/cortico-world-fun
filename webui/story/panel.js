@@ -744,14 +744,14 @@ export function mountPanel(root, ctx) {
     try {
       await ownCall('deleteMemory', { memoryId: memory.id });
       localNotice = '已移到回收站，可以在那里恢复。'; localError = '';
-      await controller.refresh();
+      await controller.refresh({ initial: true });
     } catch (error) { localError = error?.message ?? '删除失败，请重试。'; localNotice = ''; render(); }
   }
   async function restoreTrash(entry) {
     try {
       await ownCall('restoreMemory', { trashId: entry.id });
       localNotice = '这条回忆已经放回纪念册。'; localError = '';
-      await controller.refresh();
+      await controller.refresh({ initial: true });
     } catch (error) { localError = error?.message ?? '恢复失败，请重试。'; localNotice = ''; render(); }
   }
   async function purgeTrash(entry) {
@@ -759,7 +759,7 @@ export function mountPanel(root, ctx) {
     try {
       await ownCall('purgeMemory', { trashId: entry.id });
       localNotice = '已彻底删除。'; localError = '';
-      await controller.refresh();
+      await controller.refresh({ initial: true });
     } catch (error) { localError = error?.message ?? '删除失败，请重试。'; localNotice = ''; render(); }
   }
   async function emptyTrash() {
@@ -767,7 +767,7 @@ export function mountPanel(root, ctx) {
     try {
       await ownCall('emptyTrash');
       localNotice = '回收站已清空。'; localError = '';
-      await controller.refresh();
+      await controller.refresh({ initial: true });
     } catch (error) { localError = error?.message ?? '清空失败，请重试。'; localNotice = ''; render(); }
   }
   function trashSection(trash) {
