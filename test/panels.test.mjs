@@ -289,21 +289,28 @@ test('bundle 单文件加载：面板 id 与服务端声明一一对上，mount 
   assert.ok(!Array.isArray(b.default.panels));
 });
 
-test('故事手账移除作品区外层折叠，并保留唯一「更多故事」入口及内容', async () => {
+test('故事手账：自由故事可收起成一段，作品区另挂页签里', async () => {
   const { mount, root } = await mountPanels();
   await mount('merged-story');
-  // 面板首屏是异步取数的：等折叠入口出现，别用固定次数的 tick 赌时序。
-  const moreStories = await waitFor(() => {
+  // 面板首屏是异步取数的：等目录那一段折叠出现，别用固定次数的 tick 赌时序。
+  const freeFold = await waitFor(() => {
     const found = [...root.querySelectorAll('details')]
-      .filter((item) => item.querySelector('summary')?.textContent.trim() === '更多故事');
-    return found.length ? found : null;
-  }, '故事手账的「更多故事」折叠入口');
-  assert.equal(moreStories.length, 1, '选项式故事只保留目录内的折叠入口');
-  assert.ok(moreStories[0].querySelector('.sw-story-grid'), '折叠内的选项式故事卡仍渲染');
-  assert.equal(root.querySelector('.fun-more-stories'), null, '作品区不再被「更多故事」折叠包裹');
-  assert.equal(root.childNodes.length, 2, '自由故事区与作品区都直接呈现');
-  assert.equal(root.childNodes[1].tagName, 'SECTION');
-  assert.ok(root.childNodes[1].textContent.trim().length > 0, '作品与作者功能仍挂载');
+      .filter((item) => item.querySelector('summary')?.textContent.trim() === '自由故事');
+    return found.length ? found[0] : null;
+  }, '故事手账的「自由故事」折叠入口');
+  assert.equal(freeFold.open, true, '自由故事默认展开（也能收起）');
+  assert.ok(freeFold.querySelector('.sw-story-grid'), '自由故事段里的故事卡仍渲染');
+  assert.ok(!root.textContent.includes('更多故事'), '「更多故事」这个名字不再出现');
+  // 作品库 + 编写表单拆到两个页签，都不再常驻在故事工坊下面。
+  assert.equal(root.childNodes.length, 1, '故事工坊独占一页，作品区不常驻在下面');
+  const pane = await waitFor(() => root.querySelector('.fun-story-pane'), '作品区容器');
+  assert.equal(pane.getAttribute('data-mode'), 'packs', '作品库页签接的是已收录故事包');
+  assert.match(pane.textContent, /已收录故事包/, '作品库页签里有作品包列表');
+  const nav = await waitFor(() => root.querySelector('.sw-tabs'), '故事手账的页签条');
+  const authorTab = await waitFor(() => [...nav.walk()].find((n) => n.tagName === 'BUTTON' && n.textContent.trim() === '编写故事'), '编写故事页签');
+  authorTab.fire();
+  assert.equal(pane.getAttribute('data-mode'), 'author', '编写故事页签只露编写表单');
+  assert.ok(pane.querySelector('.fun-story-authoring'), '编写表单仍挂在同一块里');
 });
 
 test('服务端面板声明带 getMethods，且声明的方法真的能调', async () => {

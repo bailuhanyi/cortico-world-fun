@@ -1,6 +1,7 @@
 import { validateStoryPack } from './story-packs.js';
 import bridgeEcho from './bridge-echo-solo.json' with { type: 'json' };
 import swappedPlaque from './swapped-plaque-riddle.json' with { type: 'json' };
+import mistLantern from './mist-lantern.json' with { type: 'json' };
 
 // User-approved story packs ship as built-ins, including their linked locations.
 const drafts = [
@@ -621,6 +622,7 @@ const drafts = [
   },
   bridgeEcho,
   swappedPlaque,
+  mistLantern,
   ...[
     ['free-river-light', '江边的浮灯', 'riverside', '夜游', '步道', '一盏纸灯靠在岸边。浮标一亮一暗，鱼蹲下来，指给你看灯罩底下的蓝线。',
       ['江水向东流。', '纸灯没有点火，里面是一枚反光片。', '沿岸步道可以通行，不必下水。']],

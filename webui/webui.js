@@ -1131,10 +1131,27 @@ function mountStoryJournal(ctx) {
   const doc = ctx.root.ownerDocument;
   const main = doc.createElement('section');
   const library = doc.createElement('section');
-  library.className = 'fun-story-library';
-  ctx.root.replaceChildren(main, library);
-  mountFishStory({ ...ctx, root: main });
-  mountStories({ ...ctx, root: library });
+  library.className = 'fun-story-pane';
+  // 作品库（已收录故事包）与编写表单拆到两个页签：这一块只在需要时挂一次，
+  // 切页签只改 data-mode，草稿、列表和滚动位置都留着。
+  ctx.root.replaceChildren(main);
+  let authoring = null;
+  let panel = null;
+  const pane = () => {
+    if (!authoring) {
+      authoring = mountStories({ ...ctx, root: library, openEditor: () => {
+        if (library.getAttribute('data-mode') !== 'author') panel?.goAuthor?.();
+      } });
+    }
+    return library;
+  };
+  const show = (mode) => { pane(); library.setAttribute('data-mode', mode); return library; };
+  panel = mountFishStory({
+    ...ctx, root: main,
+    authorNode: () => show('author'),
+    packNode: () => show('packs'),
+    openAuthor: () => { show('author'); authoring.expand(); },
+  });
 }
 
 export const testMounts = { home: mountHome, places: mountPlaces, locations: mountLocations, story: mountFishStory, stories: mountStories, book: mountBook, shelf: mountShelf };

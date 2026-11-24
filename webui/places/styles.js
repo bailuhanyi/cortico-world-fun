@@ -141,7 +141,7 @@ export const STYLES = `
 .fpl-editnav button { text-align: start; width: 100%; border: 1px solid transparent; background: transparent; min-height: 38px; padding: 9px 12px; font-size: 12.5px; border-radius: var(--fpl-round); }
 .fpl-editnav button[aria-current=page] { background: var(--fpl-soft); border-color: color-mix(in srgb, var(--fpl-accent) 30%, var(--fpl-line)); font-weight: 650; }
 .fpl-editnav .fpl-step { color: var(--fpl-muted); margin-right: 10px; font-variant-numeric: tabular-nums; }
-.fpl-savebar { position: sticky; bottom: 8px; z-index: 3; display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 18px; padding: 12px 16px; border: 1px solid var(--fpl-line); border-radius: var(--fpl-round); background: color-mix(in srgb, var(--fpl-card) 94%, transparent); backdrop-filter: blur(10px); box-shadow: 0 8px 26px color-mix(in srgb, var(--fpl-ink) 10%, transparent); }
+.fpl-savebar { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 18px; padding: 12px 16px; border: 1px solid var(--fpl-line); border-radius: var(--fpl-round); background: var(--fpl-card); }
 .fpl-savebar-status { font-size: 11.5px; color: var(--fpl-muted); display: flex; align-items: center; gap: 7px; min-width: 0; }
 .fpl-savebar-status[data-dirty=true] { color: var(--fpl-accent); font-weight: 600; }
 .fpl-dirty-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex: none; }

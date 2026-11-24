@@ -46,6 +46,8 @@ const actor = (value) => value === 'fish' ? '鱼选择' : value === 'owner' ? '�
 export function mountPanel(root, ctx) {
   if (!root?.replaceChildren) throw new Error('故事面板缺少有效的 DOM 根。');
   const t = storyText(ctx.language);
+  // 合并页（故事手账）把作品库那一块交进来：「编写故事」页签显示它，别的页签不挂。
+  const sharedAuthor = typeof ctx.authorNode === 'function';
   let disposed = false;
   let controller;
   let authorRoot;
@@ -70,7 +72,11 @@ export function mountPanel(root, ctx) {
     return authorRoot;
   }
   // 进作者视图不替用户展开：编辑区默认收起，展开状态由用户上次的选择决定。
-  function openAuthor(expand = false) { navigate('author'); if (expand) authorPanel?.expand(); }
+  function openAuthor(expand = false) {
+    navigate('author');
+    if (!expand) return;
+    if (sharedAuthor) ctx.openAuthor?.(); else authorPanel?.expand();
+  }
   let view = 'stories';
   let freeNoticeAcknowledged = false;
   let memoryFilter = 'all';
@@ -81,7 +87,7 @@ export function mountPanel(root, ctx) {
   let playScroll = { key: '', top: 0, atBottom: true };
   let localNotice = '';
   let localError = '';
-  const openDetails = new Set();
+  const openDetails = new Set(['free-stories']);
   const shell = node('section', { class: 'sw', 'aria-label': '故事工坊' });
   const style = node('style', { text: STYLES });
   const top = node('header', { class: 'sw-top' });
@@ -231,8 +237,7 @@ export function mountPanel(root, ctx) {
     const snapshot = state.snapshot;
     const all = list(snapshot.catalog);
     const freeStories = all.filter((story) => story.mode === 'free' || story.formatVersion === 3);
-    const featured = freeStories.slice(0, 4);
-    const more = [...freeStories.slice(4), ...all.filter((story) => !freeStories.includes(story))];
+    const optionStories = all.filter((story) => !freeStories.includes(story));
     const intro = node('div', { class: 'sw-lead' }, node('h2', {}, t.storyCatalogTitle), node('p', {}, t.storyCatalogIntro));
     const preset = node('section', { class: 'sw-card sw-card-pad' }, node('div', { class: 'sw-mode' },
       node('div', {}, node('strong', {}, '这次，想让鱼自己游玩吗？'), node('small', {}, '默认让鱼自己往下走；出发后你随时可以接管。')),
@@ -249,14 +254,22 @@ export function mountPanel(root, ctx) {
           } catch (error) { localError = error.message; }
           render();
         }, { small: true })) : null;
+    // 自由故事与选项故事各自一段，都能收起来；自由故事默认展开（首屏先看它们），选项故事默认收起。
+    const freeFold = freeStories.length
+      ? trackedDetails('free-stories', node('summary', {}, '自由故事'),
+        node('div', { class: 'sw-story-grid', 'aria-label': '自由故事' }, freeStories.map((story) => storyCard(story, state))))
+      : null;
+    const optionFold = optionStories.length
+      ? trackedDetails('option-stories', node('summary', {}, '选项故事'),
+        node('div', { class: 'sw-story-grid', 'aria-label': '选项故事' }, optionStories.map((story) => storyCard(story, state))))
+      : null;
     return node('div', { class: 'sw-stack' }, intro,
-      featured.length ? node('div', { class: 'sw-story-grid', 'aria-label': '自由故事' }, featured.map((story) => storyCard(story, state)))
-        : !more.length ? empty(t.storyEmptyTitle, t.storyEmptyBody) : null,
+      freeFold ?? (all.length ? null : empty(t.storyEmptyTitle, t.storyEmptyBody)),
       freeNotice,
       snapshot.trip ? button('继续这趟故事', () => navigate('play'), { primary: true, key: 'stories-continue' }) : null,
+      preset,
       partyEditor(snapshot),
-      more.length ? trackedDetails('more-stories', node('summary', {}, '更多故事'), preset,
-        node('div', { class: 'sw-story-grid' }, more.map((story) => storyCard(story, state)))) : null,
+      optionFold,
       trackedDetails('story-authoring', node('summary', {}, t.storyWrite),
         note(t.storyAuthorHint), button(t.storyWrite, () => openAuthor(true), { size: 'small', key: 'stories-write' })));
   }
@@ -1130,7 +1143,8 @@ export function mountPanel(root, ctx) {
         button(immersive ? '沉浸中' : '沉浸', () => { immersive = !immersive; drawerOpen = false; render(); },
           { quiet: !immersive, primary: immersive, small: true, icon: immersive ? 'book' : 'image', key: 'immersive', pressed: immersive, ariaLabel: immersive ? '退出沉浸模式，回到对话式' : '切换沉浸模式：一屏一幕' }),
         button('刷新', () => controller?.refresh(), { quiet: true, small: true, icon: 'refresh', disabled: !state || state.loading || Boolean(state.busy) || state.recovering, key: 'refresh' })));
-    nav.replaceChildren(...[['home', '鱼的家', 'home'], ['stories', '作品库', 'leaf'], ['play', '出游', 'pin'], ['memories', '行程回忆', 'book'], ['settings', t.settingsTab, 'image'], ['author', t.storyWrite, 'book']].map(([id, title, glyph]) =>
+    const tabDefs = [['home', '鱼的家', 'home'], ['stories', '作品库', 'leaf'], ['play', '出游', 'pin'], ['memories', '行程回忆', 'book'], ['settings', t.settingsTab, 'image'], ['author', t.storyWrite, 'book']];
+    nav.replaceChildren(...tabDefs.map(([id, title, glyph]) =>
       node('button', { type: 'button', class: 'sw-tab', 'aria-current': view === id ? 'page' : undefined, 'aria-controls': 'story-panel-content', 'data-focus': `nav-${id}`, onclick: () => navigate(id) }, icon(glyph), title,
         id === 'memories' && list(snapshot?.memories).length ? node('span', { class: 'sw-count' }, list(snapshot.memories).length) : null)));
     const notices = [];
@@ -1141,10 +1155,16 @@ export function mountPanel(root, ctx) {
         error ? button('读取最新进度', () => controller?.refresh(), { small: true, disabled: state?.loading || Boolean(state?.busy) || state?.recovering, key: 'retry-status' }) : null));
     }
     feedback.replaceChildren(...notices);
-    if (view === 'author') main.replaceChildren(authorView());
+    if (view === 'author') main.replaceChildren(sharedAuthor ? ctx.authorNode() : authorView());
     else if (view === 'settings') main.replaceChildren(settings(state));
-    else if (!snapshot) main.replaceChildren(empty(state?.loading ? '正在打开故事世界' : '暂时没有读到故事状态', state?.loading ? '从实际记录中，找回这一刻。' : '请检查故事调用适配器或服务连接，再读取最新进度。'));
-    else main.replaceChildren(({ home, stories, play, memories }[view] ?? home)(state));
+    else {
+      const content = !snapshot
+        ? empty(state?.loading ? '正在打开故事世界' : '暂时没有读到故事状态', state?.loading ? '从实际记录中，找回这一刻。' : '请检查故事调用适配器或服务连接，再读取最新进度。')
+        : ({ home, stories, play, memories }[view] ?? home)(state);
+      // 「作品库」页签下面接一份已收录故事包（启用 / 导出 / 移除都在那儿），取不到故事状态时也照给。
+      const packs = view === 'stories' && sharedAuthor && typeof ctx.packNode === 'function' ? ctx.packNode() : null;
+      main.replaceChildren(...(packs ? [content, packs] : [content]));
+    }
     main.setAttribute('aria-busy', String(Boolean(state?.loading || state?.recovering)));
     const nextScroller = main.querySelector('[data-focus="play-reading"]');
     if (nextScroller) {
@@ -1168,5 +1188,5 @@ export function mountPanel(root, ctx) {
     if (shell.parentNode === root) shell.remove();
   }
   ctx.signal?.addEventListener('abort', dispose, { once: true });
-  return { dispose, refresh: () => controller.refresh() };
+  return { dispose, refresh: () => controller.refresh(), goAuthor: () => navigate('author') };
 }

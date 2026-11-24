@@ -90,21 +90,26 @@ test('manual first mount reads status, renders real choices, stores no progress'
   mounted.dispose();
   assert.equal(root.childNodes.length, 0);
 });
-test('first screen features four free stories and folds other stories and authoring', async () => {
+test('free stories fold open by default, option stories fold separately, authoring folded', async () => {
   const initial = snapshot(); initial.trip = null; initial.showFreeDefault = true;
   initial.catalog.push(...Array.from({ length: 5 }, (_, index) => ({ ...initial.catalog[0],
     id: `free-${index}`, title: `自由故事 ${index}`, mode: 'free', formatVersion: 3 })));
   const h = harness(null, initial);
   globalThis.document = h.env.document; globalThis.window = h.env.window;
   const root = document.createElement('div'); const mounted = mountPanel(root, h.ctx); await flush();
-  const featured = root.querySelector('[aria-label="自由故事"]');
-  assert.equal(featured.querySelectorAll('.sw-story-card').length, 4);
-  assert.doesNotMatch(featured.textContent, /自建溪边故事|自由故事 4/);
-  const more = root.querySelector('[data-details="more-stories"]');
-  assert.equal(more.open, false);
-  assert.match(more.textContent, /自由故事 4.*自建溪边故事/s);
+  const free = root.querySelector('[data-details="free-stories"]');
+  assert.equal(free.open, true, '自由故事默认展开，也能收起');
+  const featured = free.querySelector('[aria-label="自由故事"]');
+  assert.equal(featured.querySelectorAll('.sw-story-card').length, 5, '自由故事全在这一段里');
+  assert.match(featured.textContent, /自由故事 4/);
+  assert.doesNotMatch(featured.textContent, /自建溪边故事/);
+  const option = root.querySelector('[data-details="option-stories"]');
+  assert.equal(option.open, false, '选项故事默认收起');
+  assert.match(option.textContent, /自建溪边故事/);
+  assert.doesNotMatch(option.textContent, /自由故事已默认开启/);
   assert.equal(root.querySelector('[data-details="story-authoring"]').open, false);
   assert.match(root.textContent, /自由故事已默认开启/);
+  assert.doesNotMatch(root.textContent, /更多故事/);
   mounted.dispose();
 });
 

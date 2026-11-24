@@ -33,7 +33,7 @@ async function setup(t, options = {}) {
 async function start(b) {
   const status = await b.panel('status');
   const free = status.catalog.filter(({ mode }) => mode === 'free');
-  assert.equal(free.length, 4);
+  assert.equal(free.length, 5);
   assert.ok(free.every(({ available }) => available));
   const { id: packId, revision } = free[0];
   const started = await b.json('fun_story_start', { packId, revision, startStamp: status.startStamp, confirm: true });

@@ -38,7 +38,10 @@ const CSS = `
 .fun-story-node{padding:5px 0;border-bottom:1px solid var(--fs-line)}
 .fun-story-node:last-child{border-bottom:0}
 .fun-story-node p{white-space:pre-wrap}
-.fun-story-group{border:1px solid color-mix(in srgb,var(--fs-line) 86%,var(--fs-accent));border-radius:10px;background:color-mix(in srgb,var(--fs-card) 97%,var(--fs-accent));margin:10px 0;overflow:hidden}.fun-story-group>summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:8px;padding:10px 12px;font-weight:700}.fun-story-group>summary::-webkit-details-marker{display:none}.fun-story-group>summary:before{content:'›';display:grid;place-items:center;width:18px;height:18px;border:1px solid var(--fs-line);border-radius:5px;color:var(--fs-dim);transition:transform .15s}.fun-story-group[open]>summary:before{transform:rotate(90deg)}.fun-story-group>summary .fun-story-group-progress{margin-left:auto;color:var(--fs-dim);font-size:11px;font-weight:500}.fun-story-group-content{padding:0 12px 10px}.fun-story-group-content>.fun-story-grid{margin-top:0}.fun-story-sticky-actions{position:sticky;bottom:8px;z-index:3;padding:9px 10px;border:1px solid var(--fs-line);border-radius:10px;background:color-mix(in srgb,var(--fs-card) 92%,transparent);backdrop-filter:blur(10px);box-shadow:0 6px 18px color-mix(in srgb,var(--fs-ink) 12%,transparent);margin-top:12px}.fun-story-sticky-actions .fun-story-row{margin:0}.fun-story-sticky-actions .fun-story-field{margin-left:auto;color:var(--fs-dim);font-size:11px}.fun-story-branches{margin-top:0}.fun-story-editor-head{padding-bottom:4px}.fun-story-editor-toggle{min-width:72px}.fun-story-simple>details+details{margin-top:10px}
+.fun-story-group{border:1px solid color-mix(in srgb,var(--fs-line) 86%,var(--fs-accent));border-radius:10px;background:color-mix(in srgb,var(--fs-card) 97%,var(--fs-accent));margin:10px 0;overflow:hidden}.fun-story-group>summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:8px;padding:10px 12px;font-weight:700}.fun-story-group>summary::-webkit-details-marker{display:none}.fun-story-group>summary:before{content:'›';display:grid;place-items:center;width:18px;height:18px;border:1px solid var(--fs-line);border-radius:5px;color:var(--fs-dim);transition:transform .15s}.fun-story-group[open]>summary:before{transform:rotate(90deg)}.fun-story-group>summary .fun-story-group-progress{margin-left:auto;color:var(--fs-dim);font-size:11px;font-weight:500}.fun-story-group-content{padding:0 12px 10px}.fun-story-group-content>.fun-story-grid{margin-top:0}.fun-story-sticky-actions{margin-top:16px;padding-top:14px;border-top:1px solid var(--fs-line)}
+/* 作品库页签只露「已收录故事包」，编写故事页签只露编写表单：同一块，按 data-mode 切。 */
+.fun-story-pane[data-mode=packs] .fun-story-heading,.fun-story-pane[data-mode=packs] .fun-story-authoring{display:none!important}
+.fun-story-pane[data-mode=author] .fun-story-library{display:none!important}.fun-story-sticky-actions .fun-story-row{margin:0}.fun-story-sticky-actions .fun-story-field{margin-left:auto;color:var(--fs-dim);font-size:11px}.fun-story-branches{margin-top:0}.fun-story-editor-head{padding-bottom:4px}.fun-story-editor-toggle{min-width:72px}.fun-story-simple>details+details{margin-top:10px}
 .fun-story-mode{display:flex;gap:6px;margin:4px 0 10px;flex-wrap:wrap;align-items:center}
 .fun-story-mode button{border:1px solid var(--fs-line);border-radius:99px;background:var(--fs-card);color:inherit;padding:5px 12px;font:inherit;font-size:12px;cursor:pointer}
 .fun-story-mode button[aria-pressed=true]{border-color:var(--fs-accent);background:color-mix(in srgb,var(--fs-accent) 12%,var(--fs-card));font-weight:700}
@@ -61,7 +64,7 @@ const CSS = `
 .fun-story-bind>.fun-story-note{margin:0 0 4px}
 .fun-story-bind .fun-story-row{margin:0}
 .fun-story-bind .fun-story-bind-place{max-width:100%}
-@media(max-width:520px){.fun-story-group-content{padding-inline:9px}.fun-story-sticky-actions{bottom:4px;padding:8px}.fun-story-sticky-actions .fun-story-row{align-items:stretch}.fun-story-sticky-actions .fun-story-row>button{flex:1}.fun-story-sticky-actions .fun-story-sticky-status{width:100%;margin:0;text-align:center}}
+@media(max-width:520px){.fun-story-group-content{padding-inline:9px}.fun-story-sticky-actions{padding-top:12px}.fun-story-sticky-actions .fun-story-row{align-items:stretch}.fun-story-sticky-actions .fun-story-row>button{flex:1}.fun-story-sticky-actions .fun-story-sticky-status{width:100%;margin:0;text-align:center}}
 /* 作品库：一个创建入口 + 作品卡；去掉右栏，正文收窄到 1040 居中 */
 .fun-story-head{display:flex;justify-content:space-between;align-items:flex-start;gap:14px 18px;flex-wrap:wrap;padding-bottom:14px;margin-bottom:18px;border-bottom:1px solid var(--fs-line)}
 .fun-story-head h2{margin:3px 0 5px}
@@ -580,6 +583,8 @@ export function mountStories(ctx) {
   const editingLabel = el('p', { class: 'fun-story-note fun-story-editing', role: 'status' });
   const retainJson = () => jsonDrafts.set(editingId, { value: draft.value, baseline: jsonBaseline, overwrite: overwrite.checked });
   function loadJson(value, id = '', title = '') {
+    // 在「作品库」页签点「编辑」时，先切到编写故事，再填表单。
+    ctx.openEditor?.();
     retainJson();
     editingId = id;
     const cached = jsonDrafts.get(id);
@@ -908,7 +913,7 @@ let authorMode = 'static';
       el('p', { class: 'fun-story-note' }, packFilter === 'all'
         ? t.storyEmptyBody
         : packFilter === 'builtin' ? '内置故事随版本提供，停用后仍会留在这里。' : '从右侧新建一篇，或用完整 JSON 导入。'),
-      packFilter === 'all' ? button(t.storyWrite, () => { setExpanded(true, true); editorToggle.focus({ preventScroll: true }); }) : null));
+      packFilter === 'all' ? button(t.storyWrite, () => { ctx.openEditor?.(); setExpanded(true, true); editorToggle.focus({ preventScroll: true }); }) : null));
   }
 
   function renderList(data) {

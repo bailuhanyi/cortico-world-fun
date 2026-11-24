@@ -144,6 +144,7 @@ test('new installations ship the four approved built-in stories and no retired s
     'foldtide-reply-lite', 'drizzled-list', 'bridge-echo-solo', 'swapped-plaque-riddle',
   ]);
   assert.deepEqual([...PROMOTED_STORY_IDS], ['foldtide-reply-lite', 'drizzled-list']);
-  assert.equal(SHIPPED_STORY_PACKS.filter(({ version }) => version === 3).length, 4);
+  assert.equal(SHIPPED_STORY_PACKS.filter(({ version }) => version === 3).length, 5);
+  assert.ok(SHIPPED_STORY_PACKS.some(({ id, version }) => id === 'mist-lantern' && version === 3), '山雾彼端的灯火内置为自由故事');
   assert.equal(SAMPLE_STORY.id, 'creek-drift-letter');
 });
