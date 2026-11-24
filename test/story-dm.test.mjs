@@ -173,3 +173,66 @@ test('direct adapter timeout aborts its request and keeps the durable charge', a
   assert.equal(reservation.budget.calls, 1);
   assert.equal(reservation.budget.attempts, 1);
 });
+
+test('a timed-out external DM falls back once to host cognition and marks the proposal receipt', async () => {
+  const dm = new StoryDM();
+  const current = trip();
+  let externalSignal;
+  let releaseExternal;
+  let hostCalls = 0;
+  const external = { storyDmDirect: true, request: (request) => {
+    externalSignal = request.signal;
+    return new Promise((resolve) => { releaseExternal = resolve; });
+  } };
+  const host = { request: async () => {
+    hostCalls++;
+    return { text: JSON.stringify({ narration: '宿主主持提出一个待确认的方案。', optionId: 'keep' }) };
+  } };
+  const reservation = dm.reserve(current, external, true, 'request-token-fallback-0001');
+  const usageRows = [];
+  const outcome = await dm.generate(external, current, reservation.attempt, async (usage) => usageRows.push(usage), 2, {
+    cognition: host, canFallback: () => true,
+  });
+  assert.equal(outcome.ok, true);
+  assert.equal(outcome.fallback, true);
+  assert.equal(outcome.fallbackNotice, '已回退宿主主持');
+  assert.equal(externalSignal.aborted, true);
+  assert.equal(hostCalls, 1, 'fallback is attempted at most once');
+  assert.equal(dm.finish(current, reservation.attempt, outcome, true).ok, true);
+  const proposal = dm.view(current, host, true).proposal;
+  assert.deepEqual(proposal.receipt, { kind: 'fallback', message: '已回退宿主主持' });
+  assert.equal(reservation.budget.calls, 1, 'fallback does not replay or re-reserve the DM action');
+  releaseExternal({ text: JSON.stringify({ narration: '迟到的外接提议。', optionId: 'leave' }),
+    usage: { inputTokens: 9, outputTokens: 2, totalTokens: 11 } });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(dm.view(current, host, true).proposal, proposal, 'a late direct response cannot overwrite the fallback proposal');
+  assert.deepEqual(usageRows, [{ inputTokens: 9, outputTokens: 2, totalTokens: 11 }], 'late, reportable provider usage is still observed');
+});
+
+test('cancellation, stale progress, or a missing host cognition never starts fallback', async () => {
+  for (const mode of ['cancel', 'stale', 'missing-host']) {
+    const dm = new StoryDM();
+    const current = trip();
+    let started;
+    const dispatched = new Promise((resolve) => { started = resolve; });
+    let resolveExternal;
+    const external = { storyDmDirect: true, request: () => {
+      started();
+      return new Promise((resolve) => { resolveExternal = resolve; });
+    } };
+    let hostCalls = 0;
+    const host = { request: async () => { hostCalls++; return { text: '{}' }; } };
+    const reservation = dm.reserve(current, external, true, `request-token-${mode.padEnd(16, '0')}`);
+    const pending = dm.generate(external, current, reservation.attempt, async () => {}, 1000,
+      mode === 'missing-host' ? { cognition: null, canFallback: () => true } : { cognition: host, canFallback: () => mode !== 'stale' });
+    await dispatched;
+    if (mode === 'cancel') dm.cancel();
+    const outcome = await pending;
+    if (mode === 'cancel') assert.match(outcome.error, /取消/);
+    assert.equal(hostCalls, 0, `${mode} must not dispatch host cognition`);
+    if (mode !== 'cancel') assert.equal(outcome.ok, false);
+    resolveExternal({ text: JSON.stringify({ narration: '迟到的提议。', optionId: 'keep' }) });
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(dm.finish(current, reservation.attempt, outcome, true).ok, false, `${mode} cannot apply a late proposal`);
+  }
+});

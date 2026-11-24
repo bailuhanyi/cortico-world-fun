@@ -4,7 +4,7 @@
  * 段名是 `config.json` 的 `worlds.fun`。WebUI 热改就地写这个对象，
  * World 每次用时现读，所以这里只有默认值与 schema，不持有副本。
  *
- * 目前用户可配的：funOn / funSessionTTLMin / funAskReport / funTasteFromFeast，
+ * 目前用户可配的：funOn / funAutoOuting / funShareAfter，
  * 加上 0.7.3 归位的故事长度、主持地址与模型、剧情图片来源。
  * **API Key 与自定义工作流不在配置里**：前者只存本机 DPAPI 密文，后者是 32 KB
  * JSON（宿主 string 只渲染单行输入），入口都在「出游 → 设置 → 高级」。
@@ -23,6 +23,10 @@ export const DEFAULTS = Object.freeze({
   enabled: false,
   /** 总开关。关掉=不注入场所清单，工具与面板还在（想现在去随时能去）。 */
   funOn: true,
+  /** 新配置名；旧名 funHomeAutoGo 在读取与迁移时兼容。 */
+  funAutoOuting: false,
+  /** 新配置名；旧名 funAskReport 在读取与迁移时兼容。 */
+  funShareAfter: true,
   /** 一次出游挂多久自动回家（分钟）。到点不催，只是不再算「正在逛」。 */
   funSessionTTLMin: 90,
   /** 回家回执要不要提醒她 feast_life_play 记一笔、跟主人说一句。 */
@@ -69,9 +73,9 @@ export const DEFAULTS = Object.freeze({
    */
   funStoryAuthorInChat: false,
   /** 自由模式（version 3 场景包）：作者写设定，DM 即兴演。 */
-  funStoryFree: false,
+  funStoryFree: true,
   /** 自由模式单趟回合上限（1 回合 = 1 次模型调用）。 */
-  funStoryFreeTurns: 40,
+  funStoryFreeTurns: 200,
   /** 鱼自主游玩：每段最多几步（走一步 = 一次真实推进，含不花模型的那一步）。 */
   funAutoSteps: 20,
   /** 鱼自主游玩：每段最多几次「鱼自己决定」（每一次都是一次真实模型请求）。 */
@@ -109,8 +113,14 @@ const ZH = {
   prompt: '从0开始的肥鱼大冒险 World 的环境说明：她可以真去逛二十处地方——游乐场、海洋馆、庙会、漫展、电影院、动物园、公园、电玩城、KTV、博物馆、猫咖、爬山、咖啡店、奶茶店、餐厅、图书馆、夜市、澡堂、旧货市场、江边。还能在面板上自己加地方、改预设。进门、逛摊位、买纪念品、拍照、回家；回家回执把这一趟收成一句话，交给她记进自己的日程。本插件自己不调用其他 World 的工具、也不读别人的私有状态；她要在家里点吃喝、查日程或配图，仍可以自己调 feast_* / imggen_draw。',
   config: {
     title: '从0开始的肥鱼大冒险',
+    advancedPrefix: '高级 · ',
+    restartRequired: '修改后需要重启 World 生效。',
     funOn: '开着',
     funOnDesc: '总开关。关掉之后不往提示词里注入场所清单；工具和面板照旧可用，她想逛随时能逛。',
+    funShareAfter: '回家说一声',
+    funShareAfterDesc: '开启时，回家回执会提醒她把「今天逛了什么」用 feast_life_play 记进自己的日程，再跟主人说一句。关掉就只给这段文字，不提记账。',
+    funAutoOuting: '家：允许她自己出门',
+    funAutoOutingDesc: '打开后，她自己出门的许可跟着「鱼的每一天」的「她自己的时间」走：那边叫醒她时，先看当天日程（feast_life_now），自由就出门、写着上班睡觉就不出门。本插件不再单独设「自己出门的时段」，也不读对方的日程、不挑地方、不会自己把她送出门。默认关闭。',
     funSessionTTLMin: '一趟逛多久',
     funSessionTTLMinDesc: '一次出游最多挂多少分钟，过了这段时间就不再算「正在逛」。不会催她回家，也不会替她记一笔；下一次游逛时会提醒她这趟已经挂了很久。',
     funAskReport: '回家说一声',
@@ -120,7 +130,7 @@ const ZH = {
     funHomeAutoGo: '家：允许她自己出门',
     funHomeAutoGoDesc: '打开后，她自己出门的许可跟着「鱼的每一天」的「她自己的时间」走：那边叫醒她时，先看当天日程（feast_life_now），自由就出门、写着上班睡觉就不出门。本插件不再单独设「自己出门的时段」，也不读对方的日程、不挑地方、不会自己把她送出门。默认关闭。',
     funStoryDM: '可选文本主持',
-    funStoryDMDesc: '默认关闭。接口地址与模型名就在下面；API Key 不放进配置，请到「出游 → 设置 → 高级」填写，只存本机 DPAPI 密文。地址、模型都留空沿用宿主 cognition.request；填了地址和密钥则由本插件直连 OpenAI 兼容 POST /chat/completions，它们不传给宿主或其他插件。Windows 使用 DPAPI 当前用户加密，其他平台禁用凭据保存；换机器或重装需重填。可立即清除。主持只提议合法选项，当前行动者明确提交才执行。每趟 6 次、每步 2 次（含重试、失败、取消），未知 token 不估算。',
+    funStoryDMDesc: '高级设置里的「主持方式」可选宿主默认或外接接口；外接设置只在选中时显示。DPAPI 密钥仅存本机密文。外接请求失败时回退宿主一次并明确提示，不会自动更改选择。主持只提议合法选项，当前行动者明确提交才执行。每趟 6 次、每步 2 次（含重试、失败、取消），未知 token 不估算。',
     funStoryNodeLimit: '故事长度（节点上限）',
     funStoryNodeLimitDesc: '新建或导入故事最多几个节点，0 = 不限。单篇 JSON 仍最多 32 KB；改小不会删除或阻断已有故事。',
     funStoryDmUrl: '文本主持接口地址',
@@ -134,7 +144,7 @@ const ZH = {
     funStoryAuthorInChat: '聊天里也能管故事',
     funStoryAuthorInChatDesc: '默认关闭。开启后，聊天里会多一个作者工具 fun_story（模板、校验、预览、导入导出、启停、删除）；关着时它不出现——这能省下它每轮约 1.1k 字符的固定开销。面板里的「故事工坊」不靠这个工具，任何时候都能写、能管。',
     funStoryFree: '自由模式（场景包）',
-    funStoryFreeDesc: '默认关闭。开启后可以使用 version 3「场景包」：作者只写大方向、正史、人物和结局条件，具体怎么演交给主持即兴。主持只能修改作者登记过的状态，结局由程序按条件判定；旧的选项式故事完全不受影响，两种模式可以同时存在。',
+    funStoryFreeDesc: '默认开启。可以使用 version 3「场景包」：作者只写大方向、正史、人物和结局条件，具体怎么演交给主持即兴。主持只能修改作者登记过的状态，结局由程序按条件判定；旧的选项式故事完全不受影响，两种模式可以同时存在。',
     funStoryFreeTurns: '自由模式一段走多少回合',
     funStoryFreeTurnsDesc: '一段最多多少回合（1 回合 = 1 次模型调用）。场景包自己写了更小的 maxTurns 就按更小的来。用完后这一段的输入框会收起：可以点「再来一段」接着走（一趟最多三段，要你亲手点），也可以收起进回忆；不会自动续。',
     funAutoSteps: '鱼自己玩：每段最多几步',
@@ -144,7 +154,7 @@ const ZH = {
     storyDmApiUrl: '接口地址', storyDmApiKey: 'API Key', storyDmModel: '模型名（可留空）', storyDmApiSaved: '已保存 / 未设置', storyDmApiClear: '清除密钥',
     storyDmApiInvalid: '接口地址与密钥必须成对设置或成对清空；不支持的加密环境不会保存。',
     storyDmApiHint: '请到「出游」面板设置区填写。地址和密钥仅存本机 DPAPI 密文；模型名按你的服务商填，留空则不发送 model。都不会进入普通配置或故事导出，保存后只显示掩码。',
-    funStoryImages: '剧情图片生成',    funStoryImagesDesc: '独立总闸，默认关闭。开关在出游页顶部；来源在本页「剧情图片来源」。留空：本插件给主对话 imggen_draw 的 scene/outfits/prompt，由主对话调用「鱼的生图包」，需要该插件；无法确认安装时明确标注，未装则跳过。填本机 loopback URL：本插件按 ComfyUI HTTP 协议直连，需运行 ComfyUI 并有可用 checkpoint；30 秒或超过 8 MiB/格式错误即失败，保留原插画。填其他插件名/说明：只生成委派回执，由主对话或该插件执行，需要你自行准备该能力。委派图片由执行插件管理，直连图片存本插件 dataDir/fun/story-images。关闭不发图片请求，只用预制或显式导入插画；文字故事始终不等图片。',
+    funStoryImages: '剧情图片生成',    funStoryImagesDesc: '高级设置里的「剧情图片来源」可选关闭、委派或本机 ComfyUI 直连；只有选直连时才显示 loopback 地址和工作流。委派可由主对话调用生图工作室；不会调用其他 World 工具。直连继续使用现有 30 秒与 8 MiB/格式校验。',
     funStoryAutoImages: '自动准备配图参数', funStoryAutoImagesDesc: '默认开启。总闸开着、且有进行中的行程时，每走到新的一处（或故事翻到新的一页），本插件自动把这一屏的 scene/outfits/prompt 准备好递给她；45 分钟后自动过期，不会反复催。这个开关也在出游页顶部，无行程或总闸关时禁用。只对委派型来源生效——直连本机 ComfyUI 会花算力，仍然只由「出游 → 设置 → 高级」里的按钮触发。',
     storyImageSource: '图片来源（留空为鱼的生图包）',
     storyImageSourceHint: '留空由主对话调用 imggen_draw；本机 URL 由本插件直连 ComfyUI；其他文本交主对话委派。不会调用其他 World 的工具或读取其私有状态。',
@@ -168,8 +178,14 @@ const EN = {
   prompt: 'Adventures of Fat Fish from Scratch: she can actually go out — amusement park, aquarium, temple fair, fan convention. Walk in, wander the stalls, buy a souvenir, take a photo; the closing receipt turns the trip into one line she can log into her own day, and image generation draws the scene and outfit she actually wore.',
   config: {
     title: 'Adventures of Fat Fish from Scratch',
+    advancedPrefix: 'Advanced · ',
+    restartRequired: 'Restart the World for this change to take effect.',
     funOn: 'Enabled',
     funOnDesc: 'Master switch. Off: no venue list in the prompt; the tools and panel still work, she can go any time.',
+    funShareAfter: 'Say something at the end',
+    funShareAfterDesc: 'When on, the closing receipt reminds her to log the trip with feast_life_play and tell the owner one sentence.',
+    funAutoOuting: 'Home: let her go out on her own',
+    funAutoOutingDesc: 'On: her permission to head out follows "her own time" in Fish Every Day. When that wake-up arrives she checks the day\'s schedule (feast_life_now) first — go out if the stretch is free, stay in if it says work or sleep. This plugin no longer keeps its own time slots, does not read the other world\'s schedule, never picks a place and never sends her out by itself. Off by default.',
     funSessionTTLMin: 'A trip lasts',
     funSessionTTLMinDesc: 'How many minutes an outing stays open. Past this it no longer counts as in progress — she is never nagged to wrap up and nothing is logged for her; the next fun_wander just mentions the trip should close.',
     funAskReport: 'Say something at the end',
@@ -179,7 +195,7 @@ const EN = {
     funHomeAutoGo: 'Home: let her go out on her own',
     funHomeAutoGoDesc: 'On: her permission to head out follows "her own time" in Fish Every Day. When that wake-up arrives she checks the day\'s schedule (feast_life_now) first — go out if the stretch is free, stay in if it says work or sleep. This plugin no longer keeps its own time slots, does not read the other world\'s schedule, never picks a place and never sends her out by itself. Off by default.',
     funStoryDM: 'Optional text DM',
-    funStoryDMDesc: 'Off by default. The endpoint and model name are right below; the API key is not stored in configuration — enter it in Outing → Settings → Advanced, where only local DPAPI ciphertext is kept. Leave endpoint and model blank to use the host cognition.request, or fill the endpoint and a key to call OpenAI-compatible POST /chat/completions directly from this plugin; neither is sent to the host or other plugins. Windows DPAPI CurrentUser encryption only; saving is disabled elsewhere. Re-enter after changing machines or reinstalling; clear immediately at any time. The current actor must explicitly submit a valid proposal. Limits: 6 calls per run, 2 attempts per step, including retries, failures and cancellations; unknown tokens remain unknown.',
+    funStoryDMDesc: 'Choose host default or an external endpoint in Advanced settings; external controls appear only when selected. The DPAPI key stays encrypted locally. A failed external request falls back to the host once with a visible notice, without changing the setting. The current actor must explicitly submit a valid proposal. Limits: 6 calls per run, 2 attempts per step, including retries, failures and cancellations; unknown tokens remain unknown.',
     funStoryNodeLimit: 'Story length (node limit)',
     funStoryNodeLimitDesc: 'Maximum nodes when creating or importing a story; 0 = unlimited. Each story JSON is still capped at 32 KB, and lowering this never deletes or blocks existing stories.',
     funStoryDmUrl: 'Text DM endpoint',
@@ -193,7 +209,7 @@ const EN = {
     funStoryAuthorInChat: 'Manage stories from chat',
     funStoryAuthorInChatDesc: 'Off by default. On: chat gains the author tool fun_story (template, validate, preview, import/export, enable/disable/remove). Off: it is not offered, saving about 1.1k characters of fixed schema on every turn. The Story Workshop panel does not use this tool and keeps working either way.',
     funStoryFree: 'Free mode (scene packs)',
-    funStoryFreeDesc: 'Off by default. On: version 3 scene packs become playable. The author writes only the premise, canon, cast and ending conditions; the host DM improvises. The DM may change only registered state, and endings are decided by the program. Option-based stories are untouched; both modes can coexist.',
+    funStoryFreeDesc: 'On by default. Version 3 scene packs become playable. The author writes only the premise, canon, cast and ending conditions; the host DM improvises. The DM may change only registered state, and endings are decided by the program. Option-based stories are untouched; both modes can coexist.',
     funStoryFreeTurns: 'Free-mode turns per run',
     funStoryFreeTurnsDesc: 'Maximum turns in one run (one turn = one model call). A pack that declares a smaller maxTurns wins. When the segment is spent the input closes: start another segment (at most three per run, always by an explicit click) or wrap the run up. It never continues on its own.',
     funAutoSteps: 'Fish autoplay: steps per segment',
@@ -204,7 +220,7 @@ const EN = {
     storyDmApiInvalid: 'Set or clear the URL and key together. Unsupported encryption environments cannot save credentials.',
     storyDmApiHint: 'Use Fish Story World settings. Only local DPAPI ciphertext is stored; the model name is plain and optional (blank sends no model). No credentials enter ordinary configuration or story exports, and saved fields show masks only.',
     funStoryImages: 'Story image generation',
-    funStoryImagesDesc: 'Separate master switch, off by default. The toggle sits at the top of the Outing panel; the source is "Story image source" on this page. Blank: this plugin returns imggen_draw scene/outfits/prompt for the main conversation to call Fish Image Studio; that plugin is required, installation uncertainty is explicit and absence skips images. Loopback URL: this plugin calls the local ComfyUI HTTP API; a running server and available checkpoint are required. A 30-second timeout, images over 8 MiB or invalid formats keep the original artwork. Other plugin name/instructions: a receipt delegates execution to that plugin or the main conversation, and you must provide that capability. Delegated images belong to the executing plugin; direct images go to this plugin dataDir/fun/story-images. Off means no image requests, only prebuilt or explicitly imported art. Text never waits for images.',
+    funStoryImagesDesc: 'Choose off, delegation, or direct local ComfyUI in Advanced settings. The loopback URL and workflow appear only in direct mode. Delegation may use Fish Image Studio through the main conversation; this World never calls another World’s tools. Direct mode keeps its 30-second timeout and 8 MiB/format checks.',
     funStoryAutoImages: 'Prepare image parameters automatically',
     funStoryAutoImagesDesc: 'On by default. While the master switch is on and a trip is in progress, every new spot (or story page) prepares that scene’s scene/outfits/prompt for her automatically; the offer expires after 45 minutes and is never nagged. The same switch sits at the top of the Outing panel and is disabled without a trip or with the master off. Delegation sources only — a direct local ComfyUI call costs compute and still needs the button in Outing → Settings → Advanced.',
     storyImageSource: 'Image source (blank: Fish Image Studio)',
@@ -267,6 +283,7 @@ export function panelText(language = 'zh') {
 export function configGroup(language = 'zh') {
   const t = text(language).config;
   const K = `worlds.${ID}`;
+  const advanced = (key) => `${t.advancedPrefix}${t[key]}`;
   return {
     id: `world:${ID}`,
     owner: `world:${ID}`,
@@ -278,77 +295,64 @@ export function configGroup(language = 'zh') {
           type: 'boolean',
           title: t.funOn,
           description: t.funOnDesc,
-          'x-hot': true,
+        },
+        [`${K}.funAutoOuting`]: {
+          type: 'boolean', title: t.funAutoOuting, description: t.funAutoOutingDesc,
+        },
+        [`${K}.funShareAfter`]: {
+          type: 'boolean', title: t.funShareAfter, description: t.funShareAfterDesc,
         },
         [`${K}.funSessionTTLMin`]: {
-          type: 'integer',
-          title: t.funSessionTTLMin,
-          description: t.funSessionTTLMinDesc,
-          minimum: 15,
-          maximum: 480,
-          'x-suffix': ' 分钟',
-          'x-hot': true,
-        },
-        [`${K}.funAskReport`]: {
-          type: 'boolean',
-          title: t.funAskReport,
-          description: t.funAskReportDesc,
-          'x-hot': true,
+          type: 'integer', title: advanced('funSessionTTLMin'), description: t.funSessionTTLMinDesc,
+          minimum: 15, maximum: 480, 'x-suffix': ' 分钟',
         },
         [`${K}.funTasteFromFeast`]: {
-          type: 'boolean',
-          title: t.funTasteFromFeast,
-          description: t.funTasteFromFeastDesc,
-          'x-hot': true,
-        },
-        [`${K}.funHomeAutoGo`]: {
-          type: 'boolean',
-          title: t.funHomeAutoGo,
-          description: t.funHomeAutoGoDesc,
-          'x-hot': true,
+          type: 'boolean', title: advanced('funTasteFromFeast'), description: t.funTasteFromFeastDesc,
         },
         [`${K}.funStoryNodeLimit`]: {
-          type: 'integer', title: t.funStoryNodeLimit, description: t.funStoryNodeLimitDesc,
-          minimum: 0, maximum: Number.MAX_SAFE_INTEGER, 'x-suffix': ' 个节点', 'x-hot': true,
+          type: 'integer', title: advanced('funStoryNodeLimit'), description: t.funStoryNodeLimitDesc,
+          minimum: 0, maximum: Number.MAX_SAFE_INTEGER, 'x-suffix': ' 个节点',
         },
         [`${K}.funStoryDM`]: {
-          type: 'boolean', title: t.funStoryDM, description: t.funStoryDMDesc, 'x-hot': true,
+          type: 'boolean', title: advanced('funStoryDM'), description: t.funStoryDMDesc,
         },
         [`${K}.funStoryDmUrl`]: {
-          type: 'string', title: t.funStoryDmUrl, description: t.funStoryDmUrlDesc, 'x-hot': true,
+          type: 'string', title: advanced('funStoryDmUrl'), description: t.funStoryDmUrlDesc,
         },
         [`${K}.funStoryDmModel`]: {
-          type: 'string', title: t.funStoryDmModel, description: t.funStoryDmModelDesc, 'x-hot': true,
+          type: 'string', title: advanced('funStoryDmModel'), description: t.funStoryDmModelDesc,
         },
         [`${K}.funStoryImages`]: {
-          type: 'boolean', title: t.funStoryImages, description: t.funStoryImagesDesc, 'x-hot': true,
+          type: 'boolean', title: advanced('funStoryImages'), description: t.funStoryImagesDesc,
         },
         [`${K}.funStoryAutoImages`]: {
-          type: 'boolean', title: t.funStoryAutoImages, description: t.funStoryAutoImagesDesc, 'x-hot': true,
+          type: 'boolean', title: advanced('funStoryAutoImages'), description: t.funStoryAutoImagesDesc,
         },
         [`${K}.funStoryImageSource`]: {
-          type: 'string', title: t.funStoryImageSource, description: t.funStoryImageSourceDesc, 'x-hot': true,
+          type: 'string', title: advanced('funStoryImageSource'), description: t.funStoryImageSourceDesc,
         },
         [`${K}.funStoryTextOn`]: {
-          type: 'boolean', title: t.funStoryTextOn, description: t.funStoryTextOnDesc, 'x-hot': true,
+          type: 'boolean', title: advanced('funStoryTextOn'), description: `${t.funStoryTextOnDesc}\n\n${t.restartRequired}`,
+          'x-hot': true,
         },
         [`${K}.funStoryAuthorInChat`]: {
-          type: 'boolean', title: t.funStoryAuthorInChat, description: t.funStoryAuthorInChatDesc,
+          type: 'boolean', title: advanced('funStoryAuthorInChat'), description: `${t.funStoryAuthorInChatDesc}\n\n${t.restartRequired}`,
+          'x-hot': true,
         },
         [`${K}.funStoryFree`]: {
-          type: 'boolean', title: t.funStoryFree, description: t.funStoryFreeDesc, 'x-hot': true,
+          type: 'boolean', title: advanced('funStoryFree'), description: t.funStoryFreeDesc,
         },
         [`${K}.funStoryFreeTurns`]: {
-          type: 'integer', title: t.funStoryFreeTurns, description: t.funStoryFreeTurnsDesc,
-          minimum: 5, maximum: 120, 'x-suffix': ' 回合', 'x-hot': true,
+          type: 'integer', title: advanced('funStoryFreeTurns'), description: t.funStoryFreeTurnsDesc,
+          minimum: 5, maximum: 200, 'x-suffix': ' 回合',
         },
         [`${K}.funAutoSteps`]: {
-          type: 'integer', title: t.funAutoSteps, description: t.funAutoStepsDesc,
-          minimum: 1, maximum: 200, 'x-suffix': ' 步', 'x-hot': true,
+          type: 'integer', title: advanced('funAutoSteps'), description: t.funAutoStepsDesc,
+          minimum: 1, maximum: 200, 'x-suffix': ' 步',
         },
         [`${K}.funAutoCalls`]: {
-          type: 'integer', title: t.funAutoCalls, description: t.funAutoCallsDesc,
-          minimum: 1, maximum: 120, 'x-suffix': ' 次', 'x-hot': true,
+          type: 'integer', title: advanced('funAutoCalls'), description: t.funAutoCallsDesc,
+          minimum: 1, maximum: 120, 'x-suffix': ' 次',
         },
       },
     },

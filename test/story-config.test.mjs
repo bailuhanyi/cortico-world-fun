@@ -27,7 +27,9 @@ async function rig(t, options = {}) {
   const cfg = { funStoryDM: true, funStoryImages: true, ...options.cfg };
   const entries = [];
   const host = { cognition: options.cognition, log: { info: (...args) => entries.push(args), warn: (...args) => entries.push(args) } };
-  const world = new FunWorld({ dataDir: dir, cfg, now: () => Date.parse('2026-11-21T13:00:00+08:00'), ...(options.persist ? { persist: options.persist } : {}) });
+  const world = new FunWorld({ dataDir: dir, cfg, now: () => Date.parse('2026-11-21T13:00:00+08:00'),
+    ...(options.persist ? { persist: options.persist } : {}),
+    ...(options.storySecretsFactory ? { storySecretsFactory: options.storySecretsFactory } : {}) });
   await world.start(host);
   const call = (method, payload = {}) => world.webUi().invoke('story', method, [payload]);
   const panel = (id, method, payload = {}) => world.webUi().invoke(id, method, [payload]);
@@ -41,6 +43,13 @@ async function rig(t, options = {}) {
   };
   return { dir, cfg, host, entries, world, call, panel, start };
 }
+
+const directSecrets = (request) => ({
+  status: { saved: true, supported: true, available: true, apiUrlMask: '••••••••', apiKeyMask: '••••••••', model: 'test' },
+  legacyEndpoint: async () => ({ apiUrl: '', model: '' }),
+  load: async () => ({ ok: true }),
+  cognition: async () => ({ storyDmDirect: true, ...request }),
+});
 
 test('new install ships the four approved built-in stories and settings reads do not create data', async (t) => {
   const r = await rig(t);
@@ -160,6 +169,7 @@ test('host cognition remains the default and failures keep manual story actions 
   let requests = 0;
   const r = await rig(t, { cognition: { request: async () => { requests++; throw new Error('host error must remain private'); } } });
   const started = await r.start();
+  assert.equal(success(await r.call('status')).dm.available, true, 'host cognition remains the default DM provider');
   const state = success(await r.call('move', step(started)));
   const failed = await r.call('dmPropose', { ...step(state), requestId: 'host-failure-request-0001' });
   assert.equal(failed.ok, false);
@@ -168,6 +178,81 @@ test('host cognition remains the default and failures keep manual story actions 
   const current = success(await r.call('status'));
   assert.equal(current.dm.budget.calls, 1);
   success(await r.call('choose', { ...step(current), choiceId: current.trip.pending.id, optionId: 'follow' }));
+});
+
+test('external DM failure falls back to host once and exposes a visible fallback receipt without changing settings', async (t) => {
+  let externalCalls = 0;
+  let hostCalls = 0;
+  const r = await rig(t, {
+    cognition: { request: async () => {
+      hostCalls++;
+      return { text: JSON.stringify({ narration: '宿主主持提出一个待确认的方案。', optionId: 'follow' }),
+        usage: { inputTokens: 4, outputTokens: 3, totalTokens: 7 } };
+    } },
+    storySecretsFactory: () => directSecrets({ request: async () => { externalCalls++; throw new Error('private provider error'); } }),
+  });
+  const started = await r.start();
+  const dmStatus = success(await r.call('status'));
+  assert.equal(dmStatus.dm.available, true);
+  const state = success(await r.call('move', step(started)));
+  const result = await r.call('dmPropose', { ...step(state), requestId: 'external-fallback-world-0001' });
+  assert.equal(result.ok, true, `${result.error}; external requests=${externalCalls}; configured=${r.cfg.funStoryDM}`);
+  assert.equal(externalCalls, 1);
+  assert.equal(hostCalls, 1, 'the host is used only for the single fallback');
+  assert.equal(result.dm.proposal.optionId, 'follow');
+  assert.deepEqual(result.dm.proposal.receipt, { kind: 'fallback', message: '已回退宿主主持' });
+  assert.equal(result.dm.budget.calls, 1, 'fallback remains part of the reserved proposal attempt');
+  assert.equal(result.dm.budget.totalTokens, 0, 'host fallback usage is not misreported as external API usage');
+  assert.equal(result.dm.budget.unknownUsageCalls, 1, 'the failed direct call remains unknown until its own usage is reported');
+  assert.equal(r.cfg.funStoryDM, true, 'fallback must not silently change the selected mode');
+  const refreshed = success(await r.call('status'));
+  assert.deepEqual(refreshed.dm.proposal.receipt, { kind: 'fallback', message: '已回退宿主主持' },
+    'the notice remains available from the current proposal after status refresh');
+  success(await r.call('choose', { ...step(refreshed), choiceId: refreshed.trip.pending.id,
+    optionId: result.dm.proposal.optionId, dmProposalId: result.dm.proposal.id }));
+});
+
+test('cancel, disable, and progress changes invalidate direct DM before host fallback', async (t) => {
+  for (const mode of ['cancel', 'disable', 'progress']) {
+    let externalCalls = 0;
+    let hostCalls = 0;
+    let releaseExternal;
+    let dispatched;
+    const externalStarted = new Promise((resolve) => { dispatched = resolve; });
+    const r = await rig(t, {
+      cognition: { request: async () => {
+        hostCalls++;
+        return { text: JSON.stringify({ narration: '宿主备用提议。', optionId: 'follow' }) };
+      } },
+      storySecretsFactory: () => directSecrets({ request: () => {
+        externalCalls++;
+        dispatched();
+        return new Promise((resolve) => { releaseExternal = resolve; });
+      } }),
+    });
+    const started = await r.start();
+    let state = success(await r.call('move', step(started)));
+    const pending = r.call('dmPropose', { ...step(state), requestId: `external-${mode}-world-000001` });
+    await externalStarted;
+    if (mode === 'cancel') await r.call('dmCancel');
+    else if (mode === 'disable') {
+      r.cfg.funStoryDM = false;
+      await r.call('status');
+    } else {
+      state = success(await r.call('choose', { ...step(state), choiceId: state.trip.pending.id,
+        optionId: state.trip.pending.options[0].id }));
+      assert.notEqual(state.trip.stamp, started.trip.stamp);
+    }
+    const cancelled = await pending;
+    assert.equal(cancelled.ok, false, `${mode} invalidates the outstanding request`);
+    releaseExternal({ text: JSON.stringify({ narration: '迟到的外接提议。', optionId: 'follow' }) });
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(externalCalls, 1);
+    assert.equal(hostCalls, 0, `${mode} must not dispatch fallback after invalidation`);
+    const current = success(await r.call('status'));
+    assert.equal(current.dm.proposal, null);
+    if (mode === 'disable') assert.equal(current.dm.enabled, false);
+  }
 });
 
 test('real DPAPI key survives restart, never echoes, and clear invalidates pending direct requests', { skip: process.platform !== 'win32' }, async (t) => {
@@ -242,7 +327,7 @@ test('real DPAPI key survives restart, never echoes, and clear invalidates pendi
   success(await r.call('clearStoryKey'));
 });
 
-test('image source comes from configuration; the panel no longer writes it', async (t) => {
+test('image-source selection writes through the panel and keeps direct-source validation', async (t) => {
   const r = await rig(t);
   const receipt = success(await r.call('storyImage')).image;
   assert.equal(receipt.status, 'delegated');
@@ -251,10 +336,14 @@ test('image source comes from configuration; the panel no longer writes it', asy
   r.cfg.funStoryImageSource = '指定绘图插件';
   assert.equal(success(await r.call('storyImage')).image.source, '指定绘图插件');
   assert.equal(success(await r.call('storySettings')).imageSource, '指定绘图插件');
-  // 老入口必须明确报错，不能悄悄忽略。
-  const moved = await r.call('saveStorySettings', { imageSource: '指定绘图插件' });
-  assert.equal(moved.ok, false);
-  assert.match(moved.error, /配置/);
+  const invalidMode = await r.call('saveStorySettings', { imageMode: 'comfyui', imageSource: 'https://example.test' });
+  assert.equal(invalidMode.ok, false);
+  const direct = success(await r.call('saveStorySettings', { imageMode: 'comfyui', imageSource: 'http://127.0.0.1:8188' }));
+  assert.equal(r.cfg.funStoryImages, true);
+  assert.equal(r.cfg.funStoryImageSource, 'http://127.0.0.1:8188');
+  assert.equal(direct.imageMode, 'comfyui');
+  success(await r.call('saveStorySettings', { imageMode: 'delegate' }));
+  assert.equal(r.cfg.funStoryImageSource, '');
   r.cfg.funStoryImageSource = 'http://name:password@127.0.0.1:8188';
   const invalid = success(await r.call('storyImage')).image;
   assert.equal(invalid.status, 'unavailable');

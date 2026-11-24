@@ -116,8 +116,9 @@ test('配置段缺键会被补齐（宿主 /api/config 不合并 defaults）', a
   await world.start({ log: { info() {}, warn() {} } });
   assert.equal(persisted.length, 1);
   assert.deepEqual(Object.keys(persisted[0]).sort(),
-    ['funAskReport', 'funAutoCalls', 'funAutoSteps', 'funHomeAutoGo', 'funSessionTTLMin', 'funStoryAuthorInChat', 'funStoryAutoImages', 'funStoryDM', 'funStoryDmModel', 'funStoryDmUrl', 'funStoryFree', 'funStoryFreeTurns', 'funStoryImageSource', 'funStoryImages', 'funStoryNodeLimit', 'funStoryTextOn', 'funTasteFromFeast']);
+    ['funAskReport', 'funAutoCalls', 'funAutoOuting', 'funAutoSteps', 'funHomeAutoGo', 'funSessionTTLMin', 'funShareAfter', 'funStoryAuthorInChat', 'funStoryAutoImages', 'funStoryDM', 'funStoryDmModel', 'funStoryDmUrl', 'funStoryFree', 'funStoryFreeTurns', 'funStoryImageSource', 'funStoryImages', 'funStoryNodeLimit', 'funStoryTextOn', 'funTasteFromFeast']);
   assert.equal(persisted[0].funAskReport, true);
+  assert.equal(persisted[0].funShareAfter, true);
   assert.equal(persisted[0].funSessionTTLMin, 90);
   assert.equal(persisted[0].funAutoSteps, 20);
   assert.equal(persisted[0].funAutoCalls, 6);
@@ -128,7 +129,10 @@ test('配置段缺键会被补齐（宿主 /api/config 不合并 defaults）', a
   assert.equal(persisted[0].funStoryDmModel, '');
   assert.equal(persisted[0].funStoryImageSource, '');
   assert.equal(persisted[0].funTasteFromFeast, true);
-  assert.equal(persisted[0].funHomeAutoGo, false, '自动出门默认关');
+  assert.equal(persisted[0].funHomeAutoGo, false, '旧名自动出门默认关');
+  assert.equal(persisted[0].funAutoOuting, false, '新名自动出门默认关');
+  assert.equal(persisted[0].funStoryFree, true, '自由模式默认开启');
+  assert.equal(persisted[0].funStoryFreeTurns, 200, '自由模式默认软上限');
 });
 
 test('缺键补齐：盘上已有的值一个都不覆盖', async () => {
@@ -137,7 +141,7 @@ test('缺键补齐：盘上已有的值一个都不覆盖', async () => {
   const world = makeWorld({
     cfg: {
       enabled: true, funOn: false, funSessionTTLMin: 30,
-      funAskReport: false, funTasteFromFeast: false, funHomeAutoGo: false, funStoryImages: false, funStoryDM: true,
+      funAskReport: false, funShareAfter: false, funTasteFromFeast: false, funHomeAutoGo: false, funAutoOuting: false, funStoryImages: false, funStoryDM: true,
       funStoryTextOn: true, funStoryFree: false, funStoryFreeTurns: 40, funAutoSteps: 20, funAutoCalls: 6,
       funStoryAutoImages: true, funStoryAuthorInChat: false,
       funStoryNodeLimit: 16, funStoryDmUrl: '', funStoryDmModel: '', funStoryImageSource: '',

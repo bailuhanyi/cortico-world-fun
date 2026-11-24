@@ -27,22 +27,36 @@ var ZH = {
   storyGroupOptional: "可选设置",
   settingsTab: "设置",
   settingsTitle: "高级设置",
-  settingsIntro: "这里只放这一台机器的凭据与专家选项。自动配图开关在出游页顶部；故事长度、主持地址与模型、图片来源在配置页；本地插画在地点册。",
-  settingsPartElsewhere: "其他设置在哪里",
-  settingsElsewhereTitle: "故事长度、主持与图片来源",
-  settingsWhereLength: "故事长度、主持接口地址与模型名、剧情图片来源：「配置 → 从0开始的肥鱼大冒险」。",
+  settingsIntro: "主持方式和剧情图片来源在这里选择。宿主默认模式不会加载或显示外接密钥；外接接口与本机 ComfyUI 的设置仅在对应模式展开。",
+  settingsPartElsewhere: "其他高级选项",
+  settingsElsewhereTitle: "更多故事设置",
+  settingsWhereLength: "故事长度、文字通道、作者工具与自动游玩上限可在「配置 → 从0开始的肥鱼大冒险」的高级项调整。",
   settingsWhereArtwork: "本地插画：「地点册 → 本地插画」；换浏览器或清缓存会没有，重新导入即可。",
-  settingsElsewhereNote: "文本主持、文字通道、自由模式这些开关也在同一个配置页；地点、住所与画风：「地点册」；场所与故事分支：「故事工坊」。",
+  settingsElsewhereNote: "标有「高级」的配置项仍在配置页；地点、住所与画风：「地点册」；场所与故事分支：「故事工坊」。",
   settingsKeyTitle: "文本主持密钥",
-  settingsKeySummary: "只保存 API Key；接口地址与模型名在配置页。",
-  settingsKeyHint: "接口地址与模型名在「配置 → 从0开始的肥鱼大冒险」；这里只保存 API Key，只存本机 DPAPI 密文，不写进配置。",
+  settingsKeySummary: "仅外接接口模式使用；API Key 只存本机 DPAPI 密文。",
+  settingsKeyHint: "地址与模型名按你的兼容接口填写；API Key 不写入配置或故事数据，只存本机 DPAPI 密文。切换到宿主默认后，本机密钥不会被读取。",
+  settingsDmMode: "主持方式",
+  settingsDmHost: "宿主默认（推荐）",
+  settingsDmExternal: "外接接口",
+  settingsDmUrl: "接口地址（HTTP(S)）",
+  settingsDmModel: "模型名（可留空）",
+  settingsDmTest: "测试连接",
+  settingsDmTesting: "正在测试外接接口…",
+  settingsDmTestSuccess: "外接接口连接成功。",
+  settingsDmTestFailure: "外接接口测试失败；请检查设置后重试。",
+  settingsImageMode: "剧情图片来源",
+  settingsImageSourceOff: "关闭",
+  settingsImageSourceDelegate: "委派给生图工作室",
+  settingsImageSourceDirect: "本机 ComfyUI 直连",
+  settingsImageUrl: "ComfyUI loopback 根地址",
   settingsImageManualTitle: "直连出图",
   settingsImageManualSummary: "只在图片来源是本机 ComfyUI 时出现。",
   settingsImageManualHint: "手动生成当前场景的一张图。委派来源不需要这一块：自动准备配图就够了。",
   storyImageManual: "生成当前场景图片",
   settingsAutoImage: "自动配图",
   settingsAutoImageHint: "出游中、且总闸开着，才会自动准备委派参数。",
-  settingsAutoImageMasterOff: "剧情图片总闸关着：先在配置里打开「剧情图片生成」。",
+  settingsAutoImageMasterOff: "剧情图片已关闭：在「剧情图片来源」中选择委派或本机直连即可开启。",
   settingsAutoImageNoTrip: "有进行中的行程时才能自动准备配图。",
   settingsAutoImageOn: "自动配图已打开：每到新的一处会准备参数。",
   settingsAutoImageOff: "自动配图已关闭。",
@@ -56,8 +70,8 @@ var ZH = {
   storyDmApiUnset: "未设置",
   storyDmApiPending: "已输入，尚未保存",
   storyDmApiClear: "清除密钥",
-  storyDmApiHint: "使用 OpenAI 兼容 POST /chat/completions。密钥只在本机用 Windows DPAPI CurrentUser 加密保存，不交给宿主或其他插件，也不写进普通配置。接口地址与模型名在配置页；地址留空时不会发起直连请求。换机器或重装需重填，随时可以清除。主持超时或失败不影响手动游玩，仍受每趟 6 次、每步 2 次额度限制。",
-  storyDmApiUnsupported: "此机器不支持私密密钥存储；当前仅 Windows 支持本机 DPAPI 加密。仍可使用宿主模型，地址与模型照旧在配置页。",
+  storyDmApiHint: "使用 OpenAI 兼容 POST /chat/completions。密钥只在本机用 Windows DPAPI CurrentUser 加密保存，不交给宿主或其他插件，也不写进普通配置。换机器或重装需重填，随时可以清除。主持超时或失败会回退宿主一次并明确提示，手动游玩始终可用。",
+  storyDmApiUnsupported: "此机器不支持私密密钥存储；当前仅 Windows 支持本机 DPAPI 加密。可以切回宿主默认主持。",
   storyImageTitle: "剧情图片生成",
   storyImageWorkflowTitle: "自定义工作流（可选）",
   storyImageWorkflowLabel: "工作流 JSON（留空用内置）",
@@ -128,22 +142,36 @@ var EN = {
   storyGroupOptional: "Optional settings",
   settingsTab: "Settings",
   settingsTitle: "Advanced settings",
-  settingsIntro: "Only this machine’s credentials and expert options live here. The auto-image switch is at the top of the Outing panel; story length, DM endpoint/model and image source are in configuration; local artwork is in the Place Book.",
-  settingsPartElsewhere: "Where the other settings live",
-  settingsElsewhereTitle: "Story length, DM and image source",
-  settingsWhereLength: "Story length, DM endpoint and model, story image source: Configuration → Adventures of Fat Fish from Scratch.",
+  settingsIntro: "Choose the DM and story-image source here. Host default mode neither loads nor shows external credentials; external DM and local ComfyUI controls appear only in their selected modes.",
+  settingsPartElsewhere: "Other advanced options",
+  settingsElsewhereTitle: "More story settings",
+  settingsWhereLength: "Story length, text tools, author controls and autoplay limits are under Advanced in Configuration → Adventures of Fat Fish from Scratch.",
   settingsWhereArtwork: "Local artwork: Place Book → Local artwork. It lives in this browser, so clearing site data removes it — import again.",
-  settingsElsewhereNote: "DM, text channel and free-mode switches are on the same configuration page; places, home and style: Place Book; venues and story branches: Story Workshop.",
+  settingsElsewhereNote: "Configuration items prefixed “Advanced” remain in the configuration page; places, home and style: Place Book; venues and story branches: Story Workshop.",
   settingsKeyTitle: "Text DM key",
-  settingsKeySummary: "Only the API key is stored here; endpoint and model are in configuration.",
-  settingsKeyHint: "The endpoint and model name are in Configuration → Adventures of Fat Fish from Scratch. This field stores only the API key, encrypted with local DPAPI; it never enters configuration.",
+  settingsKeySummary: "Used only for external DM; the API key is encrypted locally with DPAPI.",
+  settingsKeyHint: "Enter the endpoint and model for your compatible API. The API key never enters configuration or story data; only local DPAPI ciphertext is stored. Host-default mode does not read this key.",
+  settingsDmMode: "DM mode",
+  settingsDmHost: "Host default (recommended)",
+  settingsDmExternal: "External endpoint",
+  settingsDmUrl: "Endpoint URL (HTTP(S))",
+  settingsDmModel: "Model name (optional)",
+  settingsDmTest: "Test connection",
+  settingsDmTesting: "Testing external endpoint…",
+  settingsDmTestSuccess: "External endpoint connected.",
+  settingsDmTestFailure: "External endpoint test failed. Check the settings and retry.",
+  settingsImageMode: "Story image source",
+  settingsImageSourceOff: "Off",
+  settingsImageSourceDelegate: "Delegate to Image Studio",
+  settingsImageSourceDirect: "Direct local ComfyUI",
+  settingsImageUrl: "ComfyUI loopback root URL",
   settingsImageManualTitle: "Direct image generation",
   settingsImageManualSummary: "Only shown when the image source is local ComfyUI.",
   settingsImageManualHint: "Generate one image for the current scene by hand. Delegation sources do not need this — automatic preparation is enough.",
   storyImageManual: "Generate current scene image",
   settingsAutoImage: "Auto images",
   settingsAutoImageHint: "Parameters are prepared automatically only during a trip and with the master switch on.",
-  settingsAutoImageMasterOff: "The story-image master switch is off: turn on “Story image generation” in configuration first.",
+  settingsAutoImageMasterOff: "Story images are off. Choose delegation or direct local generation under “Story image source” to turn them on.",
   settingsAutoImageNoTrip: "Automatic preparation needs a trip in progress.",
   settingsAutoImageOn: "Auto images on: parameters are prepared at each new spot.",
   settingsAutoImageOff: "Auto images off.",
@@ -157,8 +185,8 @@ var EN = {
   storyDmApiUnset: "Not set",
   storyDmApiPending: "Entered, not saved",
   storyDmApiClear: "Clear key",
-  storyDmApiHint: "Uses OpenAI-compatible POST /chat/completions. The key is encrypted on this machine with Windows DPAPI CurrentUser, never sent to the host or other plugins, and never written into ordinary configuration. Endpoint and model name live in configuration; a blank endpoint means no direct request. Re-enter after moving machines or reinstalling, and clear it at any time. DM timeouts and failures leave manual play available, with the same limit of 6 calls per trip and 2 per step.",
-  storyDmApiUnsupported: "Private key storage is unavailable on this machine; local DPAPI encryption currently requires Windows. The host model still works, and the endpoint and model stay in configuration.",
+  storyDmApiHint: "Uses OpenAI-compatible POST /chat/completions. The key is encrypted on this machine with Windows DPAPI CurrentUser, never sent to the host or other plugins, and never written into ordinary configuration. Re-enter after moving machines or reinstalling, and clear it at any time. External failures fall back to the host once with a visible notice; manual play remains available.",
+  storyDmApiUnsupported: "Private key storage is unavailable on this machine; local DPAPI encryption currently requires Windows. You can switch back to host-default DM.",
   storyImageTitle: "Story image generation",
   storyImageWorkflowTitle: "Custom workflow (optional)",
   storyImageWorkflowLabel: "Workflow JSON (blank uses the built-in one)",
@@ -3030,6 +3058,7 @@ function mountPanel(root, ctx) {
               node("p", {}, dm.proposal.narration),
               node("p", {}, `建议选项：${label2}`)
             ),
+            dm.proposal.receipt?.message ? node("p", { class: "sw-note sw-dm-receipt", role: "status" }, dm.proposal.receipt.message) : null,
             button("明确采用这个选项", () => controller.applyDM(), { small: true, primary: true, disabled: !ownerTurn || isDraft || state.dmBusy || current.step !== "choose", key: "dm-apply" })
           );
         }
@@ -3302,7 +3331,16 @@ function mountPanel(root, ctx) {
       workflow: "",
       workflowTouched: false,
       imagesEnabled: false,
-      direct: false,
+      dmEnabled: false,
+      dmUrl: "",
+      dmModel: "",
+      imageMode: "delegate",
+      imageUrl: "",
+      dmModeTouched: false,
+      dmUrlTouched: false,
+      dmModelTouched: false,
+      imageModeTouched: false,
+      imageUrlTouched: false,
       apiKey: { value: "", touched: false, revision: 0 }
     };
     const status = node("p", { class: "sw-note", role: "status", "aria-live": "polite" });
@@ -3310,6 +3348,76 @@ function mountPanel(root, ctx) {
     const support = note("");
     const saved = node("span", { class: "sw-badge", "data-settings-saved": "" });
     const imageBadge = node("span", { class: "sw-badge sw-settings-state", "data-settings-image-state": "" });
+    const dmMode = node(
+      "select",
+      { "data-focus": "settings-dmMode", "aria-label": t.settingsDmMode },
+      node("option", { value: "host" }, t.settingsDmHost),
+      node("option", { value: "external" }, t.settingsDmExternal)
+    );
+    dmMode.addEventListener("change", () => {
+      model.dmEnabled = dmMode.value === "external";
+      model.dmModeTouched = true;
+      ++model.revision;
+      paint();
+    });
+    const dmUrl = node("input", {
+      type: "url",
+      autocomplete: "off",
+      spellcheck: "false",
+      "data-focus": "settings-apiUrl",
+      "aria-label": t.settingsDmUrl
+    });
+    dmUrl.addEventListener("input", () => {
+      model.dmUrl = dmUrl.value;
+      model.dmUrlTouched = true;
+      ++model.revision;
+      paint();
+    });
+    const dmModel = node("input", {
+      type: "text",
+      autocomplete: "off",
+      spellcheck: "false",
+      "data-focus": "settings-model",
+      "aria-label": t.settingsDmModel
+    });
+    dmModel.addEventListener("input", () => {
+      model.dmModel = dmModel.value;
+      model.dmModelTouched = true;
+      ++model.revision;
+      paint();
+    });
+    const imageMode = node(
+      "select",
+      { "data-focus": "settings-imageMode", "aria-label": t.settingsImageMode },
+      node("option", { value: "off" }, t.settingsImageSourceOff),
+      node("option", { value: "delegate" }, t.settingsImageSourceDelegate),
+      node("option", { value: "comfyui" }, t.settingsImageSourceDirect)
+    );
+    imageMode.addEventListener("change", () => {
+      model.imageMode = imageMode.value;
+      model.imageModeTouched = true;
+      model.imagesEnabled = model.imageMode !== "off";
+      if (model.imageMode === "comfyui" && !model.imageUrl.trim()) {
+        model.imageUrl = "http://127.0.0.1:8188";
+        imageUrl.value = model.imageUrl;
+        model.imageUrlTouched = true;
+      }
+      ++model.revision;
+      paint();
+    });
+    const imageUrl = node("input", {
+      type: "url",
+      autocomplete: "off",
+      spellcheck: "false",
+      "data-focus": "settings-imageUrl",
+      "aria-label": t.settingsImageUrl
+    });
+    imageUrl.addEventListener("input", () => {
+      model.imageUrl = imageUrl.value;
+      model.imageUrlTouched = true;
+      ++model.revision;
+      paint();
+    });
     const keyInput = node("input", {
       type: "password",
       autocomplete: "new-password",
@@ -3358,6 +3466,11 @@ function mountPanel(root, ctx) {
     const save = button(t.settingsSave, async () => {
       if (model.busy) return;
       const args = {};
+      if (model.dmModeTouched) args.dmEnabled = model.dmEnabled;
+      if (model.dmUrlTouched) args.apiUrl = model.dmUrl.trim();
+      if (model.dmModelTouched) args.model = model.dmModel.trim();
+      if (model.imageModeTouched) args.imageMode = model.imageMode;
+      if (model.imageUrlTouched || model.imageModeTouched && model.imageMode === "comfyui") args.imageSource = model.imageUrl.trim();
       if (model.apiKey.touched) args.apiKey = model.apiKey.value.trim();
       if (model.workflowTouched) {
         args.workflow = model.workflow.trim();
@@ -3406,6 +3519,8 @@ function mountPanel(root, ctx) {
           model.workflowTouched = false;
           workflow.value = model.workflow = savedWorkflow;
         }
+        model.dmModeTouched = model.dmUrlTouched = model.dmModelTouched = false;
+        model.imageModeTouched = model.imageUrlTouched = false;
         status.textContent = t.settingsSaved;
         if (revision === model.revision) error.textContent = "";
       } catch {
@@ -3422,6 +3537,19 @@ function mountPanel(root, ctx) {
       clearPrivate();
       model.workflowTouched = false;
       workflow.value = model.workflow = savedWorkflow;
+      model.dmEnabled = savedSettings.dmEnabled;
+      model.dmUrl = savedSettings.dmUrl;
+      model.dmModel = savedSettings.dmModel;
+      model.imageMode = savedSettings.imageMode;
+      model.imageUrl = savedSettings.imageUrl;
+      model.imagesEnabled = model.imageMode !== "off";
+      model.dmModeTouched = model.dmUrlTouched = model.dmModelTouched = false;
+      model.imageModeTouched = model.imageUrlTouched = false;
+      dmMode.value = model.dmEnabled ? "external" : "host";
+      dmUrl.value = model.dmUrl;
+      dmModel.value = model.dmModel;
+      imageMode.value = model.imageMode;
+      imageUrl.value = model.imageUrl;
       ++model.revision;
       error.textContent = "";
       status.textContent = t.settingsCancelled;
@@ -3454,15 +3582,79 @@ function mountPanel(root, ctx) {
       }
     }, { danger: true, key: "settings-clear" });
     const reload = button(t.settingsReload, () => void load(), { quiet: true, key: "settings-reload" });
+    const testDm = button(t.settingsDmTest, async () => {
+      if (model.busy || !model.dmEnabled || model.dmModeTouched || model.dmUrlTouched || model.dmModelTouched || model.apiKey.touched) return;
+      model.busy = "test";
+      status.textContent = t.settingsDmTesting;
+      error.textContent = "";
+      paint();
+      try {
+        const result = await ownCall("testStoryDm");
+        if (disposed || ctx.signal?.aborted) return;
+        status.textContent = result?.ok ? result.message || t.settingsDmTestSuccess : result?.error || t.settingsDmTestFailure;
+      } catch {
+        if (!disposed) status.textContent = t.settingsDmTestFailure;
+      } finally {
+        if (!disposed) {
+          model.busy = "";
+          paint();
+        }
+      }
+    }, { quiet: true, key: "settings-test-dm" });
     let savedWorkflow = "";
+    const savedSettings = { dmEnabled: false, dmUrl: "", dmModel: "", imageMode: "delegate", imageUrl: "" };
     function applySafeView(result) {
       if (typeof result.dm?.saved === "boolean") model.saved = result.dm.saved;
       if (typeof result.dm?.supported === "boolean") model.supported = result.dm.supported;
+      if (typeof result.dmEnabled === "boolean") {
+        savedSettings.dmEnabled = result.dmEnabled;
+        if (!model.dmModeTouched) {
+          model.dmEnabled = result.dmEnabled;
+          dmMode.value = result.dmEnabled ? "external" : "host";
+        }
+      }
+      if (typeof result.dmUrl === "string") {
+        savedSettings.dmUrl = result.dmUrl;
+        if (!model.dmUrlTouched) {
+          model.dmUrl = result.dmUrl;
+          dmUrl.value = result.dmUrl;
+        }
+      }
+      if (typeof result.dmModel === "string") {
+        savedSettings.dmModel = result.dmModel;
+        if (!model.dmModelTouched) {
+          model.dmModel = result.dmModel;
+          dmModel.value = result.dmModel;
+        }
+      }
       if (typeof result.imageWorkflow === "string") {
         savedWorkflow = result.imageWorkflow;
         if (!model.workflowTouched) workflow.value = model.workflow = savedWorkflow;
       }
-      if (typeof result.imagesEnabled === "boolean") setImageState({ enabled: result.imagesEnabled });
+      let isLoopback = false;
+      try {
+        const parsed = new URL(result.imageSource);
+        isLoopback = /^https?:$/.test(parsed.protocol) && (parsed.hostname === "localhost" || parsed.hostname === "[::1]" || /^127\./.test(parsed.hostname)) && parsed.pathname === "/" && !parsed.username && !parsed.password && !parsed.search && !parsed.hash;
+      } catch {
+      }
+      const inferredMode = result.imageMode ?? (result.imagesEnabled === false ? "off" : isLoopback ? "comfyui" : "delegate");
+      if (["off", "delegate", "comfyui"].includes(inferredMode)) {
+        savedSettings.imageMode = inferredMode;
+        if (!model.imageModeTouched) {
+          model.imageMode = inferredMode;
+          imageMode.value = inferredMode;
+        }
+      }
+      const resolvedImageUrl = typeof result.imageUrl === "string" ? result.imageUrl : isLoopback ? result.imageSource : "";
+      if (resolvedImageUrl) {
+        savedSettings.imageUrl = resolvedImageUrl;
+        if (!model.imageUrlTouched) {
+          model.imageUrl = resolvedImageUrl;
+          imageUrl.value = resolvedImageUrl;
+        }
+      }
+      if (typeof result.imagesEnabled === "boolean") model.imagesEnabled = result.imagesEnabled;
+      else model.imagesEnabled = model.imageMode !== "off";
     }
     function clearPrivate() {
       model.apiKey.value = "";
@@ -3470,7 +3662,7 @@ function mountPanel(root, ctx) {
       repaintKey();
     }
     function paint() {
-      const dirty = model.apiKey.touched || model.workflowTouched;
+      const dirty = model.dmModeTouched || model.dmUrlTouched || model.dmModelTouched || model.imageModeTouched || model.imageUrlTouched || model.apiKey.touched || model.workflowTouched;
       saved.textContent = dirty ? t.storyDmApiPending : model.saved ? t.storyDmApiSaved : t.storyDmApiUnset;
       support.textContent = model.supported ? "" : t.storyDmApiUnsupported;
       save.disabled = Boolean(model.busy) || !model.loaded || !dirty;
@@ -3478,6 +3670,7 @@ function mountPanel(root, ctx) {
       cancel.disabled = Boolean(model.busy) || !dirty;
       reload.disabled = Boolean(model.busy);
       keyInput.disabled = !model.supported;
+      testDm.disabled = Boolean(model.busy) || !model.loaded || !model.dmEnabled || model.dmModeTouched || model.dmUrlTouched || model.dmModelTouched || model.apiKey.touched;
       const hasWorkflow = Boolean(model.workflow.trim());
       workflowBadge.textContent = hasWorkflow ? t.storyImageWorkflowOn : t.storyImageWorkflowOff;
       workflowBadge.className = hasWorkflow ? "sw-badge sw-settings-state sw-settings-state-on" : "sw-badge sw-settings-state";
@@ -3485,12 +3678,21 @@ function mountPanel(root, ctx) {
       imageBadge.className = model.imagesEnabled ? "sw-badge sw-settings-state sw-settings-state-on" : "sw-badge sw-settings-state";
       manualButton.disabled = Boolean(model.busy) || imageBusy || !model.imagesEnabled;
       manualButton.textContent = imageBusy ? t.storyImagePending : t.storyImageManual;
-      manualCard.hidden = !model.direct;
+      if (dmFieldsMounted !== model.dmEnabled) {
+        dmFieldsMount.replaceChildren(...model.dmEnabled ? [dmFields] : []);
+        dmFieldsMounted = model.dmEnabled;
+      }
+      const directImages = model.imageMode === "comfyui";
+      if (imageFieldsMounted !== directImages) {
+        imageFieldsMount.replaceChildren(...directImages ? [imageDirectCard] : []);
+        imageFieldsMounted = directImages;
+      }
       container.setAttribute("aria-busy", String(Boolean(model.busy)));
     }
     function setImageState({ enabled, direct } = {}) {
       if (typeof enabled === "boolean") model.imagesEnabled = enabled;
-      if (typeof direct === "boolean") model.direct = direct;
+      if (typeof direct === "boolean" && !model.imageModeTouched) model.imageMode = direct ? "comfyui" : model.imagesEnabled ? "delegate" : "off";
+      imageMode.value = model.imageMode;
       paint();
     }
     async function load() {
@@ -3516,8 +3718,11 @@ function mountPanel(root, ctx) {
         }
       }
     }
-    const saveBar = node("div", { class: "sw-settings-actions" }, actionRow(save, cancel, clear, reload));
-    const keyCard = node(
+    const dmFieldsMount = node("div", { class: "sw-settings-dm-fields" });
+    let dmFieldsMounted = false;
+    const imageFieldsMount = node("div", { class: "sw-settings-image-fields" });
+    let imageFieldsMounted = false;
+    const dmFields = node(
       "section",
       { class: "sw-card sw-card-pad sw-private-settings-card" },
       node(
@@ -3526,22 +3731,39 @@ function mountPanel(root, ctx) {
         node("div", { class: "sw-settings-card-title" }, icon("settings"), node("div", {}, node("h3", {}, t.settingsKeyTitle), node("p", { class: "sw-card-summary" }, t.settingsKeySummary))),
         saved
       ),
+      node("label", { class: "sw-setting-field" }, t.settingsDmUrl, dmUrl),
+      node("label", { class: "sw-setting-field" }, t.settingsDmModel, dmModel),
       node("label", { class: "sw-setting-field" }, t.storyDmApiKey, keyInput),
       note(t.settingsKeyHint),
       support,
-      node("details", { class: "sw-settings-help" }, node("summary", {}, t.storyDmHelpSummary), note(t.storyDmApiHint))
+      node("details", { class: "sw-settings-help" }, node("summary", {}, t.storyDmHelpSummary), note(t.storyDmApiHint)),
+      node("div", { class: "sw-settings-actions" }, actionRow(testDm, clear))
     );
-    const manualCard = node(
+    const imageUrlField = node("label", { class: "sw-setting-field" }, t.settingsImageUrl, imageUrl);
+    const imageDirectCard = node(
       "section",
       { class: "sw-card sw-card-pad sw-settings-manual" },
       node("div", { class: "sw-settings-subhead" }, node("div", {}, node("h3", {}, t.settingsImageManualTitle), node("p", { class: "sw-card-summary" }, t.settingsImageManualSummary)), imageBadge),
       node("p", { class: "sw-card-note" }, t.settingsImageManualHint),
+      imageUrlField,
       node("div", { class: "sw-settings-actions" }, actionRow(manualButton)),
       imageOutput,
       workflowBox
     );
-    manualCard.hidden = true;
-    const container = node("div", { class: "sw-settings-stack sw-private-settings" }, keyCard, manualCard, saveBar, status, error);
+    const dmModeCard = node(
+      "section",
+      { class: "sw-card sw-card-pad" },
+      node("label", { class: "sw-setting-field" }, t.settingsDmMode, dmMode),
+      dmFieldsMount
+    );
+    const imageModeCard = node(
+      "section",
+      { class: "sw-card sw-card-pad" },
+      node("label", { class: "sw-setting-field" }, t.settingsImageMode, imageMode),
+      imageFieldsMount
+    );
+    const saveBar = node("div", { class: "sw-settings-actions" }, actionRow(save, cancel, reload));
+    const container = node("div", { class: "sw-settings-stack sw-private-settings" }, dmModeCard, imageModeCard, saveBar, status, error);
     paint();
     return { node: container, load, clear: clearPrivate, setImageState };
   }

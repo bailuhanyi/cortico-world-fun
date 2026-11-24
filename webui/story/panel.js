@@ -560,6 +560,8 @@ export function mountPanel(root, ctx) {
           const label = pending?.options.find((option) => option.id === dm.proposal.optionId)?.label ?? dm.proposal.optionId;
           dmCard.append(node('div', { class: 'sw-reason' }, node('div', { class: 'sw-kicker' }, '主持提议 · 尚未发生'),
             node('p', {}, dm.proposal.narration), node('p', {}, `建议选项：${label}`)),
+            dm.proposal.receipt?.message
+              ? node('p', { class: 'sw-note sw-dm-receipt', role: 'status' }, dm.proposal.receipt.message) : null,
             button('明确采用这个选项', () => controller.applyDM(), { small: true, primary: true, disabled: !ownerTurn || isDraft || state.dmBusy || current.step !== 'choose', key: 'dm-apply' }));
         }
       }
@@ -740,13 +742,40 @@ export function mountPanel(root, ctx) {
   function buildAdvancedSettings() {
     const mask = '••••••••';
     const model = { saved: false, supported: true, loaded: false, busy: '', revision: 0,
-      workflow: '', workflowTouched: false, imagesEnabled: false, direct: false,
+      workflow: '', workflowTouched: false, imagesEnabled: false, dmEnabled: false, dmUrl: '', dmModel: '',
+      imageMode: 'delegate', imageUrl: '', dmModeTouched: false, dmUrlTouched: false, dmModelTouched: false,
+      imageModeTouched: false, imageUrlTouched: false,
       apiKey: { value: '', touched: false, revision: 0 } };
     const status = node('p', { class: 'sw-note', role: 'status', 'aria-live': 'polite' });
     const error = node('p', { class: 'sw-settings-error', role: 'alert' });
     const support = note('');
     const saved = node('span', { class: 'sw-badge', 'data-settings-saved': '' });
     const imageBadge = node('span', { class: 'sw-badge sw-settings-state', 'data-settings-image-state': '' });
+    const dmMode = node('select', { 'data-focus': 'settings-dmMode', 'aria-label': t.settingsDmMode },
+      node('option', { value: 'host' }, t.settingsDmHost), node('option', { value: 'external' }, t.settingsDmExternal));
+    dmMode.addEventListener('change', () => {
+      model.dmEnabled = dmMode.value === 'external'; model.dmModeTouched = true; ++model.revision; paint();
+    });
+    const dmUrl = node('input', { type: 'url', autocomplete: 'off', spellcheck: 'false',
+      'data-focus': 'settings-apiUrl', 'aria-label': t.settingsDmUrl });
+    dmUrl.addEventListener('input', () => { model.dmUrl = dmUrl.value; model.dmUrlTouched = true; ++model.revision; paint(); });
+    const dmModel = node('input', { type: 'text', autocomplete: 'off', spellcheck: 'false',
+      'data-focus': 'settings-model', 'aria-label': t.settingsDmModel });
+    dmModel.addEventListener('input', () => { model.dmModel = dmModel.value; model.dmModelTouched = true; ++model.revision; paint(); });
+    const imageMode = node('select', { 'data-focus': 'settings-imageMode', 'aria-label': t.settingsImageMode },
+      node('option', { value: 'off' }, t.settingsImageSourceOff),
+      node('option', { value: 'delegate' }, t.settingsImageSourceDelegate),
+      node('option', { value: 'comfyui' }, t.settingsImageSourceDirect));
+    imageMode.addEventListener('change', () => {
+      model.imageMode = imageMode.value; model.imageModeTouched = true; model.imagesEnabled = model.imageMode !== 'off';
+      if (model.imageMode === 'comfyui' && !model.imageUrl.trim()) {
+        model.imageUrl = 'http://127.0.0.1:8188'; imageUrl.value = model.imageUrl; model.imageUrlTouched = true;
+      }
+      ++model.revision; paint();
+    });
+    const imageUrl = node('input', { type: 'url', autocomplete: 'off', spellcheck: 'false',
+      'data-focus': 'settings-imageUrl', 'aria-label': t.settingsImageUrl });
+    imageUrl.addEventListener('input', () => { model.imageUrl = imageUrl.value; model.imageUrlTouched = true; ++model.revision; paint(); });
     const keyInput = node('input', { type: 'password', autocomplete: 'new-password', spellcheck: 'false',
       'data-focus': 'settings-apiKey', 'aria-label': t.storyDmApiKey, 'data-private-setting': 'apiKey' });
     const repaintKey = () => { keyInput.value = model.apiKey.value || model.saved ? mask : ''; };
@@ -769,6 +798,11 @@ export function mountPanel(root, ctx) {
     const save = button(t.settingsSave, async () => {
       if (model.busy) return;
       const args = {};
+      if (model.dmModeTouched) args.dmEnabled = model.dmEnabled;
+      if (model.dmUrlTouched) args.apiUrl = model.dmUrl.trim();
+      if (model.dmModelTouched) args.model = model.dmModel.trim();
+      if (model.imageModeTouched) args.imageMode = model.imageMode;
+      if (model.imageUrlTouched || (model.imageModeTouched && model.imageMode === 'comfyui')) args.imageSource = model.imageUrl.trim();
       if (model.apiKey.touched) args.apiKey = model.apiKey.value.trim();
       if (model.workflowTouched) {
         args.workflow = model.workflow.trim();
@@ -800,6 +834,8 @@ export function mountPanel(root, ctx) {
         if (Object.hasOwn(args, 'workflow') && model.workflow.trim() === args.workflow) {
           model.workflowTouched = false; workflow.value = model.workflow = savedWorkflow;
         }
+        model.dmModeTouched = model.dmUrlTouched = model.dmModelTouched = false;
+        model.imageModeTouched = model.imageUrlTouched = false;
         status.textContent = t.settingsSaved;
         if (revision === model.revision) error.textContent = '';
       } catch { if (!disposed) error.textContent = t.settingsFailure; }
@@ -807,6 +843,12 @@ export function mountPanel(root, ctx) {
     }, { primary: true, key: 'settings-save' });
     const cancel = button(t.settingsCancel, () => {
       clearPrivate(); model.workflowTouched = false; workflow.value = model.workflow = savedWorkflow;
+      model.dmEnabled = savedSettings.dmEnabled; model.dmUrl = savedSettings.dmUrl; model.dmModel = savedSettings.dmModel;
+      model.imageMode = savedSettings.imageMode; model.imageUrl = savedSettings.imageUrl; model.imagesEnabled = model.imageMode !== 'off';
+      model.dmModeTouched = model.dmUrlTouched = model.dmModelTouched = false;
+      model.imageModeTouched = model.imageUrlTouched = false;
+      dmMode.value = model.dmEnabled ? 'external' : 'host'; dmUrl.value = model.dmUrl; dmModel.value = model.dmModel;
+      imageMode.value = model.imageMode; imageUrl.value = model.imageUrl;
       ++model.revision; error.textContent = ''; status.textContent = t.settingsCancelled; paint();
     }, { quiet: true, key: 'settings-cancel' });
     const clear = button(t.storyDmApiClear, async () => {
@@ -821,22 +863,63 @@ export function mountPanel(root, ctx) {
       finally { if (!disposed) { model.busy = ''; paint(); repaintKey(); } }
     }, { danger: true, key: 'settings-clear' });
     const reload = button(t.settingsReload, () => void load(), { quiet: true, key: 'settings-reload' });
+    const testDm = button(t.settingsDmTest, async () => {
+      if (model.busy || !model.dmEnabled || model.dmModeTouched || model.dmUrlTouched || model.dmModelTouched || model.apiKey.touched) return;
+      model.busy = 'test'; status.textContent = t.settingsDmTesting; error.textContent = ''; paint();
+      try {
+        const result = await ownCall('testStoryDm');
+        if (disposed || ctx.signal?.aborted) return;
+        status.textContent = result?.ok ? (result.message || t.settingsDmTestSuccess) : (result?.error || t.settingsDmTestFailure);
+      } catch { if (!disposed) status.textContent = t.settingsDmTestFailure; }
+      finally { if (!disposed) { model.busy = ''; paint(); } }
+    }, { quiet: true, key: 'settings-test-dm' });
     let savedWorkflow = '';
+    const savedSettings = { dmEnabled: false, dmUrl: '', dmModel: '', imageMode: 'delegate', imageUrl: '' };
     function applySafeView(result) {
       // Deliberately read only public status, never credential values from a response.
       if (typeof result.dm?.saved === 'boolean') model.saved = result.dm.saved;
       if (typeof result.dm?.supported === 'boolean') model.supported = result.dm.supported;
+      if (typeof result.dmEnabled === 'boolean') {
+        savedSettings.dmEnabled = result.dmEnabled;
+        if (!model.dmModeTouched) { model.dmEnabled = result.dmEnabled; dmMode.value = result.dmEnabled ? 'external' : 'host'; }
+      }
+      if (typeof result.dmUrl === 'string') {
+        savedSettings.dmUrl = result.dmUrl;
+        if (!model.dmUrlTouched) { model.dmUrl = result.dmUrl; dmUrl.value = result.dmUrl; }
+      }
+      if (typeof result.dmModel === 'string') {
+        savedSettings.dmModel = result.dmModel;
+        if (!model.dmModelTouched) { model.dmModel = result.dmModel; dmModel.value = result.dmModel; }
+      }
       if (typeof result.imageWorkflow === 'string') {
         savedWorkflow = result.imageWorkflow;
         if (!model.workflowTouched) workflow.value = model.workflow = savedWorkflow;
       }
-      if (typeof result.imagesEnabled === 'boolean') setImageState({ enabled: result.imagesEnabled });
+      let isLoopback = false;
+      try {
+        const parsed = new URL(result.imageSource);
+        isLoopback = /^https?:$/.test(parsed.protocol) && (parsed.hostname === 'localhost' || parsed.hostname === '[::1]' || /^127\./.test(parsed.hostname))
+          && parsed.pathname === '/' && !parsed.username && !parsed.password && !parsed.search && !parsed.hash;
+      } catch { /* A non-URL source is a delegation. */ }
+      const inferredMode = result.imageMode ?? (result.imagesEnabled === false ? 'off' : isLoopback ? 'comfyui' : 'delegate');
+      if (['off', 'delegate', 'comfyui'].includes(inferredMode)) {
+        savedSettings.imageMode = inferredMode;
+        if (!model.imageModeTouched) { model.imageMode = inferredMode; imageMode.value = inferredMode; }
+      }
+      const resolvedImageUrl = typeof result.imageUrl === 'string' ? result.imageUrl : isLoopback ? result.imageSource : '';
+      if (resolvedImageUrl) {
+        savedSettings.imageUrl = resolvedImageUrl;
+        if (!model.imageUrlTouched) { model.imageUrl = resolvedImageUrl; imageUrl.value = resolvedImageUrl; }
+      }
+      if (typeof result.imagesEnabled === 'boolean') model.imagesEnabled = result.imagesEnabled;
+      else model.imagesEnabled = model.imageMode !== 'off';
     }
     function clearPrivate() {
       model.apiKey.value = ''; model.apiKey.touched = false; repaintKey();
     }
     function paint() {
-      const dirty = model.apiKey.touched || model.workflowTouched;
+      const dirty = model.dmModeTouched || model.dmUrlTouched || model.dmModelTouched || model.imageModeTouched
+        || model.imageUrlTouched || model.apiKey.touched || model.workflowTouched;
       saved.textContent = dirty ? t.storyDmApiPending : model.saved ? t.storyDmApiSaved : t.storyDmApiUnset;
       support.textContent = model.supported ? '' : t.storyDmApiUnsupported;
       save.disabled = Boolean(model.busy) || !model.loaded || !dirty;
@@ -844,6 +927,8 @@ export function mountPanel(root, ctx) {
       cancel.disabled = Boolean(model.busy) || !dirty;
       reload.disabled = Boolean(model.busy);
       keyInput.disabled = !model.supported;
+      testDm.disabled = Boolean(model.busy) || !model.loaded || !model.dmEnabled || model.dmModeTouched
+        || model.dmUrlTouched || model.dmModelTouched || model.apiKey.touched;
       const hasWorkflow = Boolean(model.workflow.trim());
       workflowBadge.textContent = hasWorkflow ? t.storyImageWorkflowOn : t.storyImageWorkflowOff;
       workflowBadge.className = hasWorkflow ? 'sw-badge sw-settings-state sw-settings-state-on' : 'sw-badge sw-settings-state';
@@ -851,12 +936,19 @@ export function mountPanel(root, ctx) {
       imageBadge.className = model.imagesEnabled ? 'sw-badge sw-settings-state sw-settings-state-on' : 'sw-badge sw-settings-state';
       manualButton.disabled = Boolean(model.busy) || imageBusy || !model.imagesEnabled;
       manualButton.textContent = imageBusy ? t.storyImagePending : t.storyImageManual;
-      manualCard.hidden = !model.direct;
+      if (dmFieldsMounted !== model.dmEnabled) {
+        dmFieldsMount.replaceChildren(...(model.dmEnabled ? [dmFields] : [])); dmFieldsMounted = model.dmEnabled;
+      }
+      const directImages = model.imageMode === 'comfyui';
+      if (imageFieldsMounted !== directImages) {
+        imageFieldsMount.replaceChildren(...(directImages ? [imageDirectCard] : [])); imageFieldsMounted = directImages;
+      }
       container.setAttribute('aria-busy', String(Boolean(model.busy)));
     }
     function setImageState({ enabled, direct } = {}) {
       if (typeof enabled === 'boolean') model.imagesEnabled = enabled;
-      if (typeof direct === 'boolean') model.direct = direct;
+      if (typeof direct === 'boolean' && !model.imageModeTouched) model.imageMode = direct ? 'comfyui' : model.imagesEnabled ? 'delegate' : 'off';
+      imageMode.value = model.imageMode;
       paint();
     }
     async function load() {
@@ -871,21 +963,32 @@ export function mountPanel(root, ctx) {
       } catch { if (!disposed) error.textContent = t.settingsLoadFailure; }
       finally { if (!disposed) { model.busy = ''; paint(); } }
     }
-    const saveBar = node('div', { class: 'sw-settings-actions' }, actionRow(save, cancel, clear, reload));
-    const keyCard = node('section', { class: 'sw-card sw-card-pad sw-private-settings-card' },
+    const dmFieldsMount = node('div', { class: 'sw-settings-dm-fields' });
+    let dmFieldsMounted = false;
+    const imageFieldsMount = node('div', { class: 'sw-settings-image-fields' });
+    let imageFieldsMounted = false;
+    const dmFields = node('section', { class: 'sw-card sw-card-pad sw-private-settings-card' },
       node('div', { class: 'sw-settings-card-head' },
         node('div', { class: 'sw-settings-card-title' }, icon('settings'), node('div', {}, node('h3', {}, t.settingsKeyTitle), node('p', { class: 'sw-card-summary' }, t.settingsKeySummary))), saved),
+      node('label', { class: 'sw-setting-field' }, t.settingsDmUrl, dmUrl),
+      node('label', { class: 'sw-setting-field' }, t.settingsDmModel, dmModel),
       node('label', { class: 'sw-setting-field' }, t.storyDmApiKey, keyInput),
       note(t.settingsKeyHint), support,
-      node('details', { class: 'sw-settings-help' }, node('summary', {}, t.storyDmHelpSummary), note(t.storyDmApiHint)));
-    const manualCard = node('section', { class: 'sw-card sw-card-pad sw-settings-manual' },
+      node('details', { class: 'sw-settings-help' }, node('summary', {}, t.storyDmHelpSummary), note(t.storyDmApiHint)),
+      node('div', { class: 'sw-settings-actions' }, actionRow(testDm, clear)));
+    const imageUrlField = node('label', { class: 'sw-setting-field' }, t.settingsImageUrl, imageUrl);
+    const imageDirectCard = node('section', { class: 'sw-card sw-card-pad sw-settings-manual' },
       node('div', { class: 'sw-settings-subhead' }, node('div', {}, node('h3', {}, t.settingsImageManualTitle), node('p', { class: 'sw-card-summary' }, t.settingsImageManualSummary)), imageBadge),
       node('p', { class: 'sw-card-note' }, t.settingsImageManualHint),
+      imageUrlField,
       node('div', { class: 'sw-settings-actions' }, actionRow(manualButton)),
       imageOutput, workflowBox);
-    manualCard.hidden = true;
-    // 保存条放在两张卡下面：改密钥和改工作流共用同一个「保存设置」。
-    const container = node('div', { class: 'sw-settings-stack sw-private-settings' }, keyCard, manualCard, saveBar, status, error);
+    const dmModeCard = node('section', { class: 'sw-card sw-card-pad' },
+      node('label', { class: 'sw-setting-field' }, t.settingsDmMode, dmMode), dmFieldsMount);
+    const imageModeCard = node('section', { class: 'sw-card sw-card-pad' },
+      node('label', { class: 'sw-setting-field' }, t.settingsImageMode, imageMode), imageFieldsMount);
+    const saveBar = node('div', { class: 'sw-settings-actions' }, actionRow(save, cancel, reload));
+    const container = node('div', { class: 'sw-settings-stack sw-private-settings' }, dmModeCard, imageModeCard, saveBar, status, error);
     paint();
     return { node: container, load, clear: clearPrivate, setImageState };
   }

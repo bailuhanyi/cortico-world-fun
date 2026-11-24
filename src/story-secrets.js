@@ -71,6 +71,20 @@ function assertUrl(apiUrl) {
   if (!['https:', 'http:'].includes(url.protocol) || !url.hostname || url.username || url.password || url.search || url.hash) reject('INVALID_URL');
 }
 
+/** Validate endpoint/model settings without loading or decrypting the local key file. */
+export function validateStoryDmSettings(input = {}) {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) {
+    return { ok: false, error: MESSAGES.INVALID_URL };
+  }
+  const apiUrl = typeof input.apiUrl === 'string' ? input.apiUrl.trim() : '';
+  const model = typeof input.model === 'string' ? input.model.trim() : '';
+  try { if (apiUrl) assertUrl(apiUrl); } catch { return { ok: false, error: MESSAGES.INVALID_URL }; }
+  if (model.length > 200 || /[\u0000-\u001f\u007f]/u.test(model)) {
+    return { ok: false, error: MESSAGES.API_MODEL };
+  }
+  return { ok: true, apiUrl, model };
+}
+
 function endpoint(apiUrl) {
   const url = new URL(apiUrl);
   const path = url.pathname.replace(/\/+$/u, '');
@@ -403,6 +417,21 @@ export class StorySecrets {
       storyDmDirect: true,
       request: (request) => this.#request(revision, unavailable, request),
     });
+  }
+
+  /** Explicit, bounded test; returns no provider response or credential material. */
+  async testConnection() {
+    const provider = await this.cognition(null);
+    if (!this.status.available || typeof provider?.request !== 'function') {
+      return { ok: false, error: this.#error ? MESSAGES[this.#error] : !this.#crypto?.supported
+        ? MESSAGES.WINDOWS_ONLY : '请先保存 API Key，再测试外接接口。' };
+    }
+    try {
+      await provider.request({ brief: 'Reply with exactly OK.', tools: [], hint: { rounds: 1 } });
+      return { ok: true, message: '连接成功。' };
+    } catch (error) {
+      return { ok: false, error: storyDmErrorMessage(error) ?? '外接主持连接失败；请检查设置后重试。' };
+    }
   }
 
   async #request(revision, unavailable, request) {

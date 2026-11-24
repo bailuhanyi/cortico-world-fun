@@ -121,10 +121,19 @@ ok(Array.isArray(ui.config) && ui.config.length === 1, 'webUi 一组配置');
 ok(ui.promptDocs?.[0]?.key === 'worlds.fun.env', 'webUi 的 promptDocs key 是 worlds.fun.env');
 const cfgPaths = Object.keys(ui.config[0].schema.properties);
 ok(cfgPaths.every((p) => p.startsWith('worlds.fun.')), `配置路径都在 worlds.fun. 段：${cfgPaths.join(',')}`);
-ok(cfgPaths.length === Object.keys(DEFAULTS).length - 1,
-  `面板配置项数量 = DEFAULTS 去掉 enabled（实际 ${cfgPaths.length}）`);
-for (const key of Object.keys(DEFAULTS)) {
-  if (key === 'enabled') continue;
+// Two deprecated config aliases remain in DEFAULTS for old-profile reads and
+// synchronized writes, but intentionally are not shown as duplicate UI items.
+const configKeys = Object.keys(DEFAULTS).filter((key) => !['enabled', 'funAskReport', 'funHomeAutoGo'].includes(key));
+ok(cfgPaths.length === configKeys.length && cfgPaths.length === 18,
+  `面板配置项保持 3 个常用项 + 15 个高级项（实际 ${cfgPaths.length}）`);
+const configProperties = ui.config[0].schema.properties;
+const ordinaryCount = Object.values(configProperties).filter((property) => !String(property.title).startsWith('高级 · ')).length;
+const advancedCount = Object.values(configProperties).filter((property) => String(property.title).startsWith('高级 · ')).length;
+ok(ordinaryCount === 3 && advancedCount === 15, `普通 ${ordinaryCount} 项、高级 ${advancedCount} 项`);
+for (const alias of ['funAskReport', 'funHomeAutoGo']) {
+  ok(!cfgPaths.includes(`worlds.fun.${alias}`), `${alias} 仅作兼容别名，不重复显示`);
+}
+for (const key of configKeys) {
   ok(cfgPaths.includes(`worlds.fun.${key}`), `面板上声明了 ${key}`);
 }
 

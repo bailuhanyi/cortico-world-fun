@@ -113,7 +113,7 @@ test('自己出门：只剩许可，不再自带时段或叫醒；时间跟着�
   assert.equal(DEFAULTS.funHomeAutoGo, false, '默认关');
   assert.equal('funHomeAutoSlots' in DEFAULTS, false, '不再有自己出门的时段');
   const group = configGroup('zh');
-  const on = group.schema.properties['worlds.fun.funHomeAutoGo'];
+  const on = group.schema.properties['worlds.fun.funAutoOuting'];
   assert.equal(on.type, 'boolean');
   assert.match(on.description, /她自己的时间/);
   assert.equal(group.schema.properties['worlds.fun.funHomeAutoSlots'], undefined, '时段已从配置页移除');

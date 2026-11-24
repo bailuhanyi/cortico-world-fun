@@ -90,6 +90,31 @@ test('manual first mount reads status, renders real choices, stores no progress'
   mounted.dispose();
   assert.equal(root.childNodes.length, 0);
 });
+test('fallback receipt remains visible with a status role after panel refresh and rerender', async () => {
+  const initial = snapshot();
+  initial.dm = {
+    enabled: true, available: true, pending: false, remainingCalls: 5,
+    budget: { calls: 1, totalTokens: 7, unknownUsageCalls: 0 },
+    message: '主持只提供待确认提议。',
+    proposal: { id: 'proposal-fallback', stamp: initial.trip.stamp, optionId: 'follow', narration: '宿主主持提出一个待确认的方案。',
+      receipt: { kind: 'fallback', message: '已回退宿主主持' } },
+  };
+  const h = harness(null, initial);
+  globalThis.document = h.env.document; globalThis.window = h.env.window;
+  const root = document.createElement('div');
+  const mounted = mountPanel(root, h.ctx); await flush();
+  root.querySelector('[data-focus="nav-play"]').click();
+  const receipt = root.querySelector('.sw-dm-receipt');
+  assert.ok(receipt);
+  assert.equal(receipt.getAttribute('role'), 'status');
+  assert.equal(receipt.textContent, '已回退宿主主持');
+  root.querySelector('[data-focus="refresh"]').click(); await flush(); await flush();
+  const refreshed = root.querySelector('.sw-dm-receipt');
+  assert.ok(refreshed, 'refresh/rerender keeps the receipt attached to the current proposal');
+  assert.equal(refreshed.getAttribute('role'), 'status');
+  assert.equal(refreshed.textContent, '已回退宿主主持');
+  mounted.dispose();
+});
 test('a delayed decide is invalidated immediately by mode off; manual can take over', async () => {
   const decision = deferred();
   const h = harness(async (method, payload, current) => {
@@ -517,20 +542,32 @@ async function settingsHarness(handler, options = {}) {
   if (options.trip === null) initial.trip = null;
   initial.images = { enabled: true, masterOn: true, auto: true, sourceKind: 'plugin', source: '',
     generationAvailable: true, message: '图片开关已开', ...options.images };
-  const stored = { dmSaved: false };
+  const stored = { dmSaved: false, dmEnabled: options.dmEnabled ?? true, dmUrl: 'https://example.test/v1', dmModel: 'test-model', imageSource: options.images?.source ?? '' };
+  const settings = () => ({ ok: true, dm: { saved: stored.dmSaved, supported: true }, dmEnabled: stored.dmEnabled,
+    dmUrl: stored.dmUrl, dmModel: stored.dmModel, imageSource: stored.imageSource,
+    imageUrl: initial.images.sourceKind === 'comfyui' ? stored.imageSource : '',
+    imageMode: initial.images.enabled === false ? 'off' : initial.images.sourceKind === 'comfyui' ? 'comfyui' : 'delegate',
+    imageWorkflow: '', nodeLimit: 16, imagesEnabled: initial.images.enabled });
   const h = harness(async (method, payload, current) => {
     const result = await handler?.(method, payload, current);
-    if (result !== undefined) return result;
-    if (method === 'storySettings') {
-      return { ok: true, dm: { saved: stored.dmSaved, supported: true }, imageSource: '', imageWorkflow: '', nodeLimit: 16, imagesEnabled: true };
-    }
+    if (result !== undefined) return method === 'storySettings' || method === 'saveStorySettings' || method === 'clearStoryKey'
+      ? { ...settings(), ...result } : result;
+    if (method === 'storySettings') return settings();
     if (method === 'saveStorySettings') {
       if (typeof payload?.apiKey === 'string' && payload.apiKey) stored.dmSaved = true;
-      return { ok: true, dm: { saved: stored.dmSaved, supported: true }, imageWorkflow: payload?.workflow ?? '', imagesEnabled: true };
+      if (typeof payload?.dmEnabled === 'boolean') stored.dmEnabled = payload.dmEnabled;
+      if (typeof payload?.apiUrl === 'string') stored.dmUrl = payload.apiUrl;
+      if (typeof payload?.model === 'string') stored.dmModel = payload.model;
+      if (typeof payload?.imageMode === 'string') {
+        initial.images.enabled = payload.imageMode !== 'off';
+        initial.images.sourceKind = payload.imageMode === 'comfyui' ? 'comfyui' : 'plugin';
+        if (typeof payload.imageSource === 'string') stored.imageSource = payload.imageSource;
+      }
+      return { ...settings(), dm: { saved: stored.dmSaved, supported: true }, imageWorkflow: payload?.workflow ?? '' };
     }
     if (method === 'clearStoryKey') {
       stored.dmSaved = false;
-      return { ok: true, dm: { saved: false, supported: true }, imageWorkflow: '', imagesEnabled: true };
+      return { ...settings(), dm: { saved: false, supported: true }, imageWorkflow: '' };
     }
     if (method === 'saveStoryAutoImages') { current.images.auto = payload.auto; return { ok: true, autoImages: payload.auto }; }
   }, initial);
@@ -543,18 +580,40 @@ async function settingsHarness(handler, options = {}) {
   return { ...h, root, mounted, control, enter, stored };
 }
 
-test('settings page is only the advanced section: key, direct-only workflow, and where things live', async () => {
+test('settings page exposes selectors and direct-only controls only in their selected modes', async () => {
   const h = await settingsHarness();
   assert.match(h.root.textContent, /高级设置/);
   assert.ok(h.control('apiKey'), '密钥输入还在');
-  assert.equal(h.root.querySelector('[data-focus="settings-apiUrl"]'), null, '接口地址不在面板');
-  assert.equal(h.root.querySelector('[data-focus="settings-model"]'), null, '模型名不在面板');
-  assert.equal(h.root.querySelector('[data-focus="settings-imageSource"]'), null, '图片来源不在面板');
+  assert.ok(h.control('apiUrl'), '外接模式显示接口地址');
+  assert.ok(h.control('model'), '外接模式显示模型名');
+  assert.ok(h.control('dmMode'), '主持方式选择器显示');
+  assert.ok(h.control('imageMode'), '图片来源选择器显示');
   assert.equal(h.root.querySelector('[data-focus="story-node-limit"]'), null, '故事长度不在面板');
   assert.match(h.root.textContent, /配置 → 从0开始的肥鱼大冒险/);
   assert.match(h.root.textContent, /地点册 → 本地插画/);
   assert.doesNotMatch(h.root.textContent, /故事节点上限|生成／委派当前场景图片/);
-  assert.equal(h.root.querySelector('.sw-settings-manual').hidden, true, '委派来源不显示直连出图');
+  assert.equal(h.root.querySelector('.sw-settings-manual'), null, '委派来源不渲染直连设置');
+  h.mounted.dispose();
+});
+
+test('host-default DM omits the entire external credential group from the rendered settings', async () => {
+  const h = await settingsHarness(null, { dmEnabled: false });
+  assert.ok(h.control('dmMode'));
+  for (const key of ['apiUrl', 'model', 'apiKey', 'test-dm', 'clear']) {
+    assert.equal(h.root.querySelector(`[data-focus="settings-${key}"]`), null, `${key} is not rendered in host mode`);
+  }
+  h.mounted.dispose();
+});
+
+test('image source selector renders the loopback URL and workflow only in direct mode', async () => {
+  const h = await settingsHarness();
+  assert.equal(h.root.querySelector('[data-focus="settings-imageUrl"]'), null);
+  const mode = h.control('imageMode'); mode.value = 'comfyui'; mode.dispatchEvent(new Event('change'));
+  assert.ok(h.control('imageUrl'));
+  assert.ok(h.control('workflow'));
+  mode.value = 'off'; mode.dispatchEvent(new Event('change'));
+  assert.equal(h.control('imageUrl'), null);
+  assert.equal(h.control('workflow'), null);
   h.mounted.dispose();
 });
 
@@ -597,6 +656,7 @@ test('R1 loading failure keeps the masked draft and a retry; clear calls immedia
     if (method === 'storySettings' && firstRead) { firstRead = false; return read.promise; }
     if (method === 'clearStoryKey') return removal.promise;
   });
+  h.control('dmMode').value = 'external'; h.control('dmMode').dispatchEvent(new Event('change'));
   const key = h.enter('apiKey', 'retry-private-value');
   assert.equal(h.control('save').disabled, true);
   read.reject(new Error('transport must not echo retry-private-value')); await flush();
@@ -626,11 +686,11 @@ test('R1 unsupported encryption disables the key input but keeps the page usable
 
 test('direct source shows the manual image button and custom workflow; delegation hides them', async () => {
   const delegated = await settingsHarness();
-  assert.equal(delegated.root.querySelector('.sw-settings-manual').hidden, true);
+  assert.equal(delegated.root.querySelector('.sw-settings-manual'), null);
   delegated.mounted.dispose();
 
   const direct = await settingsHarness(null, { images: { sourceKind: 'comfyui', enabled: true } });
-  assert.equal(direct.root.querySelector('.sw-settings-manual').hidden, false);
+  assert.ok(direct.root.querySelector('.sw-settings-manual'));
   direct.enter('workflow', '{"1":{"class_type":"CLIPTextEncode","inputs":{"text":"{{prompt}}"}}}');
   direct.control('save').click(); await flush();
   const call = direct.calls.find((item) => item.method === 'saveStorySettings');
@@ -724,7 +784,7 @@ test('top-bar auto-image switch is disabled with an aria-live reason without a t
   const offMaster = masterOff.root.querySelector('[data-focus="auto-images"]');
   assert.equal(offMaster.disabled, true);
   assert.equal(offMaster.getAttribute('aria-checked'), 'false');
-  assert.match(masterOff.root.textContent, /总闸关着/);
+  assert.match(masterOff.root.textContent, /剧情图片已关闭/);
   masterOff.mounted.dispose();
 });
 
